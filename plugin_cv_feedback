@@ -395,7 +395,7 @@ JS;
 
                 <div class="kcvf-field">
                     <label for="kcvf_role">Rol / Área objetivo</label>
-                    <input class="kcvf-input" type="text" name="kcvf_role" id="kcvf_role" placeholder="p. ej., Conductor de autobús, Administrativo, CFO..." value="<?php echo isset($old['role']) ? esc_attr($old['role']) : ''; ?>">
+                    <input class="kcvf-input" type="text" name="kcvf_role" id="kcvf_role" placeholder="p. ej., Country Manager, Administrativo, CFO..." value="<?php echo isset($old['role']) ? esc_attr($old['role']) : ''; ?>">
                 </div>
 
                 <div class="kcvf-field">
@@ -419,7 +419,6 @@ JS;
            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
            required>
     <p style="font-size:13px;color:#666;margin-top:6px;">
-        Nota: si tu CV está en PDF escaneado, el sistema puede tardar unos minutos en procesarlo (OCR).
     </p>
 </div>
 
