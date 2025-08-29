@@ -2387,7 +2387,7 @@ JS;
             if ($path) {
                 $full = ABSPATH . ltrim($path, '/');
                 if (file_exists($full)) {
-                    $text = file_get_contents($full);
+                    $text = $this->extract_text_from_file($full);
                     if ($text) {
                         update_post_meta($post_id, 'kvt_cv_text', $text);
                         return $text;
@@ -2453,14 +2453,38 @@ JS;
         if (!$text) return;
         update_post_meta($post_id, 'kvt_cv_text', $text);
 
-        // Also create a .txt file in uploads for reference
-        $upload = wp_upload_dir();
-        if (!empty($upload['path']) && !empty($upload['url'])) {
-            $txt_name = 'cv-' . $attach_id . '.txt';
-            $txt_path = trailingslashit($upload['path']) . $txt_name;
-            if (@file_put_contents($txt_path, $text) !== false) {
-                $txt_url = trailingslashit($upload['url']) . $txt_name;
-                update_post_meta($post_id, 'kvt_cv_text_url', esc_url_raw($txt_url));
+        $info = pathinfo($path);
+        if (strtolower($info['extension'] ?? '') !== 'pdf') return;
+        // Create a .docx file with plain text for reference
+        $docx_path = $info['dirname'] . '/' . $info['filename'] . '.docx';
+        @unlink($docx_path);
+        if (class_exists('ZipArchive')) {
+            $zip = new \ZipArchive();
+            if ($zip->open($docx_path, \ZipArchive::CREATE) === true) {
+                $zip->addFromString('[Content_Types].xml',
+                    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                    .'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                    .'<Default Extension="xml" ContentType="application/xml"/>'
+                    .'<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+                    .'</Types>');
+                $zip->addFromString('_rels/.rels',
+                    '<?xml version="1.0" encoding="UTF-8"?>'
+                    .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                    .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+                    .'</Relationships>');
+                $body = '';
+                foreach (preg_split('/\r\n|\r|\n/', $text) as $line) {
+                    $body .= '<w:p><w:r><w:t>'.htmlspecialchars($line, ENT_XML1).'</w:t></w:r></w:p>';
+                }
+                $doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                    .'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+                    .$body.'</w:body></w:document>';
+                $zip->addFromString('word/document.xml', $doc);
+                $zip->close();
+
+                $upload = wp_upload_dir();
+                $docx_url = str_replace($upload['basedir'], $upload['baseurl'], $docx_path);
+                update_post_meta($post_id, 'kvt_cv_text_url', esc_url_raw($docx_url));
             }
         }
     }
