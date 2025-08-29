@@ -286,7 +286,8 @@ document.addEventListener('DOMContentLoaded', function(){
     var file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
     if (!file) return;
 
-    if (file.type === 'application/pdf') {
+    var isPdf = (file.type === 'application/pdf') || (/\.pdf$/i.test(file.name));
+    if (isPdf) {
       e.preventDefault();
       (async function(){
         // 1) Intento PDF.js
