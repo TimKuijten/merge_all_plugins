@@ -425,7 +425,7 @@ JS;
 
                 <div class="kcvf-field">
                     <label for="kcvf_notes">Notas (opcional)</label>
-                    <textarea class="kcvf-textarea" name="kcvf_notes" id="kcvf_notes" rows="4" placeholder="¿En qué debemos enfocarnos? (p. ej., cuantificar impacto, adecuación por país/idioma, etc.)"></textarea>
+                    <textarea class="kcvf-textarea" name="kcvf_notes" id="kcvf_notes" rows="4" placeholder="Notas adicionales"></textarea>
                 </div>
 
                 <div class="kcvf-field kcvf-consent">
