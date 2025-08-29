@@ -335,6 +335,7 @@ cv_uploaded|Fecha de subida");
         $cv_date_raw = $this->meta_get_compat($post->ID, 'kvt_cv_uploaded', ['cv_uploaded']);
         $cv_date = $this->fmt_date_ddmmyyyy($cv_date_raw);
         $cv_att  = $this->meta_get_compat($post->ID, 'kvt_cv_attachment_id', ['cv_attachment_id']);
+        $cv_txt  = get_post_meta($post->ID, 'kvt_cv_text_url', true);
         $notes   = $this->meta_get_compat($post->ID, 'kvt_notes',       ['notes']);
         ?>
         <table class="form-table">
@@ -359,6 +360,16 @@ cv_uploaded|Fecha de subida");
                         <p style="margin:.4em 0 0;"><label><input type="checkbox" name="kvt_cv_remove" value="1"> Eliminar CV actual</label></p>
                     <?php endif; ?>
                     <p class="description">Al subir un CV, guardamos el enlace en “CV (URL)” y la fecha (DD-MM-YYYY) si está vacía.</p>
+                </td>
+            </tr>
+
+            <tr><th><label>CV leído IA</label></th>
+                <td>
+                    <?php if ($cv_txt): ?>
+                        <a href="<?php echo esc_url($cv_txt); ?>" target="_blank" rel="noopener" class="kvt-cv-link">Ver texto</a>
+                    <?php else: ?>
+                        <em>No disponible</em>
+                    <?php endif; ?>
                 </td>
             </tr>
 
@@ -398,6 +409,14 @@ cv_uploaded|Fecha de subida");
             delete_post_meta($post_id, 'kvt_cv_attachment_id');
             delete_post_meta($post_id, 'kvt_cv_url');
             delete_post_meta($post_id, 'cv_url');
+            // Remove cached text files
+            $txt_url = get_post_meta($post_id, 'kvt_cv_text_url', true);
+            if ($txt_url) {
+                $path = wp_parse_url($txt_url, PHP_URL_PATH);
+                if ($path) @unlink(ABSPATH . ltrim($path, '/'));
+            }
+            delete_post_meta($post_id, 'kvt_cv_text');
+            delete_post_meta($post_id, 'kvt_cv_text_url');
         }
 
         // Upload new CV
@@ -420,6 +439,13 @@ cv_uploaded|Fecha de subida");
                 if ($uploaded_url) {
                     update_post_meta($post_id, 'kvt_cv_url', esc_url_raw($uploaded_url));
                     update_post_meta($post_id, 'cv_url', esc_url_raw($uploaded_url)); // legacy
+                }
+                // Store plain-text version of the CV for later AI processing
+                $client_text = isset($_POST['cv_text']) ? sanitize_textarea_field(wp_unslash($_POST['cv_text'])) : '';
+                if ($client_text !== '') {
+                    update_post_meta($post_id, 'kvt_cv_text', $client_text);
+                } else {
+                    $this->save_cv_text_attachment($post_id, $attach_id);
                 }
                 $today = date_i18n('d-m-Y');
                 update_post_meta($post_id, 'kvt_cv_uploaded', $today);
@@ -857,6 +883,7 @@ cv_uploaded|Fecha de subida");
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
         .kvt-modal{position:fixed;inset:0;background:rgba(2,6,23,.5);display:flex;align-items:center;justify-content:center;z-index:9999}
         .kvt-modal-content{background:#fff;max-width:980px;width:95%;border-radius:12px;box-shadow:0 15px 40px rgba(0,0,0,.2)}
+        #kvt_modal .kvt-modal-content{width:95vw;height:90vh;max-width:95vw;max-height:95vh;resize:both;overflow:auto}
         .kvt-modal-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb}
         .kvt-modal-body{padding:12px 16px}
         .kvt-modal-close{background:none;border:none;cursor:pointer}
@@ -868,6 +895,7 @@ cv_uploaded|Fecha de subida");
         .kvt-modal-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
         .kvt-modal-controls select,.kvt-modal-controls input{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-modal-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;max-height:420px;overflow:auto}
+        #kvt_modal .kvt-modal-list{max-height:calc(90vh - 200px)}
         .kvt-card-mini{border:1px solid #e5e7eb;border-radius:10px;padding:10px}
           .kvt-card-mini h4{margin:0 0 6px}
           .kvt-mini-panel{display:none;margin-top:8px;border-top:1px dashed #e2e8f0;padding-top:8px}
@@ -883,8 +911,26 @@ cv_uploaded|Fecha de subida");
         wp_add_inline_style('kvt-style', $css);
 
         if (is_user_logged_in() && current_user_can('edit_posts')) {
+            // PDF.js and Tesseract.js for client-side text extraction
+            wp_enqueue_script(
+                'pdfjs',
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+                [],
+                '3.11.174',
+                true
+            );
+            wp_add_inline_script('pdfjs', 'window["pdfjs-dist/build/pdf"] && (window.pdfjsLib = window["pdfjs-dist/build/pdf"]);', 'after');
+
+            wp_enqueue_script(
+                'tesseract',
+                'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+                [],
+                '5.0.0',
+                true
+            );
+
             // Register a tiny empty script handle and attach our inlines to it, to avoid theme collisions
-            wp_register_script('kvt-app', '', [], null, true);
+            wp_register_script('kvt-app', '', ['pdfjs','tesseract'], null, true);
             wp_enqueue_script('kvt-app');
 
             // Inline constants BEFORE app
@@ -902,6 +948,45 @@ document.addEventListener('DOMContentLoaded', function(){
   const els = (sel, root=document)=>Array.from(root.querySelectorAll(sel));
   const esc = (s)=>String(s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m]));
   const escAttr = esc;
+
+  async function extractPdfWithPDFjs(file){
+    if (!window.pdfjsLib) return '';
+    try {
+      const buf = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+      let full = '';
+      for (let p=1; p<=pdf.numPages; p++){
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const strings = content.items.map(it=>it.str);
+        full += strings.join(' ') + '\n\n';
+      }
+      return full.trim();
+    } catch(e){ return ''; }
+  }
+
+  async function ocrPdfWithTesseract(file){
+    if (!window.Tesseract || !window.pdfjsLib) return '';
+    const buf = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    let ocrText = '';
+    for (let p=1; p<=pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const viewport = page.getViewport({ scale: 2.0 });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      const dataURL = canvas.toDataURL('image/png');
+      try {
+        const { data: { text } } = await Tesseract.recognize(dataURL, 'spa+eng', { logger: ()=>{} });
+        if (text) ocrText += text + '\n\n';
+      } catch(e){}
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+    }
+    return ocrText.trim();
+  }
 
   const board = el('#kvt_board');
   if (!board) return;
@@ -1010,6 +1095,12 @@ document.addEventListener('DOMContentLoaded', function(){
       }
     });
     if (current && Array.from(selProcess.options).some(o=>o.value===current)) selProcess.value = current;
+  }
+
+  function getClientIdForProcess(pid){
+    const map = window.KVT_PROCESS_MAP || [];
+    const item = map.find(p=>String(p.id)===String(pid));
+    return item ? String(item.client_id) : '';
   }
 
   function renderBoardSkeleton(){
@@ -1213,21 +1304,25 @@ document.addEventListener('DOMContentLoaded', function(){
     const dateInput = card.querySelectorAll('dl .kvt-input')[9];
     const btnUpload = card.querySelector('.kvt-upload-cv');
     if (!fileInput || !btnUpload) return;
-    btnUpload.addEventListener('click', ()=>{
+    btnUpload.addEventListener('click', async ()=>{
       if (!fileInput.files || !fileInput.files[0]) { alert('Selecciona un archivo.'); return; }
+      const file = fileInput.files[0];
       const fd = new FormData();
       fd.append('action','kvt_upload_cv');
       fd.append('_ajax_nonce', KVT_NONCE);
       fd.append('id', id);
-      fd.append('file', fileInput.files[0]);
-      fetch(KVT_AJAX, { method:'POST', body: fd })
-        .then(r=>r.json())
-        .then(j=>{
-          if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo subir el CV.');
-          if (urlInput) urlInput.value = j.data.url || '';
-          if (dateInput) dateInput.value = j.data.date || '';
-          alert('CV subido y guardado.');
-        });
+      fd.append('file', file);
+      if (file.type === 'application/pdf') {
+        let txt = await extractPdfWithPDFjs(file);
+        if (!txt) txt = await ocrPdfWithTesseract(file);
+        if (txt) fd.append('cv_text', txt);
+      }
+      const res = await fetch(KVT_AJAX, { method:'POST', body: fd });
+      const j = await res.json();
+      if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo subir el CV.');
+      if (urlInput) urlInput.value = j.data.url || '';
+      if (dateInput) dateInput.value = j.data.date || '';
+      alert('CV subido y guardado.');
     });
   }
 
@@ -1421,7 +1516,9 @@ document.addEventListener('DOMContentLoaded', function(){
       .then(j=>{
         if(!j.success) return alert('No se pudo cargar la lista.');
         const {items,pages} = j.data;
-        const allowAdd = selClient && selClient.value && selProcess && selProcess.value;
+        const procSel = selProcess && selProcess.value;
+        const cliSel  = selClient && selClient.value;
+        const allowAdd = !!(procSel && (cliSel || getClientIdForProcess(procSel)));
         modalList.innerHTML = items.map(it=>{
             const m = it.meta||{};
             return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
@@ -1443,7 +1540,8 @@ document.addEventListener('DOMContentLoaded', function(){
               b.addEventListener('click', ()=>{
                 const id = b.getAttribute('data-id');
                 const proc = selProcess.value;
-                const cli  = selClient.value;
+                let cli  = selClient.value;
+                if(!cli) cli = getClientIdForProcess(proc);
                 if(!proc || !cli){ alert('Seleccione cliente y proceso en el tablero.'); return; }
                 const p = new URLSearchParams();
                 p.set('action','kvt_assign_candidate');
@@ -1984,6 +2082,15 @@ JS;
             return $mimes;
         });
 
+        // Remove previous cached text if exists
+        $old_txt = get_post_meta($id, 'kvt_cv_text_url', true);
+        if ($old_txt) {
+            $path = wp_parse_url($old_txt, PHP_URL_PATH);
+            if ($path) @unlink(ABSPATH . ltrim($path, '/'));
+        }
+        delete_post_meta($id, 'kvt_cv_text');
+        delete_post_meta($id, 'kvt_cv_text_url');
+
         $attach_id = media_handle_upload('file', $id);
         if (is_wp_error($attach_id)) wp_send_json_error(['msg'=>$attach_id->get_error_message()],500);
 
@@ -1995,7 +2102,17 @@ JS;
         update_post_meta($id, 'kvt_cv_uploaded', $today);
         update_post_meta($id, 'cv_uploaded', $today);
 
-        wp_send_json_success(['url'=>$url,'date'=>$today]);
+        // Generate text version for AI processing
+        $client_text = isset($_POST['cv_text']) ? sanitize_textarea_field(wp_unslash($_POST['cv_text'])) : '';
+        $txt_url = '';
+        if ($client_text !== '') {
+            update_post_meta($id, 'kvt_cv_text', $client_text);
+        } else {
+            $this->save_cv_text_attachment($id, $attach_id);
+            $txt_url = get_post_meta($id, 'kvt_cv_text_url', true);
+        }
+
+        wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url]);
     }
 
     public function ajax_list_profiles() {
@@ -2336,30 +2453,58 @@ JS;
         }
 
         usort($items, function($a, $b){ return $b['score'] <=> $a['score']; });
-        $items = array_values(array_filter($items, function($it){ return $it['score'] >= 50; }));
-        $items = array_slice($items, 0, 5);
+        // Keep only candidates with a score of 7 or higher (scale 0-10)
+        $items = array_values(array_filter($items, function($it){ return $it['score'] >= 7; }));
 
         wp_send_json_success(['items' => $items]);
     }
 
     private function get_candidate_cv_text($post_id) {
+        // Use cached text if available (e.g. from client-side extraction)
+        $cached = get_post_meta($post_id, 'kvt_cv_text', true);
+        if (is_string($cached) && trim($cached) !== '') {
+            return $cached;
+        }
+
+        $cached_url = get_post_meta($post_id, 'kvt_cv_text_url', true);
+        if ($cached_url) {
+            $path = wp_parse_url($cached_url, PHP_URL_PATH);
+            if ($path) {
+                $full = ABSPATH . ltrim($path, '/');
+                if (file_exists($full)) {
+                    $text = $this->extract_text_from_file($full);
+                    if ($text) {
+                        update_post_meta($post_id, 'kvt_cv_text', $text);
+                        return $text;
+                    }
+                }
+            }
+        }
+
         $cv_url = $this->meta_get_compat($post_id, 'kvt_cv_url', ['cv_url']);
         if (!$cv_url) return '';
+
         $response = wp_remote_get($cv_url);
         if (is_wp_error($response)) return '';
         $body = wp_remote_retrieve_body($response);
         $file = wp_tempnam($cv_url);
         if (!$file) return '';
         file_put_contents($file, $body);
-        $type = wp_check_filetype($cv_url);
-        $ext = isset($type['ext']) ? strtolower($type['ext']) : '';
+
+        $text = $this->extract_text_from_file($file);
+        @unlink($file);
+
+        if ($text) update_post_meta($post_id, 'kvt_cv_text', $text);
+        return $text;
+    }
+
+    private function extract_text_from_file($file) {
+        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
         $text = '';
         if ($ext === 'pdf') {
             if (function_exists('shell_exec')) {
-                // First try to extract text from a textual PDF
                 $text = shell_exec('pdftotext ' . escapeshellarg($file) . ' -');
                 if (!trim($text)) {
-                    // Fallback to OCR for image-based PDFs if pdftotext produced no output
                     $img_base = $file . '-ocr';
                     @shell_exec('pdftoppm ' . escapeshellarg($file) . ' ' . escapeshellarg($img_base));
                     $i = 1;
@@ -2381,17 +2526,59 @@ JS;
                 }
             }
         } else {
-            $text = $body;
+            $text = @file_get_contents($file);
         }
-        @unlink($file);
         return wp_strip_all_tags($text);
+    }
+
+    private function save_cv_text_attachment($post_id, $attach_id) {
+        $path = get_attached_file($attach_id);
+        if (!$path) return;
+        $text = $this->extract_text_from_file($path);
+        if (!$text) return;
+        update_post_meta($post_id, 'kvt_cv_text', $text);
+
+        $info = pathinfo($path);
+        if (strtolower($info['extension'] ?? '') !== 'pdf') return;
+        // Create a .docx file with plain text for reference
+        $docx_path = $info['dirname'] . '/' . $info['filename'] . '.docx';
+        @unlink($docx_path);
+        if (class_exists('ZipArchive')) {
+            $zip = new \ZipArchive();
+            if ($zip->open($docx_path, \ZipArchive::CREATE) === true) {
+                $zip->addFromString('[Content_Types].xml',
+                    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                    .'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                    .'<Default Extension="xml" ContentType="application/xml"/>'
+                    .'<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+                    .'</Types>');
+                $zip->addFromString('_rels/.rels',
+                    '<?xml version="1.0" encoding="UTF-8"?>'
+                    .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                    .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+                    .'</Relationships>');
+                $body = '';
+                foreach (preg_split('/\r\n|\r|\n/', $text) as $line) {
+                    $body .= '<w:p><w:r><w:t>'.htmlspecialchars($line, ENT_XML1).'</w:t></w:r></w:p>';
+                }
+                $doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                    .'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+                    .$body.'</w:body></w:document>';
+                $zip->addFromString('word/document.xml', $doc);
+                $zip->close();
+
+                $upload = wp_upload_dir();
+                $docx_url = str_replace($upload['basedir'], $upload['baseurl'], $docx_path);
+                update_post_meta($post_id, 'kvt_cv_text_url', esc_url_raw($docx_url));
+            }
+        }
     }
 
     private function openai_match_summary($key, $desc, $cv_text) {
         $req = [
             'model' => 'gpt-4o-mini',
             'messages' => [
-                ['role' => 'system', 'content' => 'Eres un asistente de reclutamiento. Devuelve JSON con "score" (0-100) y "summary" (breve explicación en español).'],
+                ['role' => 'system', 'content' => 'Eres un asistente de reclutamiento. Devuelve JSON con "score" (0-10) y "summary" (breve explicación en español) indicando por qué el candidato encaja.'],
                 ['role' => 'user', 'content' => "Descripción del trabajo:\n$desc\nCV del candidato:\n$cv_text"],
             ],
             'max_tokens' => 150,
