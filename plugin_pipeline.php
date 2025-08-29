@@ -2452,6 +2452,22 @@ JS;
             return [$out,$err,$code];
         };
 
+        // Prefer OCR to handle scanned PDFs or those with unreadable text
+        if (trim(@shell_exec('which ocrmypdf')) !== '') {
+            $txt = $path . '.txt';
+            $ocr_pdf = $path . '.ocr.pdf';
+            list($o,$e,$c) = $run('ocrmypdf --force-ocr -l spa+eng --sidecar ' . escapeshellarg($txt) . ' ' . escapeshellarg($path) . ' ' . escapeshellarg($ocr_pdf) . ' 2>&1');
+            if ($c === 0 && file_exists($txt)) {
+                $content = file_get_contents($txt);
+                @unlink($txt);
+                @unlink($ocr_pdf);
+                if (trim($content) !== '') return trim($content);
+            }
+            @unlink($txt);
+            @unlink($ocr_pdf);
+        }
+
+        // Fallback to simple text extraction if OCR is unavailable
         if (trim(@shell_exec('which pdftotext')) !== '') {
             list($o,$e,$c) = $run('pdftotext -enc UTF-8 -eol unix ' . escapeshellarg($path) . ' -');
             if ($c === 0 && trim($o) !== '') return trim($o);
@@ -2462,24 +2478,6 @@ JS;
         if (trim(@shell_exec('which mutool')) !== '') {
             list($o3,$e3,$c3) = $run('mutool draw -F txt -o - ' . escapeshellarg($path));
             if ($c3 === 0 && trim($o3) !== '') return trim($o3);
-        }
-
-        if (trim(@shell_exec('which ocrmypdf')) !== '') {
-            $tmp_ocr = $path . '.ocr.pdf';
-            list($o4,$e4,$c4) = $run('ocrmypdf --skip-text -l spa+eng ' . escapeshellarg($path) . ' ' . escapeshellarg($tmp_ocr) . ' 2>&1');
-            if ($c4 === 0 && file_exists($tmp_ocr)) {
-                if (trim(@shell_exec('which pdftotext')) !== '') {
-                    list($o5,$e5,$c5) = $run('pdftotext -enc UTF-8 -eol unix ' . escapeshellarg($tmp_ocr) . ' -');
-                    @unlink($tmp_ocr);
-                    if ($c5 === 0 && trim($o5) !== '') return trim($o5);
-                }
-                if (trim(@shell_exec('which mutool')) !== '') {
-                    list($o6,$e6,$c6) = $run('mutool draw -F txt -o - ' . escapeshellarg($tmp_ocr));
-                    @unlink($tmp_ocr);
-                    if ($c6 === 0 && trim($o6) !== '') return trim($o6);
-                }
-                @unlink($tmp_ocr);
-            }
         }
 
         return '';
