@@ -203,7 +203,13 @@ class Kovacic_CV_Feedback_ES {
             '3.11.174',
             true
         );
-        wp_add_inline_script('pdfjs', 'window["pdfjs-dist/build/pdf"] && (window.pdfjsLib = window["pdfjs-dist/build/pdf"]);', 'after');
+        wp_add_inline_script(
+            'pdfjs',
+            'window.pdfjsLib = window["pdfjs-dist/build/pdf"] || window.pdfjsLib;' .
+            'if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc=' .
+            '"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}',
+            'after'
+        );
 
         wp_enqueue_script(
             'tesseract',
@@ -330,8 +336,8 @@ JS;
         }
 
         wp_register_script('kcvf-es-form', '', ['pdfjs','tesseract'], null, true);
+        wp_add_inline_script('kcvf-es-form', $inline, 'after');
         wp_enqueue_script('kcvf-es-form');
-        wp_add_inline_script('kcvf-es-form', $inline);
     }
 
     public function shortcode() {
