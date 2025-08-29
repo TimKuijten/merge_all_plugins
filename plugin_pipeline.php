@@ -335,7 +335,7 @@ cv_uploaded|Fecha de subida");
         $cv_date_raw = $this->meta_get_compat($post->ID, 'kvt_cv_uploaded', ['cv_uploaded']);
         $cv_date = $this->fmt_date_ddmmyyyy($cv_date_raw);
         $cv_att  = $this->meta_get_compat($post->ID, 'kvt_cv_attachment_id', ['cv_attachment_id']);
-        $cv_txt  = get_post_meta($post->ID, 'kvt_cv_text_url', true);
+        $cv_txt  = $this->meta_get_compat($post->ID, 'kvt_cv_text_url', ['cv_text_url']);
         $notes   = $this->meta_get_compat($post->ID, 'kvt_notes',       ['notes']);
         ?>
         <table class="form-table">
@@ -417,6 +417,8 @@ cv_uploaded|Fecha de subida");
             }
             delete_post_meta($post_id, 'kvt_cv_text');
             delete_post_meta($post_id, 'kvt_cv_text_url');
+            delete_post_meta($post_id, 'cv_text');
+            delete_post_meta($post_id, 'cv_text_url');
         }
 
         // Upload new CV
@@ -1894,6 +1896,7 @@ JS;
                 'city'        => $this->meta_get_compat($p->ID,'kvt_city',['city']),
                 'cv_url'      => $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']),
                 'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
+                'cv_text'     => $this->meta_get_compat($p->ID,'kvt_cv_text',['cv_text']),
                 'notes'       => $notes_raw,
                 'notes_count' => $this->count_notes($notes_raw),
                 'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
@@ -2013,6 +2016,8 @@ JS;
         }
         delete_post_meta($id, 'kvt_cv_text');
         delete_post_meta($id, 'kvt_cv_text_url');
+        delete_post_meta($id, 'cv_text');
+        delete_post_meta($id, 'cv_text_url');
 
         $attach_id = media_handle_upload('file', $id);
         if (is_wp_error($attach_id)) wp_send_json_error(['msg'=>$attach_id->get_error_message()],500);
@@ -2028,8 +2033,9 @@ JS;
         // Generate text version for AI processing
         $this->save_cv_text_attachment($id, $attach_id);
         $txt_url = get_post_meta($id, 'kvt_cv_text_url', true);
+        $txt     = get_post_meta($id, 'kvt_cv_text', true);
 
-        wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url]);
+        wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url,'text'=>$txt]);
     }
 
     public function ajax_list_profiles() {
@@ -2105,6 +2111,7 @@ JS;
                     'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
                     'cv_url'      => $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']),
                     'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
+                    'cv_text'     => $this->meta_get_compat($p->ID,'kvt_cv_text',['cv_text']),
                     'notes'       => $notes_raw,
                     'notes_count' => $this->count_notes($notes_raw),
                 ],
@@ -2358,6 +2365,7 @@ JS;
                     'city'        => $this->meta_get_compat($c->ID,'kvt_city',['city']),
                     'cv_url'      => $this->meta_get_compat($c->ID,'kvt_cv_url',['cv_url']),
                     'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($c->ID,'kvt_cv_uploaded',['cv_uploaded'])),
+                    'cv_text'     => $this->meta_get_compat($c->ID,'kvt_cv_text',['cv_text']),
                     'tags'        => $this->meta_get_compat($c->ID,'kvt_tags',['tags']),
                 ];
                 $items[] = [
@@ -2378,10 +2386,10 @@ JS;
 
     private function get_candidate_cv_text($post_id) {
         // Use cached text if available
-        $cached = get_post_meta($post_id, 'kvt_cv_text', true);
+        $cached = $this->meta_get_compat($post_id, 'kvt_cv_text', ['cv_text']);
         if ($cached) return $cached;
 
-        $cached_url = get_post_meta($post_id, 'kvt_cv_text_url', true);
+        $cached_url = $this->meta_get_compat($post_id, 'kvt_cv_text_url', ['cv_text_url']);
         if ($cached_url) {
             $path = wp_parse_url($cached_url, PHP_URL_PATH);
             if ($path) {
@@ -2390,6 +2398,7 @@ JS;
                     $text = $this->extract_text_from_file($full);
                     if ($text) {
                         update_post_meta($post_id, 'kvt_cv_text', $text);
+                        update_post_meta($post_id, 'cv_text', $text);
                         return $text;
                     }
                 }
@@ -2416,7 +2425,10 @@ JS;
         $text = $this->extract_text_from_file($file);
         @unlink($file);
 
-        if ($text) update_post_meta($post_id, 'kvt_cv_text', $text);
+        if ($text) {
+            update_post_meta($post_id, 'kvt_cv_text', $text);
+            update_post_meta($post_id, 'cv_text', $text);
+        }
         return $text;
     }
 
@@ -2493,6 +2505,7 @@ JS;
         $text = $this->extract_text_from_file($path);
         if (!$text) return;
         update_post_meta($post_id, 'kvt_cv_text', $text);
+        update_post_meta($post_id, 'cv_text', $text);
 
         $info = pathinfo($path);
         if (strtolower($info['extension'] ?? '') !== 'pdf') return;
@@ -2526,6 +2539,7 @@ JS;
                 $upload = wp_upload_dir();
                 $docx_url = str_replace($upload['basedir'], $upload['baseurl'], $docx_path);
                 update_post_meta($post_id, 'kvt_cv_text_url', esc_url_raw($docx_url));
+                update_post_meta($post_id, 'cv_text_url', esc_url_raw($docx_url));
             }
         }
     }
