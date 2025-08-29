@@ -554,7 +554,12 @@ JS;
 
                         if ($ext === 'pdf') {
                             // 0) ¿Vino texto extraído/OCR por el cliente?
-                            $client_text = isset($_POST['cv_text']) ? sanitize_textarea_field(wp_unslash($_POST['cv_text'])) : '';
+                            $client_text = '';
+                            if ( isset( $_POST['kcvf_pdf_text'] ) ) {
+                                $client_text = wp_kses_post( wp_unslash( $_POST['kcvf_pdf_text'] ) );
+                            } elseif ( isset( $_POST['cv_text'] ) ) {
+                                $client_text = wp_kses_post( wp_unslash( $_POST['cv_text'] ) );
+                            }
                             if ($client_text !== '') {
                                 $file_text = $client_text;
                                 $extract_method = 'client-pdfjs/tesseract';
