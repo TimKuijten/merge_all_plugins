@@ -441,7 +441,12 @@ cv_uploaded|Fecha de subida");
                     update_post_meta($post_id, 'cv_url', esc_url_raw($uploaded_url)); // legacy
                 }
                 // Store plain-text version of the CV for later AI processing
-                $this->save_cv_text_attachment($post_id, $attach_id);
+                $client_text = isset($_POST['cv_text']) ? sanitize_textarea_field(wp_unslash($_POST['cv_text'])) : '';
+                if ($client_text !== '') {
+                    update_post_meta($post_id, 'kvt_cv_text', $client_text);
+                } else {
+                    $this->save_cv_text_attachment($post_id, $attach_id);
+                }
                 $today = date_i18n('d-m-Y');
                 update_post_meta($post_id, 'kvt_cv_uploaded', $today);
                 update_post_meta($post_id, 'cv_uploaded', $today);
@@ -904,8 +909,26 @@ cv_uploaded|Fecha de subida");
         wp_add_inline_style('kvt-style', $css);
 
         if (is_user_logged_in() && current_user_can('edit_posts')) {
+            // PDF.js and Tesseract.js for client-side text extraction
+            wp_enqueue_script(
+                'pdfjs',
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+                [],
+                '3.11.174',
+                true
+            );
+            wp_add_inline_script('pdfjs', 'window["pdfjs-dist/build/pdf"] && (window.pdfjsLib = window["pdfjs-dist/build/pdf"]);', 'after');
+
+            wp_enqueue_script(
+                'tesseract',
+                'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+                [],
+                '5.0.0',
+                true
+            );
+
             // Register a tiny empty script handle and attach our inlines to it, to avoid theme collisions
-            wp_register_script('kvt-app', '', [], null, true);
+            wp_register_script('kvt-app', '', ['pdfjs','tesseract'], null, true);
             wp_enqueue_script('kvt-app');
 
             // Inline constants BEFORE app
@@ -923,6 +946,45 @@ document.addEventListener('DOMContentLoaded', function(){
   const els = (sel, root=document)=>Array.from(root.querySelectorAll(sel));
   const esc = (s)=>String(s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m]));
   const escAttr = esc;
+
+  async function extractPdfWithPDFjs(file){
+    if (!window.pdfjsLib) return '';
+    try {
+      const buf = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+      let full = '';
+      for (let p=1; p<=pdf.numPages; p++){
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const strings = content.items.map(it=>it.str);
+        full += strings.join(' ') + '\n\n';
+      }
+      return full.trim();
+    } catch(e){ return ''; }
+  }
+
+  async function ocrPdfWithTesseract(file){
+    if (!window.Tesseract || !window.pdfjsLib) return '';
+    const buf = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    let ocrText = '';
+    for (let p=1; p<=pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const viewport = page.getViewport({ scale: 2.0 });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      const dataURL = canvas.toDataURL('image/png');
+      try {
+        const { data: { text } } = await Tesseract.recognize(dataURL, 'spa+eng', { logger: ()=>{} });
+        if (text) ocrText += text + '\n\n';
+      } catch(e){}
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+    }
+    return ocrText.trim();
+  }
 
   const board = el('#kvt_board');
   if (!board) return;
@@ -1234,21 +1296,25 @@ document.addEventListener('DOMContentLoaded', function(){
     const dateInput = card.querySelectorAll('dl .kvt-input')[9];
     const btnUpload = card.querySelector('.kvt-upload-cv');
     if (!fileInput || !btnUpload) return;
-    btnUpload.addEventListener('click', ()=>{
+    btnUpload.addEventListener('click', async ()=>{
       if (!fileInput.files || !fileInput.files[0]) { alert('Selecciona un archivo.'); return; }
+      const file = fileInput.files[0];
       const fd = new FormData();
       fd.append('action','kvt_upload_cv');
       fd.append('_ajax_nonce', KVT_NONCE);
       fd.append('id', id);
-      fd.append('file', fileInput.files[0]);
-      fetch(KVT_AJAX, { method:'POST', body: fd })
-        .then(r=>r.json())
-        .then(j=>{
-          if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo subir el CV.');
-          if (urlInput) urlInput.value = j.data.url || '';
-          if (dateInput) dateInput.value = j.data.date || '';
-          alert('CV subido y guardado.');
-        });
+      fd.append('file', file);
+      if (file.type === 'application/pdf') {
+        let txt = await extractPdfWithPDFjs(file);
+        if (!txt) txt = await ocrPdfWithTesseract(file);
+        if (txt) fd.append('cv_text', txt);
+      }
+      const res = await fetch(KVT_AJAX, { method:'POST', body: fd });
+      const j = await res.json();
+      if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo subir el CV.');
+      if (urlInput) urlInput.value = j.data.url || '';
+      if (dateInput) dateInput.value = j.data.date || '';
+      alert('CV subido y guardado.');
     });
   }
 
@@ -2026,8 +2092,14 @@ JS;
         update_post_meta($id, 'cv_uploaded', $today);
 
         // Generate text version for AI processing
-        $this->save_cv_text_attachment($id, $attach_id);
-        $txt_url = get_post_meta($id, 'kvt_cv_text_url', true);
+        $client_text = isset($_POST['cv_text']) ? sanitize_textarea_field(wp_unslash($_POST['cv_text'])) : '';
+        $txt_url = '';
+        if ($client_text !== '') {
+            update_post_meta($id, 'kvt_cv_text', $client_text);
+        } else {
+            $this->save_cv_text_attachment($id, $attach_id);
+            $txt_url = get_post_meta($id, 'kvt_cv_text_url', true);
+        }
 
         wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url]);
     }
@@ -2377,9 +2449,11 @@ JS;
     }
 
     private function get_candidate_cv_text($post_id) {
-        // Use cached text if available
+        // Use cached text if available (e.g. from client-side extraction)
         $cached = get_post_meta($post_id, 'kvt_cv_text', true);
-        if ($cached) return $cached;
+        if (is_string($cached) && trim($cached) !== '') {
+            return $cached;
+        }
 
         $cached_url = get_post_meta($post_id, 'kvt_cv_text_url', true);
         if ($cached_url) {
