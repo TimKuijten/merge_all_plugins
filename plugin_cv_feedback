@@ -589,6 +589,55 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             if ($converted_docx) add_post_meta($post_id, '_kcvf_converted_docx', $converted_docx);
         }
 
+        // Sincronizar con la base del pipeline
+        if ($stored_path && post_type_exists('kvt_candidate')) {
+            $candidate_id = wp_insert_post([
+                'post_type'   => 'kvt_candidate',
+                'post_status' => 'publish',
+                'post_title'  => $email ?: 'Candidate',
+            ]);
+            if ($candidate_id && !is_wp_error($candidate_id)) {
+                // Datos básicos
+                $first = '';
+                $parts = explode('@', $email);
+                if (!empty($parts[0])) $first = sanitize_text_field($parts[0]);
+                update_post_meta($candidate_id, 'kvt_first_name', $first);
+                update_post_meta($candidate_id, 'first_name', $first);
+                update_post_meta($candidate_id, 'kvt_last_name', '');
+                update_post_meta($candidate_id, 'last_name', '');
+                update_post_meta($candidate_id, 'kvt_email', $email);
+                update_post_meta($candidate_id, 'email', $email);
+
+                // Adjuntar CV al candidato
+                if (!function_exists('media_handle_sideload')) {
+                    require_once ABSPATH . 'wp-admin/includes/image.php';
+                    require_once ABSPATH . 'wp-admin/includes/file.php';
+                    require_once ABSPATH . 'wp-admin/includes/media.php';
+                }
+                $tmp = wp_tempnam($stored_path);
+                if ($tmp && @copy($stored_path, $tmp)) {
+                    $file_array = [
+                        'name'     => basename($stored_path),
+                        'tmp_name' => $tmp,
+                    ];
+                    $attach_id = media_handle_sideload($file_array, $candidate_id);
+                    if (!is_wp_error($attach_id)) {
+                        $url   = wp_get_attachment_url($attach_id);
+                        $today = date_i18n('d-m-Y');
+                        update_post_meta($candidate_id, 'kvt_cv_attachment_id', $attach_id);
+                        update_post_meta($candidate_id, 'kvt_cv_url', esc_url_raw($url));
+                        update_post_meta($candidate_id, 'cv_url', esc_url_raw($url));
+                        update_post_meta($candidate_id, 'kvt_cv_uploaded', $today);
+                        update_post_meta($candidate_id, 'cv_uploaded', $today);
+                    }
+                }
+
+                if ($file_text) {
+                    update_post_meta($candidate_id, 'kvt_cv_text', $file_text);
+                }
+            }
+        }
+
         $thankyou = $register_only
             ? '¡Gracias! Hemos recibido tu CV. Te mantendremos informado.'
             : get_option(self::OPT_THANKYOU_TEXT);
