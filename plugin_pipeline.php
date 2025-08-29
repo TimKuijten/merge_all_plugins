@@ -2417,20 +2417,7 @@ JS;
         $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
         $text = '';
         if ($ext === 'pdf') {
-            if (function_exists('shell_exec')) {
-                $text = shell_exec('pdftotext ' . escapeshellarg($file) . ' -');
-                if (!trim($text)) {
-                    $img_base = $file . '-ocr';
-                    @shell_exec('pdftoppm ' . escapeshellarg($file) . ' ' . escapeshellarg($img_base));
-                    $i = 1;
-                    while (file_exists($img_base . '-' . $i . '.ppm')) {
-                        $ocr = shell_exec('tesseract ' . escapeshellarg($img_base . '-' . $i . '.ppm') . ' stdout');
-                        if ($ocr) $text .= $ocr . "\n";
-                        @unlink($img_base . '-' . $i . '.ppm');
-                        $i++;
-                    }
-                }
-            }
+            $text = $this->extract_pdf_text($file);
         } elseif ($ext === 'docx') {
             if (class_exists('ZipArchive')) {
                 $zip = new \ZipArchive();
@@ -2444,6 +2431,51 @@ JS;
             $text = @file_get_contents($file);
         }
         return wp_strip_all_tags($text);
+    }
+
+    private function extract_pdf_text($path) {
+        $run = function($cmd) {
+            $desc = [1 => ['pipe','w'], 2 => ['pipe','w']];
+            $p = proc_open($cmd, $desc, $pipes);
+            if (!is_resource($p)) return ['', 'proc_open failed', 1];
+            $out = stream_get_contents($pipes[1]);
+            $err = stream_get_contents($pipes[2]);
+            foreach ($pipes as $pp) { if (is_resource($pp)) fclose($pp); }
+            $code = proc_close($p);
+            return [$out,$err,$code];
+        };
+
+        if (trim(@shell_exec('which pdftotext')) !== '') {
+            list($o,$e,$c) = $run('pdftotext -enc UTF-8 -eol unix ' . escapeshellarg($path) . ' -');
+            if ($c === 0 && trim($o) !== '') return trim($o);
+            list($o2,$e2,$c2) = $run('pdftotext -layout -enc UTF-8 -eol unix ' . escapeshellarg($path) . ' -');
+            if ($c2 === 0 && trim($o2) !== '') return trim($o2);
+        }
+
+        if (trim(@shell_exec('which mutool')) !== '') {
+            list($o3,$e3,$c3) = $run('mutool draw -F txt -o - ' . escapeshellarg($path));
+            if ($c3 === 0 && trim($o3) !== '') return trim($o3);
+        }
+
+        if (trim(@shell_exec('which ocrmypdf')) !== '') {
+            $tmp_ocr = $path . '.ocr.pdf';
+            list($o4,$e4,$c4) = $run('ocrmypdf --skip-text -l spa+eng ' . escapeshellarg($path) . ' ' . escapeshellarg($tmp_ocr) . ' 2>&1');
+            if ($c4 === 0 && file_exists($tmp_ocr)) {
+                if (trim(@shell_exec('which pdftotext')) !== '') {
+                    list($o5,$e5,$c5) = $run('pdftotext -enc UTF-8 -eol unix ' . escapeshellarg($tmp_ocr) . ' -');
+                    @unlink($tmp_ocr);
+                    if ($c5 === 0 && trim($o5) !== '') return trim($o5);
+                }
+                if (trim(@shell_exec('which mutool')) !== '') {
+                    list($o6,$e6,$c6) = $run('mutool draw -F txt -o - ' . escapeshellarg($tmp_ocr));
+                    @unlink($tmp_ocr);
+                    if ($c6 === 0 && trim($o6) !== '') return trim($o6);
+                }
+                @unlink($tmp_ocr);
+            }
+        }
+
+        return '';
     }
 
     private function save_cv_text_attachment($post_id, $attach_id) {
