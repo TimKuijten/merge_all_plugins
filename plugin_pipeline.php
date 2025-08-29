@@ -2406,6 +2406,13 @@ JS;
         if (!$file) return '';
         file_put_contents($file, $body);
 
+        $ext = strtolower(pathinfo(wp_parse_url($cv_url, PHP_URL_PATH) ?? '', PATHINFO_EXTENSION));
+        if ($ext) {
+            $new = $file . '.' . $ext;
+            @rename($file, $new);
+            $file = $new;
+        }
+
         $text = $this->extract_text_from_file($file);
         @unlink($file);
 
