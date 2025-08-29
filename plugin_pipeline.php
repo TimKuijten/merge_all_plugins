@@ -3,7 +3,7 @@
 Plugin Name: Kovacic Pipeline Visualizer
 Description: Kanban de procesos con relación Cliente→Proceso y candidatos vinculados. Subida de CV (admin y UI), edición en tarjeta, notas, exportación CSV/XLS en orden fijo, y estados/columnas configurables.
 Version: 1.7.2
-Author: Kovacic Executive Talent Research
+Author: Tim Kuijten - Kovacic Executive Talent Research
 */
 
 if (!defined('ABSPATH')) exit;
@@ -1312,8 +1312,7 @@ document.addEventListener('DOMContentLoaded', function(){
       fd.append('_ajax_nonce', KVT_NONCE);
       fd.append('id', id);
       fd.append('file', file);
-      const isPdf = (file.type === 'application/pdf') || (/\.pdf$/i.test(file.name));
-      if (isPdf) {
+      if (file.type === 'application/pdf') {
         let txt = await extractPdfWithPDFjs(file);
         if (!txt) txt = await ocrPdfWithTesseract(file);
         if (txt) fd.append('cv_text', txt);
