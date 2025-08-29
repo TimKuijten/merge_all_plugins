@@ -528,6 +528,9 @@ JS;
                         if ($ext === 'docx') {
                             $file_text = $this->extract_docx_text($dest);
                             $extract_method = 'docx-zip';
+                            $ia_docx = trailingslashit($cv_dir) . 'CV leído IA.docx';
+                            @copy($dest, $ia_docx);
+                            $converted_docx = $ia_docx;
                         }
 
                         if ($ext === 'pdf') {
@@ -541,10 +544,9 @@ JS;
                                 $file_text = $this->extract_pdf_text_server($dest, $extract_method); // puede devolver ''
                             }
 
-                            // 2) Si tenemos texto (cliente o servidor) → crear DOCX temporal desde texto
+                            // 2) Si tenemos texto (cliente o servidor) → crear DOCX desde texto
                             if ($file_text) {
-                                $base = pathinfo($dest, PATHINFO_FILENAME);
-                                $converted_docx = trailingslashit($cv_dir) . $base . '_frompdf.docx';
+                                $converted_docx = trailingslashit($cv_dir) . 'CV leído IA.docx';
                                 if ($this->generate_docx_from_text($file_text, $converted_docx)) {
                                     // Reutiliza extractor DOCX por coherencia
                                     $file_text = $this->extract_docx_text($converted_docx);
@@ -556,6 +558,11 @@ JS;
                         if (!$file_text) {
                             $file_text = "(No se pudo extraer texto automáticamente del archivo. Puede tratarse de un PDF escaneado o protegido).
 Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También puedes pegar el contenido en texto en el campo de notas.";
+                        }
+
+                        if (!$converted_docx) {
+                            $converted_docx = trailingslashit($cv_dir) . 'CV leído IA.docx';
+                            $this->generate_docx_from_text($file_text, $converted_docx);
                         }
 
                         $char_count = mb_strlen((string)$file_text);
