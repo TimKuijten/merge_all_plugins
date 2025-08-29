@@ -335,7 +335,7 @@ cv_uploaded|Fecha de subida");
         $cv_date_raw = $this->meta_get_compat($post->ID, 'kvt_cv_uploaded', ['cv_uploaded']);
         $cv_date = $this->fmt_date_ddmmyyyy($cv_date_raw);
         $cv_att  = $this->meta_get_compat($post->ID, 'kvt_cv_attachment_id', ['cv_attachment_id']);
-        $cv_txt  = $this->meta_get_compat($post->ID, 'kvt_cv_text_url', ['cv_text_url']);
+        $cv_txt  = $this->meta_get_compat($post->ID, 'kvt_cv_text', ['cv_text']);
         $notes   = $this->meta_get_compat($post->ID, 'kvt_notes',       ['notes']);
         ?>
         <table class="form-table">
@@ -363,13 +363,9 @@ cv_uploaded|Fecha de subida");
                 </td>
             </tr>
 
-            <tr><th><label>CV leído IA</label></th>
+            <tr><th><label>CV Text</label></th>
                 <td>
-                    <?php if ($cv_txt): ?>
-                        <a href="<?php echo esc_url($cv_txt); ?>" target="_blank" rel="noopener" class="kvt-cv-link">Ver texto</a>
-                    <?php else: ?>
-                        <em>No disponible</em>
-                    <?php endif; ?>
+                    <textarea name="kvt_cv_text" rows="6" class="large-text" placeholder="Texto extraído del CV"><?php echo esc_textarea($cv_txt); ?></textarea>
                 </td>
             </tr>
 
@@ -463,6 +459,7 @@ cv_uploaded|Fecha de subida");
             'kvt_city'       => ['city'],
             'kvt_cv_url'     => ['cv_url'],
             'kvt_cv_uploaded'=> ['cv_uploaded'],
+            'kvt_cv_text'    => ['cv_text'],
             'kvt_status'     => [],
             'kvt_notes'      => ['notes'],
         ];
@@ -471,7 +468,8 @@ cv_uploaded|Fecha de subida");
             if ($k === 'kvt_cv_uploaded' && $uploaded_dt) continue;
             if (isset($_POST[$k])) {
                 $val = ($k==='kvt_notes') ? wp_kses_post($_POST[$k])
-                      : (($k==='kvt_email') ? sanitize_email($_POST[$k]) : sanitize_text_field($_POST[$k]));
+                      : (($k==='kvt_email') ? sanitize_email($_POST[$k])
+                      : ($k==='kvt_cv_text' ? sanitize_textarea_field($_POST[$k]) : sanitize_text_field($_POST[$k])));
                 if ($k === 'kvt_cv_uploaded') $val = $this->fmt_date_ddmmyyyy($val);
                 update_post_meta($post_id, $k, $val);
                 foreach ($fallbacks as $fb) update_post_meta($post_id, $fb, $val);
@@ -1153,6 +1151,7 @@ document.addEventListener('DOMContentLoaded', function(){
       kvInp('CV (URL)',     input((m.cv_url||''), 'url', 'https://...')) +
       kvInp('Subir CV',     '<input class=\"kvt-input kvt-cv-file\" type=\"file\" accept=\".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document\">'+
                             '<button type=\"button\" class=\"kvt-upload-cv\" style=\"margin-top:6px\">Subir y guardar</button>') +
+      kvInp('CV Text',       '<textarea class=\"kvt-input kvt-cv-text\">'+esc(m.cv_text||'')+'</textarea>') +
       kvInp('Fecha subida', input((m.cv_uploaded||''), 'text', 'DD-MM-YYYY'));
 
     const notesVal = m.notes || '';
@@ -1202,7 +1201,8 @@ document.addEventListener('DOMContentLoaded', function(){
         city:       vals[5] || '',
         tags:       vals[6] || '',
         cv_url:     vals[7] || '',
-        cv_uploaded:vals[9] || '',
+        cv_text:    vals[9] || '',
+        cv_uploaded:vals[10] || '',
         notes:      txtNotes ? txtNotes.value : '',
       };
       fetch(KVT_AJAX, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:new URLSearchParams({action:'kvt_update_profile', _ajax_nonce:KVT_NONCE, id, ...payload}).toString()})
@@ -1233,7 +1233,8 @@ document.addEventListener('DOMContentLoaded', function(){
   function enableCvUploadHandlers(card, id){
     const fileInput = card.querySelector('.kvt-cv-file');
     const urlInput  = card.querySelector('dl .kvt-input[type="url"]');
-    const dateInput = card.querySelectorAll('dl .kvt-input')[9];
+    const dateInput = card.querySelectorAll('dl .kvt-input')[10];
+    const cvTextInput = card.querySelector('.kvt-cv-text');
     const btnUpload = card.querySelector('.kvt-upload-cv');
     if (!fileInput || !btnUpload) return;
     btnUpload.addEventListener('click', ()=>{
@@ -1249,6 +1250,7 @@ document.addEventListener('DOMContentLoaded', function(){
           if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo subir el CV.');
           if (urlInput) urlInput.value = j.data.url || '';
           if (dateInput) dateInput.value = j.data.date || '';
+          if (cvTextInput) cvTextInput.value = j.data.text || '';
           alert('CV subido y guardado.');
         });
     });
@@ -1969,6 +1971,7 @@ JS;
             'kvt_tags'       => isset($_POST['tags'])       ? sanitize_text_field($_POST['tags'])       : '',
             'kvt_cv_url'     => isset($_POST['cv_url'])     ? esc_url_raw($_POST['cv_url'])             : '',
             'kvt_cv_uploaded'=> isset($_POST['cv_uploaded'])? sanitize_text_field($_POST['cv_uploaded']): '',
+            'kvt_cv_text'    => isset($_POST['cv_text'])    ? sanitize_textarea_field($_POST['cv_text']) : '',
             'kvt_notes'      => isset($_POST['notes'])      ? wp_kses_post($_POST['notes'])             : '',
         ];
         if ($fields['kvt_cv_uploaded']) $fields['kvt_cv_uploaded'] = $this->fmt_date_ddmmyyyy($fields['kvt_cv_uploaded']);
