@@ -335,6 +335,7 @@ cv_uploaded|Fecha de subida");
         $cv_date_raw = $this->meta_get_compat($post->ID, 'kvt_cv_uploaded', ['cv_uploaded']);
         $cv_date = $this->fmt_date_ddmmyyyy($cv_date_raw);
         $cv_att  = $this->meta_get_compat($post->ID, 'kvt_cv_attachment_id', ['cv_attachment_id']);
+        $cv_txt  = get_post_meta($post->ID, 'kvt_cv_text_url', true);
         $notes   = $this->meta_get_compat($post->ID, 'kvt_notes',       ['notes']);
         ?>
         <table class="form-table">
@@ -359,6 +360,16 @@ cv_uploaded|Fecha de subida");
                         <p style="margin:.4em 0 0;"><label><input type="checkbox" name="kvt_cv_remove" value="1"> Eliminar CV actual</label></p>
                     <?php endif; ?>
                     <p class="description">Al subir un CV, guardamos el enlace en “CV (URL)” y la fecha (DD-MM-YYYY) si está vacía.</p>
+                </td>
+            </tr>
+
+            <tr><th><label>CV leído IA</label></th>
+                <td>
+                    <?php if ($cv_txt): ?>
+                        <a href="<?php echo esc_url($cv_txt); ?>" target="_blank" rel="noopener" class="kvt-cv-link">Ver texto</a>
+                    <?php else: ?>
+                        <em>No disponible</em>
+                    <?php endif; ?>
                 </td>
             </tr>
 
@@ -1994,6 +2005,15 @@ JS;
             return $mimes;
         });
 
+        // Remove previous cached text if exists
+        $old_txt = get_post_meta($id, 'kvt_cv_text_url', true);
+        if ($old_txt) {
+            $path = wp_parse_url($old_txt, PHP_URL_PATH);
+            if ($path) @unlink(ABSPATH . ltrim($path, '/'));
+        }
+        delete_post_meta($id, 'kvt_cv_text');
+        delete_post_meta($id, 'kvt_cv_text_url');
+
         $attach_id = media_handle_upload('file', $id);
         if (is_wp_error($attach_id)) wp_send_json_error(['msg'=>$attach_id->get_error_message()],500);
 
@@ -2005,7 +2025,11 @@ JS;
         update_post_meta($id, 'kvt_cv_uploaded', $today);
         update_post_meta($id, 'cv_uploaded', $today);
 
-        wp_send_json_success(['url'=>$url,'date'=>$today]);
+        // Generate text version for AI processing
+        $this->save_cv_text_attachment($id, $attach_id);
+        $txt_url = get_post_meta($id, 'kvt_cv_text_url', true);
+
+        wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url]);
     }
 
     public function ajax_list_profiles() {
@@ -2356,6 +2380,21 @@ JS;
         // Use cached text if available
         $cached = get_post_meta($post_id, 'kvt_cv_text', true);
         if ($cached) return $cached;
+
+        $cached_url = get_post_meta($post_id, 'kvt_cv_text_url', true);
+        if ($cached_url) {
+            $path = wp_parse_url($cached_url, PHP_URL_PATH);
+            if ($path) {
+                $full = ABSPATH . ltrim($path, '/');
+                if (file_exists($full)) {
+                    $text = file_get_contents($full);
+                    if ($text) {
+                        update_post_meta($post_id, 'kvt_cv_text', $text);
+                        return $text;
+                    }
+                }
+            }
+        }
 
         $cv_url = $this->meta_get_compat($post_id, 'kvt_cv_url', ['cv_url']);
         if (!$cv_url) return '';
