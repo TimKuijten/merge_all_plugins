@@ -398,6 +398,14 @@ cv_uploaded|Fecha de subida");
             delete_post_meta($post_id, 'kvt_cv_attachment_id');
             delete_post_meta($post_id, 'kvt_cv_url');
             delete_post_meta($post_id, 'cv_url');
+            // Remove cached text files
+            $txt_url = get_post_meta($post_id, 'kvt_cv_text_url', true);
+            if ($txt_url) {
+                $path = wp_parse_url($txt_url, PHP_URL_PATH);
+                if ($path) @unlink(ABSPATH . ltrim($path, '/'));
+            }
+            delete_post_meta($post_id, 'kvt_cv_text');
+            delete_post_meta($post_id, 'kvt_cv_text_url');
         }
 
         // Upload new CV
@@ -421,6 +429,8 @@ cv_uploaded|Fecha de subida");
                     update_post_meta($post_id, 'kvt_cv_url', esc_url_raw($uploaded_url));
                     update_post_meta($post_id, 'cv_url', esc_url_raw($uploaded_url)); // legacy
                 }
+                // Store plain-text version of the CV for later AI processing
+                $this->save_cv_text_attachment($post_id, $attach_id);
                 $today = date_i18n('d-m-Y');
                 update_post_meta($post_id, 'kvt_cv_uploaded', $today);
                 update_post_meta($post_id, 'cv_uploaded', $today);
@@ -2336,30 +2346,41 @@ JS;
         }
 
         usort($items, function($a, $b){ return $b['score'] <=> $a['score']; });
-        $items = array_values(array_filter($items, function($it){ return $it['score'] >= 50; }));
-        $items = array_slice($items, 0, 5);
+        // Keep only candidates with a score of 7 or higher (scale 0-10)
+        $items = array_values(array_filter($items, function($it){ return $it['score'] >= 7; }));
 
         wp_send_json_success(['items' => $items]);
     }
 
     private function get_candidate_cv_text($post_id) {
+        // Use cached text if available
+        $cached = get_post_meta($post_id, 'kvt_cv_text', true);
+        if ($cached) return $cached;
+
         $cv_url = $this->meta_get_compat($post_id, 'kvt_cv_url', ['cv_url']);
         if (!$cv_url) return '';
+
         $response = wp_remote_get($cv_url);
         if (is_wp_error($response)) return '';
         $body = wp_remote_retrieve_body($response);
         $file = wp_tempnam($cv_url);
         if (!$file) return '';
         file_put_contents($file, $body);
-        $type = wp_check_filetype($cv_url);
-        $ext = isset($type['ext']) ? strtolower($type['ext']) : '';
+
+        $text = $this->extract_text_from_file($file);
+        @unlink($file);
+
+        if ($text) update_post_meta($post_id, 'kvt_cv_text', $text);
+        return $text;
+    }
+
+    private function extract_text_from_file($file) {
+        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
         $text = '';
         if ($ext === 'pdf') {
             if (function_exists('shell_exec')) {
-                // First try to extract text from a textual PDF
                 $text = shell_exec('pdftotext ' . escapeshellarg($file) . ' -');
                 if (!trim($text)) {
-                    // Fallback to OCR for image-based PDFs if pdftotext produced no output
                     $img_base = $file . '-ocr';
                     @shell_exec('pdftoppm ' . escapeshellarg($file) . ' ' . escapeshellarg($img_base));
                     $i = 1;
@@ -2381,17 +2402,35 @@ JS;
                 }
             }
         } else {
-            $text = $body;
+            $text = @file_get_contents($file);
         }
-        @unlink($file);
         return wp_strip_all_tags($text);
+    }
+
+    private function save_cv_text_attachment($post_id, $attach_id) {
+        $path = get_attached_file($attach_id);
+        if (!$path) return;
+        $text = $this->extract_text_from_file($path);
+        if (!$text) return;
+        update_post_meta($post_id, 'kvt_cv_text', $text);
+
+        // Also create a .txt file in uploads for reference
+        $upload = wp_upload_dir();
+        if (!empty($upload['path']) && !empty($upload['url'])) {
+            $txt_name = 'cv-' . $attach_id . '.txt';
+            $txt_path = trailingslashit($upload['path']) . $txt_name;
+            if (@file_put_contents($txt_path, $text) !== false) {
+                $txt_url = trailingslashit($upload['url']) . $txt_name;
+                update_post_meta($post_id, 'kvt_cv_text_url', esc_url_raw($txt_url));
+            }
+        }
     }
 
     private function openai_match_summary($key, $desc, $cv_text) {
         $req = [
             'model' => 'gpt-4o-mini',
             'messages' => [
-                ['role' => 'system', 'content' => 'Eres un asistente de reclutamiento. Devuelve JSON con "score" (0-100) y "summary" (breve explicación en español).'],
+                ['role' => 'system', 'content' => 'Eres un asistente de reclutamiento. Devuelve JSON con "score" (0-10) y "summary" (breve explicación en español) indicando por qué el candidato encaja.'],
                 ['role' => 'user', 'content' => "Descripción del trabajo:\n$desc\nCV del candidato:\n$cv_text"],
             ],
             'max_tokens' => 150,
