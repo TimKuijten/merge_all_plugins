@@ -1095,6 +1095,12 @@ document.addEventListener('DOMContentLoaded', function(){
     if (current && Array.from(selProcess.options).some(o=>o.value===current)) selProcess.value = current;
   }
 
+  function getClientIdForProcess(pid){
+    const map = window.KVT_PROCESS_MAP || [];
+    const item = map.find(p=>String(p.id)===String(pid));
+    return item ? String(item.client_id) : '';
+  }
+
   function renderBoardSkeleton(){
     board.innerHTML = '';
     KVT_STATUSES.forEach(st=>{
@@ -1508,7 +1514,9 @@ document.addEventListener('DOMContentLoaded', function(){
       .then(j=>{
         if(!j.success) return alert('No se pudo cargar la lista.');
         const {items,pages} = j.data;
-        const allowAdd = selClient && selClient.value && selProcess && selProcess.value;
+        const procSel = selProcess && selProcess.value;
+        const cliSel  = selClient && selClient.value;
+        const allowAdd = !!(procSel && (cliSel || getClientIdForProcess(procSel)));
         modalList.innerHTML = items.map(it=>{
             const m = it.meta||{};
             return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
@@ -1530,7 +1538,8 @@ document.addEventListener('DOMContentLoaded', function(){
               b.addEventListener('click', ()=>{
                 const id = b.getAttribute('data-id');
                 const proc = selProcess.value;
-                const cli  = selClient.value;
+                let cli  = selClient.value;
+                if(!cli) cli = getClientIdForProcess(proc);
                 if(!proc || !cli){ alert('Seleccione cliente y proceso en el tablero.'); return; }
                 const p = new URLSearchParams();
                 p.set('action','kvt_assign_candidate');
