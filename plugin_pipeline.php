@@ -2480,23 +2480,41 @@ JS;
             if ($c3 === 0 && trim($o3) !== '') return trim($o3);
         }
 
-        // Fallback to OCR if standard tools failed
+        // OCR via ocrmypdf -> sidecar text
         if (trim(@shell_exec('which ocrmypdf')) !== '') {
-            $tmp_ocr = $path . '.ocr.pdf';
-            list($o4,$e4,$c4) = $run('ocrmypdf --skip-text -l spa+eng ' . escapeshellarg($path) . ' ' . escapeshellarg($tmp_ocr) . ' 2>&1');
-            if ($c4 === 0 && file_exists($tmp_ocr)) {
-                if (trim(@shell_exec('which pdftotext')) !== '') {
-                    list($o5,$e5,$c5) = $run('pdftotext -enc UTF-8 -eol unix ' . escapeshellarg($tmp_ocr) . ' -');
-                    @unlink($tmp_ocr);
-                    if ($c5 === 0 && trim($o5) !== '') return trim($o5);
-                }
-                if (trim(@shell_exec('which mutool')) !== '') {
-                    list($o6,$e6,$c6) = $run('mutool draw -F txt -o - ' . escapeshellarg($tmp_ocr));
-                    @unlink($tmp_ocr);
-                    if ($c6 === 0 && trim($o6) !== '') return trim($o6);
-                }
-                @unlink($tmp_ocr);
+            $tmp_pdf = $path . '.ocr.pdf';
+            $tmp_txt = $path . '.txt';
+            list($oo,$ee,$cc) = $run('ocrmypdf --skip-text -l spa+eng --sidecar ' . escapeshellarg($tmp_txt) . ' ' . escapeshellarg($path) . ' ' . escapeshellarg($tmp_pdf) . ' 2>&1');
+            if ($cc === 0) {
+                $txt = @file_get_contents($tmp_txt);
+                @unlink($tmp_txt);
+                @unlink($tmp_pdf);
+                if (trim($txt) !== '') return trim($txt);
             }
+        }
+
+        // Direct Tesseract OCR if available
+        if (trim(@shell_exec('which tesseract')) !== '' && class_exists('Imagick')) {
+            try {
+                $img = new \Imagick();
+                $img->setResolution(300,300);
+                $img->readImage($path);
+            } catch (\Exception $e) {
+                return '';
+            }
+            $all = '';
+            foreach ($img as $i => $page) {
+                $tmp_img = $path . '.ocr.' . $i . '.png';
+                $page->setImageFormat('png');
+                $page->writeImage($tmp_img);
+                $out_base = $tmp_img; // tesseract appends .txt
+                list($to,$te,$tc) = $run('tesseract ' . escapeshellarg($tmp_img) . ' ' . escapeshellarg($out_base) . ' -l spa+eng 2>&1');
+                $txt = @file_get_contents($out_base . '.txt');
+                if ($txt) $all .= " \n" . $txt;
+                @unlink($tmp_img);
+                @unlink($out_base . '.txt');
+            }
+            if (trim($all) !== '') return trim($all);
         }
 
         return '';
