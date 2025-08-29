@@ -228,9 +228,9 @@ document.addEventListener('DOMContentLoaded', function(){
   if(!form) return;
 
   var fileInput = form.querySelector('input[type="file"][name="kcvf_file"]');
-  var hiddenPdfText = document.createElement('textarea');
+  var hiddenPdfText = document.createElement('input');
+  hiddenPdfText.type = 'hidden';
   hiddenPdfText.name = 'kcvf_pdf_text';
-  hiddenPdfText.style.display = 'none';
   form.appendChild(hiddenPdfText);
 
   var submitting = false;
@@ -284,41 +284,48 @@ document.addEventListener('DOMContentLoaded', function(){
     return ocrText.trim();
   }
 
+  async function extractPdfText(file){
+    let txt = await extractPdfWithPDFjs(file);
+    if (!txt) txt = await ocrPdfWithTesseract(file);
+    return txt;
+  }
+
+  if (fileInput){
+    fileInput.addEventListener('change', async function(){
+      hiddenPdfText.value = '';
+      var f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      var isPdf = (f.type === 'application/pdf') || (/\.pdf$/i.test(f.name));
+      if (isPdf) {
+        hiddenPdfText.value = await extractPdfText(f);
+      }
+    });
+  }
+
   form.addEventListener('submit', function(e){
     if (submitting) return;
+    e.preventDefault();
     var file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
-    if (!file) return;
+    var isPdf = file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name));
+    (async function(){
+      if (isPdf && !hiddenPdfText.value) {
+        hiddenPdfText.value = await extractPdfText(file);
+      }
 
-    if (file.type === 'application/pdf') {
-      e.preventDefault();
-      (async function(){
-        // 1) Intento PDF.js
-        if (!hiddenPdfText.value) {
-          const pdfText = await extractPdfWithPDFjs(file);
-          if (pdfText && pdfText.length > 0) hiddenPdfText.value = pdfText;
-        }
-        // 2) OCR si sigue vacío (escaneado)
-        if (!hiddenPdfText.value) {
-          const ocrText = await ocrPdfWithTesseract(file);
-          if (ocrText && ocrText.length > 0) hiddenPdfText.value = ocrText;
-        }
-
-        // Continuar (con reCAPTCHA si está)
-        var tokenField = form.querySelector('input[name="kcvf_recaptcha_token"]');
-        if (window.grecaptcha && typeof grecaptcha.execute === 'function') {
-          grecaptcha.ready(function(){
-            grecaptcha.execute('%SITE_KEY%', {action: 'cv_submit'}).then(function(token){
-              if (tokenField) tokenField.value = token;
-              submitting = true;
-              form.submit();
-            });
+      var tokenField = form.querySelector('input[name="kcvf_recaptcha_token"]');
+      if (window.grecaptcha && typeof grecaptcha.execute === 'function') {
+        grecaptcha.ready(function(){
+          grecaptcha.execute('%SITE_KEY%', {action: 'cv_submit'}).then(function(token){
+            if (tokenField) tokenField.value = token;
+            submitting = true;
+            form.submit();
           });
-        } else {
-          submitting = true;
-          form.submit();
-        }
-      })();
-    }
+        });
+      } else {
+        submitting = true;
+        form.submit();
+      }
+    })();
   });
 });
 JS;
