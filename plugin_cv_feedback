@@ -1,243 +1,953 @@
 <?php
 /*
-Plugin Name: Kovacic CV Feedback (ES) + reCAPTCHA v3
-Description: Envío de CV con feedback por IA (PDF/DOCX). Si el PDF no es legible en el servidor, el navegador extrae el texto con PDF.js y, si es escaneado, hace OCR con Tesseract.js; luego envía el texto oculto y el servidor genera un DOCX temporal desde ese texto (flujo fiable).
-Version: 1.6.1
-Author: Tim Kuijten - Kovacic Executive Talent Research
+Plugin Name: Kovacic Pipeline Visualizer
+Description: Kanban de procesos con relación Cliente→Proceso y candidatos vinculados. Subida de CV (admin y UI), edición en tarjeta, notas, exportación CSV/XLS en orden fijo, y estados/columnas configurables.
+Version: 1.7.2
+Author: Kovacic Executive Talent Research
 */
 
 if (!defined('ABSPATH')) exit;
 
-class Kovacic_CV_Feedback_ES {
-    const OPT_GROUP = 'kcvf_es_options';
-    const OPT_API_KEY = 'kcvf_es_openai_api_key';
-    const OPT_AUTO_FEEDBACK = 'kcvf_es_auto_feedback';
-    const OPT_NOTIFY_EMAIL = 'kcvf_es_notify_email';
-    const OPT_GDPR_TEXT = 'kcvf_es_gdpr_text';
-    const OPT_THANKYOU_TEXT = 'kcvf_es_thankyou_text';
-
-    // reCAPTCHA v3
-    const OPT_RECAPTCHA_ENABLE = 'kcvf_es_recaptcha_enable';
-    const OPT_RECAPTCHA_SITE   = 'kcvf_es_recaptcha_site';
-    const OPT_RECAPTCHA_SECRET = 'kcvf_es_recaptcha_secret';
-    const OPT_RECAPTCHA_THRESH = 'kcvf_es_recaptcha_threshold';
+class Kovacic_Pipeline_Visualizer {
+    const CPT           = 'kvt_candidate';
+    const TAX_CLIENT    = 'kvt_client';
+    const TAX_PROCESS   = 'kvt_process';
+    const OPT_GROUP     = 'kvt_options';
+    const OPT_STATUSES  = 'kvt_statuses';
+    const OPT_COLUMNS   = 'kvt_columns';
+    const OPT_OPENAI_KEY= 'kvt_openai_key';
 
     public function __construct() {
-        add_action('init', [$this, 'register_cpt']);
-        add_action('admin_menu', [$this, 'admin_menu']);
-        add_action('admin_init', [$this, 'register_settings']);
-        add_action('admin_notices', [$this, 'admin_notices_tools']);
-        add_shortcode('kovacic_cv_submit', [$this, 'shortcode']);
-        add_shortcode('kovacic_cv_register', [$this, 'shortcode_register']);
-        add_action('wp_enqueue_scripts', [$this, 'assets']);
-        add_action('add_meta_boxes', [$this, 'metabox']);
-        add_action('save_post', [$this, 'save_meta']);
+        add_action('init',                       [$this, 'register_types']);
+        add_action('admin_init',                 [$this, 'register_settings']);
+        add_action('admin_menu',                 [$this, 'admin_menu']);
+
+        // Term meta: Proceso -> Cliente
+        add_action(self::TAX_PROCESS . '_add_form_fields',  [$this, 'process_add_fields']);
+        add_action(self::TAX_PROCESS . '_edit_form_fields', [$this, 'process_edit_fields']);
+        add_action('created_' . self::TAX_PROCESS,          [$this, 'save_process_term'], 10, 2);
+        add_action('edited_'  . self::TAX_PROCESS,          [$this, 'save_process_term'], 10, 2);
+
+        // Term meta: Cliente (contacto)
+        add_action(self::TAX_CLIENT . '_add_form_fields',  [$this, 'client_add_fields']);
+        add_action(self::TAX_CLIENT . '_edit_form_fields', [$this, 'client_edit_fields']);
+        add_action('created_' . self::TAX_CLIENT,          [$this, 'save_client_term'], 10, 2);
+        add_action('edited_'  . self::TAX_CLIENT,          [$this, 'save_client_term'], 10, 2);
+
+        // Candidate admin UI
+        add_action('add_meta_boxes',             [$this, 'add_meta_boxes']);
+        add_action('save_post_' . self::CPT,     [$this, 'save_candidate_meta']);
+
+        // Replace default taxonomy boxes
+        add_action('admin_menu',                 [$this, 'replace_tax_metaboxes']);
+
+        // Frontend UI
+        add_shortcode('kovacic_pipeline',        [$this, 'shortcode']);
+        add_action('wp_enqueue_scripts',         [$this, 'enqueue_assets']);
+
+        // AJAX
+        add_action('wp_ajax_kvt_get_candidates',       [$this, 'ajax_get_candidates']);
+        add_action('wp_ajax_nopriv_kvt_get_candidates',[$this, 'ajax_get_candidates']);
+        add_action('wp_ajax_kvt_update_status',        [$this, 'ajax_update_status']);
+        add_action('wp_ajax_nopriv_kvt_update_status', [$this, 'ajax_update_status']);
+        add_action('wp_ajax_kvt_update_notes',         [$this, 'ajax_update_notes']);
+        add_action('wp_ajax_nopriv_kvt_update_notes',  [$this, 'ajax_update_notes']);
+        add_action('wp_ajax_kvt_delete_notes',         [$this, 'ajax_delete_notes']);
+        add_action('wp_ajax_nopriv_kvt_delete_notes',  [$this, 'ajax_delete_notes']);
+        add_action('wp_ajax_kvt_delete_candidate',     [$this, 'ajax_delete_candidate']);
+        add_action('wp_ajax_nopriv_kvt_delete_candidate',[$this, 'ajax_delete_candidate']);
+        add_action('wp_ajax_kvt_update_profile',       [$this, 'ajax_update_profile']);
+        add_action('wp_ajax_nopriv_kvt_update_profile',[$this, 'ajax_update_profile']);
+        add_action('wp_ajax_kvt_list_profiles',        [$this, 'ajax_list_profiles']);
+        add_action('wp_ajax_nopriv_kvt_list_profiles', [$this, 'ajax_list_profiles']);
+        add_action('wp_ajax_kvt_list_clients',         [$this, 'ajax_list_clients']);
+        add_action('wp_ajax_nopriv_kvt_list_clients',  [$this, 'ajax_list_clients']);
+        add_action('wp_ajax_kvt_list_processes',       [$this, 'ajax_list_processes']);
+        add_action('wp_ajax_nopriv_kvt_list_processes',[$this, 'ajax_list_processes']);
+        add_action('wp_ajax_kvt_clone_profile',        [$this, 'ajax_clone_profile']);
+        add_action('wp_ajax_nopriv_kvt_clone_profile', [$this, 'ajax_clone_profile']);
+        add_action('wp_ajax_kvt_upload_cv',            [$this, 'ajax_upload_cv']); // subir CV desde UI
+        add_action('wp_ajax_nopriv_kvt_upload_cv',     [$this, 'ajax_upload_cv']);
+        add_action('wp_ajax_kvt_create_candidate',     [$this, 'ajax_create_candidate']);
+        add_action('wp_ajax_nopriv_kvt_create_candidate',[$this, 'ajax_create_candidate']);
+        add_action('wp_ajax_kvt_create_client',        [$this, 'ajax_create_client']);
+        add_action('wp_ajax_nopriv_kvt_create_client', [$this, 'ajax_create_client']);
+        add_action('wp_ajax_kvt_create_process',       [$this, 'ajax_create_process']);
+        add_action('wp_ajax_nopriv_kvt_create_process',[$this, 'ajax_create_process']);
+        add_action('wp_ajax_kvt_update_client',        [$this, 'ajax_update_client']);
+        add_action('wp_ajax_nopriv_kvt_update_client', [$this, 'ajax_update_client']);
+        add_action('wp_ajax_kvt_update_process',       [$this, 'ajax_update_process']);
+        add_action('wp_ajax_nopriv_kvt_update_process',[$this, 'ajax_update_process']);
+        add_action('wp_ajax_kvt_assign_candidate',     [$this, 'ajax_assign_candidate']);
+        add_action('wp_ajax_nopriv_kvt_assign_candidate',[$this, 'ajax_assign_candidate']);
+        add_action('wp_ajax_kvt_unassign_candidate',   [$this, 'ajax_unassign_candidate']);
+        add_action('wp_ajax_nopriv_kvt_unassign_candidate',[$this, 'ajax_unassign_candidate']);
+        add_action('wp_ajax_kvt_ai_search',            [$this, 'ajax_ai_search']);
+        add_action('wp_ajax_nopriv_kvt_ai_search',     [$this, 'ajax_ai_search']);
+
+        // Export
+        add_action('admin_post_kvt_export',          [$this, 'handle_export']);
+
+        add_action('plugins_loaded',                 [$this, 'ensure_defaults']);
     }
 
-    public function register_cpt() {
-        register_post_type('cv_submission', [
+    public function ensure_defaults() {
+        if (get_option(self::OPT_STATUSES) === false) {
+            update_option(self::OPT_STATUSES, "Identified\nContacted\nInterviewed\nOffer\nDeclined");
+        }
+        if (get_option(self::OPT_COLUMNS) === false) {
+            update_option(self::OPT_COLUMNS,
+"first_name|Nombre
+last_name|Apellidos
+email|Email
+phone|Teléfono
+country|País
+city|Ciudad
+cv_url|CV (URL)
+cv_uploaded|Fecha de subida");
+        }
+    }
+
+    /* Types & Taxonomies */
+    public function register_types() {
+        register_post_type(self::CPT, [
             'labels' => [
-                'name' => 'Envíos de CV',
-                'singular_name' => 'Envío de CV',
-                'add_new_item' => 'Añadir nuevo envío',
-                'edit_item' => 'Editar envío',
-                'view_item' => 'Ver envío',
-                'search_items' => 'Buscar envíos',
+                'name' => 'Candidatos',
+                'singular_name' => 'Candidato',
+                'add_new_item' => 'Añadir candidato',
+                'edit_item' => 'Editar candidato',
+                'view_item' => 'Ver candidato',
+                'search_items' => 'Buscar candidatos',
             ],
             'public' => false,
             'show_ui' => true,
-            'supports' => ['title', 'editor'],
-            'menu_icon' => 'dashicons-id',
+            'supports' => ['title'],
+            'menu_icon' => 'dashicons-groups',
+        ]);
+
+        register_taxonomy(self::TAX_CLIENT, [self::CPT], [
+            'labels' => ['name' => 'Clientes','singular_name' => 'Cliente'],
+            'public' => false,'show_ui' => true,'hierarchical' => false,
+            'meta_box_cb' => null,
+        ]);
+
+        register_taxonomy(self::TAX_PROCESS, [self::CPT], [
+            'labels' => ['name' => 'Procesos','singular_name' => 'Proceso'],
+            'public' => false,'show_ui' => true,'hierarchical' => false,
+            'meta_box_cb' => null,
         ]);
     }
 
-    public function admin_menu() {
-        add_options_page('Kovacic CV Feedback (ES)', 'Kovacic CV Feedback', 'manage_options', 'kcvf-es', [$this, 'settings_page']);
-    }
-
+    /* Settings page */
     public function register_settings() {
-        register_setting(self::OPT_GROUP, self::OPT_API_KEY);
-        register_setting(self::OPT_GROUP, self::OPT_AUTO_FEEDBACK);
-        register_setting(self::OPT_GROUP, self::OPT_NOTIFY_EMAIL);
-        register_setting(self::OPT_GROUP, self::OPT_GDPR_TEXT);
-        register_setting(self::OPT_GROUP, self::OPT_THANKYOU_TEXT);
-
-        if (!get_option(self::OPT_GDPR_TEXT)) {
-            update_option(self::OPT_GDPR_TEXT, 'Acepto el tratamiento de mis datos personales con fines de reclutamiento conforme a la Política de Privacidad (RGPD).');
-        }
-        if (!get_option(self::OPT_THANKYOU_TEXT)) {
-            update_option(self::OPT_THANKYOU_TEXT, '¡Gracias! Hemos recibido tu CV. El feedback se encuentra a continuación.');
-        }
-
-        // reCAPTCHA v3
-        register_setting(self::OPT_GROUP, self::OPT_RECAPTCHA_ENABLE);
-        register_setting(self::OPT_GROUP, self::OPT_RECAPTCHA_SITE);
-        register_setting(self::OPT_GROUP, self::OPT_RECAPTCHA_SECRET);
-        register_setting(self::OPT_GROUP, self::OPT_RECAPTCHA_THRESH);
-
-        if (get_option(self::OPT_RECAPTCHA_THRESH) === false) {
-            update_option(self::OPT_RECAPTCHA_THRESH, '0.5');
-        }
+        register_setting(self::OPT_GROUP, self::OPT_STATUSES);
+        register_setting(self::OPT_GROUP, self::OPT_COLUMNS);
+        register_setting(self::OPT_GROUP, self::OPT_OPENAI_KEY);
     }
-
-    /** Aviso de binarios útiles en servidor (opcionales gracias a PDF.js/Tesseract.js) */
-    public function admin_notices_tools() {
-        if (!current_user_can('manage_options')) return;
-        $missing = [];
-        if (empty(trim(@shell_exec('which pdftotext')))) $missing[] = '<code>pdftotext</code>';
-        if (empty(trim(@shell_exec('which mutool'))))    $missing[] = '<code>mutool</code>';
-        if (empty(trim(@shell_exec('which ocrmypdf'))))  $missing[] = '<code>ocrmypdf</code>';
-        if (!class_exists('ZipArchive'))                 $missing[] = '<code>ZipArchive (PHP)</code>';
-        if (!empty($missing)) {
-            echo '<div class="notice notice-info"><p><strong>KCVF:</strong> Recomendado en servidor (opcional): '
-                . implode(', ', $missing)
-                . '. Este plugin también usa PDF.js + Tesseract.js en el navegador para leer PDFs sin estas herramientas.</p></div>';
-        }
+    public function admin_menu() {
+        add_options_page('Kovacic Pipeline','Kovacic Pipeline','manage_options','kvt-settings',[$this,'settings_page']);
     }
-
     public function settings_page() {
+        $statuses = get_option(self::OPT_STATUSES, "");
+        $columns  = get_option(self::OPT_COLUMNS, "");
+        $openai   = get_option(self::OPT_OPENAI_KEY, "");
         ?>
         <div class="wrap">
-            <h1>Kovacic CV Feedback (ES) — Ajustes</h1>
+            <h1>Kovacic Pipeline — Ajustes</h1>
             <form method="post" action="options.php">
                 <?php settings_fields(self::OPT_GROUP); ?>
-                <h2 class="title">General</h2>
                 <table class="form-table" role="presentation">
                     <tr>
-                        <th scope="row"><label for="<?php echo self::OPT_API_KEY; ?>">OpenAI API Key</label></th>
+                        <th scope="row"><label for="<?php echo self::OPT_STATUSES; ?>">Estados del pipeline</label></th>
                         <td>
-                            <input type="password" id="<?php echo self::OPT_API_KEY; ?>" name="<?php echo self::OPT_API_KEY; ?>" value="<?php echo esc_attr(get_option(self::OPT_API_KEY)); ?>" class="regular-text" placeholder="sk-..." />
-                            <p class="description">Se usa para generar feedback automático del CV.</p>
+                            <textarea name="<?php echo self::OPT_STATUSES; ?>" id="<?php echo self::OPT_STATUSES; ?>" rows="8" class="large-text" placeholder="Un estado por línea, de izquierda a derecha en el tablero"><?php echo esc_textarea($statuses); ?></textarea>
+                            <p class="description">Ejemplo (uno por línea): Identified, Contacted, Interviewed, Offer, Declined</p>
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">Feedback instantáneo</th>
+                        <th scope="row"><label for="<?php echo self::OPT_OPENAI_KEY; ?>">OpenAI API Key</label></th>
                         <td>
-                            <label>
-                                <input type="checkbox" name="<?php echo self::OPT_AUTO_FEEDBACK; ?>" value="1" <?php checked(get_option(self::OPT_AUTO_FEEDBACK), '1'); ?> />
-                                Generar feedback inmediatamente tras el envío
-                            </label>
+                            <input type="text" name="<?php echo self::OPT_OPENAI_KEY; ?>" id="<?php echo self::OPT_OPENAI_KEY; ?>" class="regular-text" value="<?php echo esc_attr($openai); ?>">
+                            <p class="description">Clave utilizada para las búsquedas avanzadas.</p>
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="<?php echo self::OPT_NOTIFY_EMAIL; ?>">Email de aviso interno</label></th>
+                        <th scope="row"><label for="<?php echo self::OPT_COLUMNS; ?>">Columnas de datos (tabla/exportación)</label></th>
                         <td>
-                            <input type="email" id="<?php echo self::OPT_NOTIFY_EMAIL; ?>" name="<?php echo self::OPT_NOTIFY_EMAIL; ?>" value="<?php echo esc_attr(get_option(self::OPT_NOTIFY_EMAIL)); ?>" class="regular-text" placeholder="talent@tudominio.com" />
-                            <p class="description">Opcional. Si se indica, enviaremos un aviso con cada envío.</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="<?php echo self::OPT_GDPR_TEXT; ?>">Texto de consentimiento (RGPD)</label></th>
-                        <td><textarea id="<?php echo self::OPT_GDPR_TEXT; ?>" name="<?php echo self::OPT_GDPR_TEXT; ?>" class="large-text" rows="3"><?php echo esc_textarea(get_option(self::OPT_GDPR_TEXT)); ?></textarea></td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="<?php echo self::OPT_THANKYOU_TEXT; ?>">Mensaje de gracias</label></th>
-                        <td><textarea id="<?php echo self::OPT_THANKYOU_TEXT; ?>" name="<?php echo self::OPT_THANKYOU_TEXT; ?>" class="large-text" rows="3"><?php echo esc_textarea(get_option(self::OPT_THANKYOU_TEXT)); ?></textarea></td>
-                    </tr>
-                </table>
-
-                <h2 class="title">Seguridad — Google reCAPTCHA v3</h2>
-                <table class="form-table" role="presentation">
-                    <tr>
-                        <th scope="row">Activar reCAPTCHA v3</th>
-                        <td>
-                            <label>
-                                <input type="checkbox" name="<?php echo self::OPT_RECAPTCHA_ENABLE; ?>" value="1" <?php checked(get_option(self::OPT_RECAPTCHA_ENABLE), '1'); ?> />
-                                Proteger el formulario con reCAPTCHA v3 (invisible)
-                            </label>
-                            <p class="description">Crea tus claves en <a href="https://www.google.com/recaptcha/admin/create" target="_blank">Google reCAPTCHA</a> (elige v3).</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="<?php echo self::OPT_RECAPTCHA_SITE; ?>">Site Key</label></th>
-                        <td><input type="text" id="<?php echo self::OPT_RECAPTCHA_SITE; ?>" name="<?php echo self::OPT_RECAPTCHA_SITE; ?>" value="<?php echo esc_attr(get_option(self::OPT_RECAPTCHA_SITE)); ?>" class="regular-text" placeholder="6Le..."></td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="<?php echo self::OPT_RECAPTCHA_SECRET; ?>">Secret Key</label></th>
-                        <td><input type="password" id="<?php echo self::OPT_RECAPTCHA_SECRET; ?>" name="<?php echo self::OPT_RECAPTCHA_SECRET; ?>" value="<?php echo esc_attr(get_option(self::OPT_RECAPTCHA_SECRET)); ?>" class="regular-text" placeholder="6Le..."></td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="<?php echo self::OPT_RECAPTCHA_THRESH; ?>">Umbral (score mínimo)</label></th>
-                        <td>
-                            <input type="number" step="0.1" min="0" max="1" id="<?php echo self::OPT_RECAPTCHA_THRESH; ?>" name="<?php echo self::OPT_RECAPTCHA_THRESH; ?>" value="<?php echo esc_attr(get_option(self::OPT_RECAPTCHA_THRESH, '0.5')); ?>" class="small-text">
-                            <p class="description">Valores más altos = más estricto. Recomendado 0.5–0.7.</p>
+                            <textarea name="<?php echo self::OPT_COLUMNS; ?>" id="<?php echo self::OPT_COLUMNS; ?>" rows="10" class="large-text" placeholder="meta_key|Etiqueta visible"><?php echo esc_textarea($columns); ?></textarea>
+                            <p class="description">
+                                Formato: <code>meta_key|Etiqueta</code> (una por línea). Por defecto: <code>first_name, last_name, email, phone, country, city, cv_url, cv_uploaded</code>
+                            </p>
                         </td>
                     </tr>
                 </table>
-
                 <?php submit_button('Guardar ajustes'); ?>
             </form>
         </div>
         <?php
     }
 
-    public function assets() {
-        // Estilos UI
-        $css = "
-        .kcvf-wrapper{max-width:720px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.06)}
-        .kcvf-wrapper h2{font-size:28px;line-height:1.2;margin:0 0 14px;color:#0A212E}
-        .kcvf-field{margin-bottom:16px}
-        .kcvf-field label{display:block;font-weight:600;margin-bottom:6px}
-        .kcvf-input, .kcvf-select, .kcvf-textarea{width:100%;padding:12px;border:1px solid #e5e7eb;border-radius:10px;font-size:15px}
-        .kcvf-select{height:44px}
-        .kcvf-consent{display:flex;gap:10px;align-items:flex-start}
-        .kcvf-consent input{margin-top:3px}
-        .kcvf-btn{background:#0A212E;color:#fff;border:none;padding:14px 18px;border-radius:12px;cursor:pointer;font-weight:600}
-        .kcvf-btn:hover{opacity:.95}
-        .kcvf-alert{background:#f6ffed;border:1px solid #b7eb8f;padding:12px;border-radius:10px;margin-bottom:16px}
-        .kcvf-error{background:#fff1f0;border:1px solid #ffa39e;padding:12px;border-radius:10px;margin-bottom:16px}
-        .kcvf-feedback{white-space:normal;border:1px dashed #e5e7eb;border-radius:10px;padding:14px}
-        .kcvf-debug{background:#fff7ed;border:1px solid #fdba74;padding:12px;border-radius:10px;margin-top:12px}
-        ";
-        wp_register_style('kcvf-es-inline', false);
-        wp_enqueue_style('kcvf-es-inline');
-        wp_add_inline_style('kcvf-es-inline', $css);
+    /* Proceso -> Cliente term meta */
+    public function process_add_fields($taxonomy) {
+        $clients = get_terms(['taxonomy'=>self::TAX_CLIENT,'hide_empty'=>false]); ?>
+        <div class="form-field">
+            <label for="kvt_process_client">Cliente asociado</label>
+            <select name="kvt_process_client" id="kvt_process_client">
+                <option value="">— Ninguno —</option>
+                <?php foreach ($clients as $c): ?>
+                    <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
+                <?php endforeach; ?>
+            </select>
+            <p class="description">(Opcional) Vincula este proceso a un cliente.</p>
+        </div>
+        <?php
+    }
+    public function process_edit_fields($term) {
+        $clients = get_terms(['taxonomy'=>self::TAX_CLIENT,'hide_empty'=>false]);
+        $current = get_term_meta($term->term_id, 'kvt_process_client', true);
+        ?>
+        <tr class="form-field">
+            <th scope="row"><label for="kvt_process_client">Cliente asociado</label></th>
+            <td>
+                <select name="kvt_process_client" id="kvt_process_client">
+                    <option value="">— Ninguno —</option>
+                    <?php foreach ($clients as $c): ?>
+                        <option value="<?php echo esc_attr($c->term_id); ?>" <?php selected($current, $c->term_id); ?>>
+                            <?php echo esc_html($c->name); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </td>
+        </tr>
+        <?php
+    }
+    public function save_process_term($term_id, $tt_id) {
+        if (isset($_POST['kvt_process_client'])) {
+            $client_id = intval($_POST['kvt_process_client']);
+            if ($client_id > 0) {
+                update_term_meta($term_id, 'kvt_process_client', $client_id);
+            } else {
+                delete_term_meta($term_id, 'kvt_process_client');
+            }
+        }
+    }
 
-        // PDF.js y Tesseract.js para extracción/OCR en el cliente
-        // Aseguramos la carga de PDF.js y Tesseract.js
-        wp_register_script(
-            'pdfjs',
-            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
-            [],
-            '3.11.174',
-            true
-        );
-        wp_enqueue_script('pdfjs');
-        wp_add_inline_script(
-            'pdfjs',
-            'window.pdfjsLib = window["pdfjs-dist/build/pdf"] || window.pdfjsLib;if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}',
-            'after'
-        );
+    /* Cliente contact meta */
+    public function client_add_fields($taxonomy) { ?>
+        <div class="form-field">
+            <label for="kvt_client_contact_name">Persona de contacto</label>
+            <input type="text" name="kvt_client_contact_name" id="kvt_client_contact_name">
+        </div>
+        <div class="form-field">
+            <label for="kvt_client_contact_email">Email de contacto</label>
+            <input type="email" name="kvt_client_contact_email" id="kvt_client_contact_email">
+        </div>
+        <?php
+    }
+    public function client_edit_fields($term) {
+        $cname  = get_term_meta($term->term_id, 'contact_name', true);
+        $cemail = get_term_meta($term->term_id, 'contact_email', true);
+        ?>
+        <tr class="form-field">
+            <th scope="row"><label for="kvt_client_contact_name">Persona de contacto</label></th>
+            <td><input type="text" name="kvt_client_contact_name" id="kvt_client_contact_name" value="<?php echo esc_attr($cname); ?>"></td>
+        </tr>
+        <tr class="form-field">
+            <th scope="row"><label for="kvt_client_contact_email">Email de contacto</label></th>
+            <td><input type="email" name="kvt_client_contact_email" id="kvt_client_contact_email" value="<?php echo esc_attr($cemail); ?>"></td>
+        </tr>
+        <?php
+    }
+    public function save_client_term($term_id, $tt_id) {
+        if (isset($_POST['kvt_client_contact_name'])) {
+            update_term_meta($term_id, 'contact_name', sanitize_text_field($_POST['kvt_client_contact_name']));
+        }
+        if (isset($_POST['kvt_client_contact_email'])) {
+            update_term_meta($term_id, 'contact_email', sanitize_email($_POST['kvt_client_contact_email']));
+        }
+    }
 
-        wp_register_script(
-            'tesseract',
-            'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
-            [],
-            '5.0.0',
-            true
-        );
-        wp_enqueue_script('tesseract');
+    /* Candidate admin */
+    public function replace_tax_metaboxes() {
+        remove_meta_box(self::TAX_CLIENT.'div', self::CPT, 'side');
+        remove_meta_box(self::TAX_PROCESS.'div', self::CPT, 'side');
+        add_meta_box('kvt_client_box',  'Cliente',  [$this,'render_client_dropdown'],  self::CPT, 'side', 'default');
+        add_meta_box('kvt_process_box', 'Proceso',  [$this,'render_process_dropdown'], self::CPT, 'side', 'default');
+    }
+    public function render_client_dropdown($post) {
+        wp_nonce_field('kvt_save_candidate', 'kvt_nonce');
+        $terms = get_terms(['taxonomy'=>self::TAX_CLIENT,'hide_empty'=>false]);
+        $assigned = wp_get_object_terms($post->ID, self::TAX_CLIENT, ['fields'=>'ids']);
+        $current  = isset($assigned[0]) ? (int)$assigned[0] : 0;
+        echo '<select name="kvt_client_term" id="kvt_client_term" class="widefat">';
+        echo '<option value="">— Ninguno —</option>';
+        foreach ($terms as $t) {
+            echo '<option value="'.esc_attr($t->term_id).'" '.selected($current,$t->term_id,false).'>'.esc_html($t->name).'</option>';
+        }
+        echo '</select>';
+    }
+    public function render_process_dropdown($post) {
+        $terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
+        $assigned = wp_get_object_terms($post->ID, self::TAX_PROCESS, ['fields'=>'ids']);
+        $current  = isset($assigned[0]) ? (int)$assigned[0] : 0;
+        echo '<select name="kvt_process_term" id="kvt_process_term" class="widefat">';
+        echo '<option value="">— Ninguno —</option>';
+        foreach ($terms as $t) {
+            echo '<option value="'.esc_attr($t->term_id).'" '.selected($current,$t->term_id,false).'>'.esc_html($t->name).'</option>';
+        }
+        echo '</select><p class="description">Si eliges Proceso, se asignará automáticamente su Cliente.</p>';
+    }
 
-        // Script reCAPTCHA v3 si procede
-        $recaptcha_on = get_option(self::OPT_RECAPTCHA_ENABLE) === '1';
-        $site_key = trim((string)get_option(self::OPT_RECAPTCHA_SITE));
-        if ($recaptcha_on && $site_key) {
-            wp_enqueue_script('google-recaptcha', 'https://www.google.com/recaptcha/api.js?render=' . rawurlencode($site_key), [], null, true);
+    private function meta_get_compat($post_id, $key, $fallbacks = []) {
+        $v = get_post_meta($post_id, $key, true);
+        if ($v !== '' && $v !== null) return $v;
+        foreach ($fallbacks as $fb) {
+            $vv = get_post_meta($post_id, $fb, true);
+            if ($vv !== '' && $vv !== null) return $vv;
+        }
+        return '';
+    }
+    private function fmt_date_ddmmyyyy($val){
+        $val = trim((string)$val);
+        if ($val === '') return '';
+        if (preg_match('/^\d{4}-\d{2}-\d{2}/', $val)) {
+            $ts = strtotime(substr($val,0,10));
+            return $ts ? date('d-m-Y',$ts) : $val;
+        }
+        if (preg_match('/^\d{2}-\d{2}-\d{4}$/', $val)) return $val;
+        $ts = strtotime($val);
+        return $ts ? date('d-m-Y',$ts) : $val;
+    }
+
+    public function add_meta_boxes() {
+        add_meta_box('kvt_candidate_details', 'Datos del candidato', [$this, 'metabox_candidate'], self::CPT, 'normal', 'high');
+        add_meta_box('kvt_candidate_status',  'Estado del pipeline',  [$this, 'metabox_status'],    self::CPT, 'side',   'high');
+    }
+    public function metabox_candidate($post) {
+        wp_nonce_field('kvt_save_candidate', 'kvt_nonce');
+        $first   = $this->meta_get_compat($post->ID, 'kvt_first_name',  ['first_name']);
+        $last    = $this->meta_get_compat($post->ID, 'kvt_last_name',   ['last_name']);
+        $email   = $this->meta_get_compat($post->ID, 'kvt_email',       ['email']);
+        $phone   = $this->meta_get_compat($post->ID, 'kvt_phone',       ['phone']);
+        $country = $this->meta_get_compat($post->ID, 'kvt_country',     ['country']);
+        $city    = $this->meta_get_compat($post->ID, 'kvt_city',        ['city']);
+        $cv_url  = $this->meta_get_compat($post->ID, 'kvt_cv_url',      ['cv_url']);
+        $cv_date_raw = $this->meta_get_compat($post->ID, 'kvt_cv_uploaded', ['cv_uploaded']);
+        $cv_date = $this->fmt_date_ddmmyyyy($cv_date_raw);
+        $cv_att  = $this->meta_get_compat($post->ID, 'kvt_cv_attachment_id', ['cv_attachment_id']);
+        $cv_txt  = get_post_meta($post->ID, 'kvt_cv_text_url', true);
+        $notes   = $this->meta_get_compat($post->ID, 'kvt_notes',       ['notes']);
+        ?>
+        <table class="form-table">
+            <tr><th><label>Nombre</label></th><td><input type="text" name="kvt_first_name" value="<?php echo esc_attr($first); ?>" class="regular-text"></td></tr>
+            <tr><th><label>Apellidos</label></th><td><input type="text" name="kvt_last_name" value="<?php echo esc_attr($last); ?>" class="regular-text"></td></tr>
+            <tr><th><label>Email</label></th><td><input type="email" name="kvt_email" value="<?php echo esc_attr($email); ?>" class="regular-text"></td></tr>
+            <tr><th><label>Teléfono</label></th><td><input type="text" name="kvt_phone" value="<?php echo esc_attr($phone); ?>" class="regular-text"></td></tr>
+            <tr><th><label>País</label></th><td><input type="text" name="kvt_country" value="<?php echo esc_attr($country); ?>" class="regular-text"></td></tr>
+            <tr><th><label>Ciudad</label></th><td><input type="text" name="kvt_city" value="<?php echo esc_attr($city); ?>" class="regular-text"></td></tr>
+
+            <tr><th><label>CV (URL)</label></th>
+                <td>
+                    <input type="url" name="kvt_cv_url" value="<?php echo esc_attr($cv_url); ?>" class="regular-text" placeholder="https://...">
+                    <?php if ($cv_url): ?><p style="margin:.4em 0 0;"><a href="<?php echo esc_url($cv_url); ?>" target="_blank" rel="noopener">Abrir CV actual</a></p><?php endif; ?>
+                    <?php if ($cv_att): ?><p style="margin:.2em 0 0;color:#555;">Adjunto (ID: <?php echo intval($cv_att); ?>)</p><?php endif; ?>
+                </td>
+            </tr>
+            <tr><th><label>Subir CV (PDF/DOC/DOCX)</label></th>
+                <td>
+                    <input type="file" name="kvt_cv_file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                    <?php if ($cv_url || $cv_att): ?>
+                        <p style="margin:.4em 0 0;"><label><input type="checkbox" name="kvt_cv_remove" value="1"> Eliminar CV actual</label></p>
+                    <?php endif; ?>
+                    <p class="description">Al subir un CV, guardamos el enlace en “CV (URL)” y la fecha (DD-MM-YYYY) si está vacía.</p>
+                </td>
+            </tr>
+
+            <tr><th><label>CV leído IA</label></th>
+                <td>
+                    <?php if ($cv_txt): ?>
+                        <a href="<?php echo esc_url($cv_txt); ?>" target="_blank" rel="noopener" class="kvt-cv-link">Ver texto</a>
+                    <?php else: ?>
+                        <em>No disponible</em>
+                    <?php endif; ?>
+                </td>
+            </tr>
+
+            <tr><th><label>Fecha de subida</label></th><td><input type="text" name="kvt_cv_uploaded" value="<?php echo esc_attr($cv_date); ?>" class="regular-text" placeholder="DD-MM-YYYY"></td></tr>
+
+            <tr><th><label>Notas</label></th>
+                <td><textarea name="kvt_notes" rows="6" class="large-text" placeholder="Notas internas"><?php echo esc_textarea($notes); ?></textarea></td>
+            </tr>
+        </table>
+        <p class="description">Asigna un <strong>Proceso</strong> en la caja lateral. Se autovinculará el <strong>Cliente</strong> relacionado.</p>
+        <?php
+    }
+    public function metabox_status($post) {
+        $status = get_post_meta($post->ID, 'kvt_status', true);
+        $statuses = $this->get_statuses(); ?>
+        <p><label for="kvt_status">Estado actual</label></p>
+        <select name="kvt_status" id="kvt_status" class="widefat">
+            <?php foreach ($statuses as $st): ?>
+                <option value="<?php echo esc_attr($st); ?>" <?php selected($status, $st); ?>><?php echo esc_html($st); ?></option>
+            <?php endforeach; ?>
+        </select>
+        <?php
+    }
+
+    public function save_candidate_meta($post_id) {
+        if (!isset($_POST['kvt_nonce']) || !wp_verify_nonce($_POST['kvt_nonce'], 'kvt_save_candidate')) return;
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+        if (!current_user_can('edit_post', $post_id)) return;
+
+        $uploaded_url = '';
+        $uploaded_dt  = '';
+
+        // Remove CV
+        if (!empty($_POST['kvt_cv_remove'])) {
+            $att_id = (int) get_post_meta($post_id, 'kvt_cv_attachment_id', true);
+            if ($att_id) wp_delete_attachment($att_id, true);
+            delete_post_meta($post_id, 'kvt_cv_attachment_id');
+            delete_post_meta($post_id, 'kvt_cv_url');
+            delete_post_meta($post_id, 'cv_url');
+            // Remove cached text files
+            $txt_url = get_post_meta($post_id, 'kvt_cv_text_url', true);
+            if ($txt_url) {
+                $path = wp_parse_url($txt_url, PHP_URL_PATH);
+                if ($path) @unlink(ABSPATH . ltrim($path, '/'));
+            }
+            delete_post_meta($post_id, 'kvt_cv_text');
+            delete_post_meta($post_id, 'kvt_cv_text_url');
         }
 
-        // JS del formulario: PDF.js → texto; si vacío → Tesseract.js OCR; luego reCAPTCHA si está activo
-        $inline = <<<JS
+        // Upload new CV
+        if (!empty($_FILES['kvt_cv_file']['name'])) {
+            if (!function_exists('media_handle_upload')) {
+                require_once ABSPATH . 'wp-admin/includes/image.php';
+                require_once ABSPATH . 'wp-admin/includes/file.php';
+                require_once ABSPATH . 'wp-admin/includes/media.php';
+            }
+            add_filter('upload_mimes', function($mimes){
+                $mimes['pdf']  = 'application/pdf';
+                $mimes['doc']  = 'application/msword';
+                $mimes['docx'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+                return $mimes;
+            });
+            $attach_id = media_handle_upload('kvt_cv_file', $post_id);
+            if (!is_wp_error($attach_id)) {
+                $uploaded_url = wp_get_attachment_url($attach_id);
+                update_post_meta($post_id, 'kvt_cv_attachment_id', $attach_id);
+                if ($uploaded_url) {
+                    update_post_meta($post_id, 'kvt_cv_url', esc_url_raw($uploaded_url));
+                    update_post_meta($post_id, 'cv_url', esc_url_raw($uploaded_url)); // legacy
+                }
+                // Store plain-text version of the CV for later AI processing
+                $client_text = isset($_POST['cv_text']) ? sanitize_textarea_field(wp_unslash($_POST['cv_text'])) : '';
+                if ($client_text !== '') {
+                    update_post_meta($post_id, 'kvt_cv_text', $client_text);
+                } else {
+                    $this->save_cv_text_attachment($post_id, $attach_id);
+                }
+                $today = date_i18n('d-m-Y');
+                update_post_meta($post_id, 'kvt_cv_uploaded', $today);
+                update_post_meta($post_id, 'cv_uploaded', $today);
+                $uploaded_dt = $today;
+            } else {
+                error_log('[KVT] Error subiendo CV: ' . $attach_id->get_error_message());
+            }
+        }
+
+        // Save fields
+        $fields = [
+            'kvt_first_name' => ['first_name'],
+            'kvt_last_name'  => ['last_name'],
+            'kvt_email'      => ['email'],
+            'kvt_phone'      => ['phone'],
+            'kvt_country'    => ['country'],
+            'kvt_city'       => ['city'],
+            'kvt_cv_url'     => ['cv_url'],
+            'kvt_cv_uploaded'=> ['cv_uploaded'],
+            'kvt_status'     => [],
+            'kvt_notes'      => ['notes'],
+        ];
+        foreach ($fields as $k => $fallbacks) {
+            if ($k === 'kvt_cv_url' && $uploaded_url) continue;
+            if ($k === 'kvt_cv_uploaded' && $uploaded_dt) continue;
+            if (isset($_POST[$k])) {
+                $val = ($k==='kvt_notes') ? wp_kses_post($_POST[$k])
+                      : (($k==='kvt_email') ? sanitize_email($_POST[$k]) : sanitize_text_field($_POST[$k]));
+                if ($k === 'kvt_cv_uploaded') $val = $this->fmt_date_ddmmyyyy($val);
+                update_post_meta($post_id, $k, $val);
+                foreach ($fallbacks as $fb) update_post_meta($post_id, $fb, $val);
+            }
+        }
+
+        // Terms
+        $client_term  = isset($_POST['kvt_client_term'])  ? intval($_POST['kvt_client_term'])  : 0;
+        $process_term = isset($_POST['kvt_process_term']) ? intval($_POST['kvt_process_term']) : 0;
+
+        if ($process_term > 0) {
+            wp_set_object_terms($post_id, [$process_term], self::TAX_PROCESS, false);
+            $linked_client = (int) get_term_meta($process_term, 'kvt_process_client', true);
+            if ($linked_client > 0) {
+                wp_set_object_terms($post_id, [$linked_client], self::TAX_CLIENT, false);
+            } elseif ($client_term > 0) {
+                wp_set_object_terms($post_id, [$client_term], self::TAX_CLIENT, false);
+            }
+        } else {
+            if ($client_term > 0) {
+                wp_set_object_terms($post_id, [$client_term], self::TAX_CLIENT, false);
+            } else {
+                wp_set_object_terms($post_id, [], self::TAX_CLIENT, false);
+                wp_set_object_terms($post_id, [], self::TAX_PROCESS, false);
+            }
+        }
+
+        // Title fallback
+        $title = get_the_title($post_id);
+        if (!$title) {
+            $fn = get_post_meta($post_id, 'kvt_first_name', true);
+            $ln = get_post_meta($post_id, 'kvt_last_name', true);
+            $new = trim($fn . ' ' . $ln);
+            if ($new) wp_update_post(['ID'=>$post_id,'post_title'=>$new]);
+        }
+    }
+
+    /* Helpers */
+    private function get_statuses() {
+        $raw = get_option(self::OPT_STATUSES, "");
+        $lines = preg_split('/\r\n|\r|\n/', (string)$raw);
+        $out = [];
+        foreach ($lines as $l) { $l = trim($l); if ($l !== '') $out[] = $l; }
+        if (empty($out)) $out = ['Identified','Contacted','Interviewed','Offer','Declined'];
+        return $out;
+    }
+    private function get_columns() {
+        $raw = get_option(self::OPT_COLUMNS, "");
+        $lines = preg_split('/\r\n|\r|\n/', (string)$raw);
+        $cols = [];
+        foreach ($lines as $l) {
+            $l = trim($l); if ($l === '') continue;
+            $parts = explode('|', $l, 2);
+            $key = trim($parts[0]);
+            $label = isset($parts[1]) ? trim($parts[1]) : $key;
+            $cols[] = ['key'=>$key,'label'=>$label];
+        }
+        if (empty($cols)) {
+            $cols = [
+                ['key'=>'first_name','label'=>'Nombre'],
+                ['key'=>'last_name','label'=>'Apellidos'],
+                ['key'=>'email','label'=>'Email'],
+                ['key'=>'phone','label'=>'Teléfono'],
+                ['key'=>'country','label'=>'País'],
+                ['key'=>'city','label'=>'Ciudad'],
+                ['key'=>'cv_url','label'=>'CV (URL)'],
+                ['key'=>'cv_uploaded','label'=>'Fecha de subida'],
+            ];
+        }
+        return $cols;
+    }
+    private function get_process_map() {
+        $terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
+        $out = [];
+        foreach ($terms as $t) {
+            $cid = (int) get_term_meta($t->term_id, 'kvt_process_client', true);
+            $out[] = [
+                'id'          => $t->term_id,
+                'name'        => $t->name,
+                'client_id'   => $cid ?: 0,
+                'description' => wp_strip_all_tags($t->description),
+                'contact_name'  => get_term_meta($t->term_id, 'contact_name', true),
+                'contact_email' => get_term_meta($t->term_id, 'contact_email', true),
+            ];
+        }
+        return $out;
+    }
+    private function get_term_name($post_id, $tax){
+        $terms = wp_get_object_terms($post_id, $tax);
+        if (is_wp_error($terms) || empty($terms)) return '';
+        return $terms[0]->name;
+    }
+    private function count_notes($notes) {
+        $notes = (string) $notes;
+        if ($notes === '') return 0;
+        $lines = preg_split('/\r\n|\r|\n/', $notes);
+        $cnt = 0;
+        foreach ($lines as $ln) if (trim($ln) !== '') $cnt++;
+        return $cnt;
+    }
+
+    private function get_unique_meta_values($keys) {
+        global $wpdb;
+        $keys = array_map('esc_sql', (array) $keys);
+        $in   = "'" . implode("','", $keys) . "'";
+        $vals = $wpdb->get_col("SELECT DISTINCT meta_value FROM {$wpdb->postmeta} WHERE meta_key IN ($in) AND meta_value <> ''");
+        $vals = array_filter(array_map('trim', (array) $vals));
+        sort($vals);
+        return $vals;
+    }
+
+    /* Shortcode */
+    public function shortcode($atts = []) {
+        if (!is_user_logged_in() || !current_user_can('edit_posts')) {
+            return '<div class="kvt-wrapper"><p>Debes iniciar sesión para ver el pipeline.</p></div>';
+        }
+        $clients   = get_terms(['taxonomy'=>self::TAX_CLIENT, 'hide_empty'=>false]);
+        $processes = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
+        $proc_map  = $this->get_process_map();
+        $client_map = array_map(function($t){
+            return [
+                'id'            => $t->term_id,
+                'name'          => $t->name,
+                'contact_name'  => get_term_meta($t->term_id, 'contact_name', true),
+                'contact_email' => get_term_meta($t->term_id, 'contact_email', true),
+                'contact_phone' => get_term_meta($t->term_id, 'contact_phone', true),
+                'description'   => wp_strip_all_tags($t->description),
+            ];
+        }, $clients);
+        $countries = $this->get_unique_meta_values(['kvt_country','country']);
+        $cities    = $this->get_unique_meta_values(['kvt_city','city']);
+
+        ob_start(); ?>
+        <div class="kvt-wrapper">
+            <div class="kvt-toolbar">
+                <div class="kvt-filters">
+                    <label>Cliente
+                        <select id="kvt_client">
+                            <option value="">— Todos —</option>
+                            <?php foreach ($clients as $c): ?>
+                              <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label>Proceso
+                        <select id="kvt_process">
+                            <option value="">— Todos —</option>
+                            <?php foreach ($processes as $t): ?>
+                              <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <button class="kvt-btn" id="kvt_refresh">Actualizar</button>
+                </div>
+                <div class="kvt-actions">
+                    <button class="kvt-btn" id="kvt_add_profile">Base</button>
+                    <button class="kvt-btn kvt-secondary" id="kvt_toggle_table">Tabla</button>
+                    <form id="kvt_export_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank" style="display:inline;">
+                        <input type="hidden" name="action" value="kvt_export">
+                        <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
+                        <input type="hidden" name="filter_client"  id="kvt_export_client"  value="">
+                        <input type="hidden" name="filter_process" id="kvt_export_process" value="">
+                        <input type="hidden" name="format"         id="kvt_export_format"   value="csv">
+                        <button class="kvt-btn" type="button" id="kvt_export_csv">Export CSV</button>
+                        <button class="kvt-btn" type="button" id="kvt_export_xls">Export Excel</button>
+                    </form>
+                </div>
+            </div>
+
+            <div id="kvt_selected_info" style="display:none;">
+              <button type="button" class="kvt-btn kvt-secondary" id="kvt_selected_toggle">Información de cliente y proceso</button>
+              <div id="kvt_selected_details" style="display:none;">
+                <p id="kvt_selected_client"></p>
+                <p id="kvt_selected_process"></p>
+              </div>
+            </div>
+
+            <div id="kvt_board" class="kvt-board" aria-live="polite"></div>
+
+            <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:none;">
+                <table id="kvt_table">
+                    <thead><tr id="kvt_table_head"></tr></thead>
+                    <tbody id="kvt_table_body"></tbody>
+                </table>
+            </div>
+        </div>
+        <!-- Info Modal -->
+        <div class="kvt-modal" id="kvt_info_modal" style="display:none;">
+          <div class="kvt-modal-content">
+            <div class="kvt-modal-header">
+              <h3>Información</h3>
+              <button type="button" class="kvt-modal-close" id="kvt_info_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
+            </div>
+            <div class="kvt-modal-body" id="kvt_info_body"></div>
+          </div>
+        </div>
+
+        <!-- Modal Base -->
+        <div class="kvt-modal" id="kvt_modal" style="display:none;">
+          <div class="kvt-modal-content" role="dialog" aria-modal="true" aria-labelledby="kvt_modal_title">
+            <div class="kvt-modal-header">
+              <h3 id="kvt_modal_title">Base</h3>
+              <button type="button" class="kvt-modal-close dashicons dashicons-no-alt" title="Cerrar"></button>
+            </div>
+            <div class="kvt-modal-body">
+              <div class="kvt-tabs">
+                <button type="button" class="kvt-tab active" data-target="candidates">Candidatos</button>
+                <button type="button" class="kvt-tab" data-target="clients">Clientes</button>
+                <button type="button" class="kvt-tab" data-target="processes">Procesos</button>
+                <button type="button" class="kvt-tab" data-target="ai">AI Search</button>
+              </div>
+              <div class="kvt-new" id="kvt_new_container">
+                <button type="button" class="kvt-btn" id="kvt_new_btn">Nuevo</button>
+                <div class="kvt-new-menu" id="kvt_new_menu">
+                  <button type="button" data-action="candidate">Nuevo candidato</button>
+                  <button type="button" data-action="client">Nuevo cliente</button>
+                  <button type="button" data-action="process">Nuevo proceso</button>
+                </div>
+              </div>
+              <div id="kvt_tab_candidates" class="kvt-tab-panel active">
+                <div class="kvt-modal-controls">
+                  <label>País
+                    <select id="kvt_modal_country" multiple size="4">
+                      <option value="">— Todos —</option>
+                      <?php foreach ($countries as $co): ?>
+                        <option value="<?php echo esc_attr($co); ?>"><?php echo esc_html($co); ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </label>
+                  <label>Ciudad
+                    <select id="kvt_modal_city" multiple size="4">
+                      <option value="">— Todos —</option>
+                      <?php foreach ($cities as $ci): ?>
+                        <option value="<?php echo esc_attr($ci); ?>"><?php echo esc_html($ci); ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </label>
+                  <label>Buscar
+                    <input type="text" id="kvt_modal_search" placeholder="Nombre, email, país o tag…">
+                  </label>
+                  <form id="kvt_export_all_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank">
+                    <input type="hidden" name="action" value="kvt_export">
+                    <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
+                    <input type="hidden" name="filter_client" value="">
+                    <input type="hidden" name="filter_process" value="">
+                    <input type="hidden" name="format" id="kvt_export_all_format" value="csv">
+                    <button type="button" class="kvt-btn" id="kvt_export_all_csv">Export CSV</button>
+                    <button type="button" class="kvt-btn" id="kvt_export_all_xls">Export Excel</button>
+                  </form>
+                </div>
+                <div id="kvt_modal_list" class="kvt-modal-list"></div>
+                <div class="kvt-modal-pager">
+                  <button type="button" class="kvt-btn kvt-secondary" id="kvt_modal_prev">Anterior</button>
+                  <span id="kvt_modal_pageinfo"></span>
+                  <button type="button" class="kvt-btn kvt-secondary" id="kvt_modal_next">Siguiente</button>
+                </div>
+              </div>
+              <div id="kvt_tab_clients" class="kvt-tab-panel">
+                <div id="kvt_clients_list" class="kvt-modal-list"></div>
+              </div>
+              <div id="kvt_tab_processes" class="kvt-tab-panel">
+                <div id="kvt_processes_list" class="kvt-modal-list"></div>
+              </div>
+              <div id="kvt_tab_ai" class="kvt-tab-panel">
+                <div class="kvt-modal-controls">
+                  <textarea id="kvt_ai_input" rows="6" style="width:100%;" placeholder="Pega descripción del trabajo"></textarea>
+                  <button type="button" class="kvt-btn" id="kvt_ai_search">Buscar</button>
+                </div>
+                <div id="kvt_ai_results" class="kvt-modal-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Create Candidate Modal -->
+        <div class="kvt-modal" id="kvt_create_modal" style="display:none">
+          <div class="kvt-modal-content">
+            <div class="kvt-modal-header">
+              <h3>Crear candidato</h3>
+              <button type="button" class="kvt-modal-close" id="kvt_create_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
+            </div>
+            <div class="kvt-modal-body">
+              <div class="kvt-modal-controls">
+                <input type="text" id="kvt_new_first" placeholder="Nombre">
+                <input type="text" id="kvt_new_last" placeholder="Apellidos">
+                <input type="email" id="kvt_new_email" placeholder="Email">
+                <select id="kvt_new_client">
+                  <option value="">— Cliente —</option>
+                  <?php foreach ($clients as $t): ?>
+                    <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
+                  <?php endforeach; ?>
+                </select>
+                <select id="kvt_new_process">
+                  <option value="">— Proceso —</option>
+                  <?php foreach ($processes as $t): ?>
+                    <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
+                  <?php endforeach; ?>
+                </select>
+                <button type="button" class="kvt-btn" id="kvt_new_submit">Crear</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Create Client Modal -->
+        <div class="kvt-modal" id="kvt_new_client_modal" style="display:none">
+          <div class="kvt-modal-content">
+            <div class="kvt-modal-header">
+              <h3>Crear cliente</h3>
+              <button type="button" class="kvt-modal-close" id="kvt_new_client_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
+            </div>
+            <div class="kvt-modal-body">
+              <div class="kvt-modal-controls">
+                <input type="text" id="kvt_client_name" placeholder="Empresa">
+                <input type="text" id="kvt_client_contact" placeholder="Persona de contacto">
+                <input type="email" id="kvt_client_email" placeholder="Email">
+                <input type="text" id="kvt_client_phone" placeholder="Teléfono">
+                <textarea id="kvt_client_desc" placeholder="Descripción"></textarea>
+                <button type="button" class="kvt-btn" id="kvt_client_submit">Crear</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Create Process Modal -->
+        <div class="kvt-modal" id="kvt_new_process_modal" style="display:none">
+          <div class="kvt-modal-content">
+            <div class="kvt-modal-header">
+              <h3>Crear proceso</h3>
+              <button type="button" class="kvt-modal-close" id="kvt_new_process_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
+            </div>
+            <div class="kvt-modal-body">
+              <div class="kvt-modal-controls">
+                <input type="text" id="kvt_process_name_new" placeholder="Nombre del proceso">
+                <select id="kvt_process_client_new">
+                  <option value="">— Cliente —</option>
+                  <?php foreach ($clients as $t): ?>
+                    <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
+                  <?php endforeach; ?>
+                </select>
+                <input type="text" id="kvt_process_contact_new" placeholder="Persona de contacto">
+                <input type="email" id="kvt_process_email_new" placeholder="Email">
+                <textarea id="kvt_process_desc_new" placeholder="Descripción"></textarea>
+                <button type="button" class="kvt-btn" id="kvt_process_submit">Crear</button>
+              </div>
+            </div>
+          </div>
+        </div>
+</div>
+        <?php
+        // Make maps available to JS BEFORE app script executes
+        wp_add_inline_script('kvt-app', 'window.KVT_CLIENT_MAP=' . wp_json_encode($client_map) . ';', 'before');
+        wp_add_inline_script('kvt-app', 'window.KVT_PROCESS_MAP=' . wp_json_encode($proc_map) . ';', 'before');
+        return ob_get_clean();
+    }
+
+    /* Assets */
+    public function enqueue_assets() {
+        // Styles
+        wp_enqueue_style('dashicons');
+        $css = "
+        .kvt-wrapper{max-width:1200px;margin:0 auto;padding:16px;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.06)}
+        .kvt-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+        .kvt-filters label{margin-right:12px;display:inline-flex;gap:6px;align-items:center;font-weight:600}
+        .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
+        .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600}
+        .kvt-btn:hover{opacity:.95}
+          .kvt-secondary{background:#475569}
+          .kvt-new{position:relative;display:inline-block}
+          .kvt-new-menu{position:absolute;right:0;top:100%;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 5px 15px rgba(0,0,0,.1);display:none;flex-direction:column;z-index:1000}
+          .kvt-new-menu button{background:none;color:#0A212E;border:none;padding:8px 12px;text-align:left;cursor:pointer}
+          .kvt-new-menu button:hover{background:#f1f5f9}
+          .kvt-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px}
+        .kvt-col{min-width:260px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:10px;flex:0 0 260px}
+        .kvt-col h3{margin:0 0 8px;font-size:16px;color:#0A212E}
+        .kvt-col.dragover{outline:2px dashed #0A212E; outline-offset: -6px;}
+        .kvt-dropzone{min-height:60px;display:flex;flex-direction:column;gap:8px}
+        .kvt-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:10px;box-shadow:0 3px 10px rgba(0,0,0,.04);cursor:grab;overflow-wrap:anywhere;word-break:break-word}
+        .kvt-card.dragging{opacity:.6}
+        .kvt-card .kvt-title{font-weight:700;margin:0 0 4px}
+        .kvt-card .kvt-sub{font-size:12px;color:#64748b;margin:0}
+        .kvt-card .kvt-tags, .kvt-card-mini .kvt-tags{margin:4px 0;display:flex;gap:4px;flex-wrap:wrap}
+        .kvt-card .kvt-tag, .kvt-card-mini .kvt-tag{background:#eef2f7;color:#0A212E;border:1px solid #e5e7eb;border-radius:6px;padding:2px 6px;font-size:12px}
+        .kvt-card .kvt-meta{display:none}
+        .kvt-card .kvt-expand{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+        .kvt-card .kvt-expand button{background:#eef2f7;color:#0A212E;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;font-weight:600}
+        .kvt-card .kvt-panel{display:none;margin-top:8px;border-top:1px dashed #e2e8f0;padding-top:8px}
+        .kvt-card .kvt-panel dl{display:grid;grid-template-columns:140px 1fr;gap:6px 10px;font-size:13px}
+        .kvt-card .kvt-panel dt{font-weight:700;color:#0A212E}
+          .kvt-card .kvt-panel dd{margin:0}
+          .kvt-card-head{display:flex;justify-content:space-between;align-items:center}
+          .kvt-cv-link{font-size:18px;color:#0A212E;text-decoration:none}
+          .kvt-cv-link:hover{color:#334155}
+          .kvt-input{width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px}
+        .kvt-card .kvt-notes{margin-top:8px}
+        .kvt-card .kvt-notes textarea{width:100%;min-height:80px;padding:8px;border:1px solid #e5e7eb;border-radius:8px}
+        .kvt-card .kvt-notes .row{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
+        .kvt-card .kvt-notes .row button{padding:8px 10px;border-radius:8px;border:1px solid #e5e7eb;background:#0A212E;color:#fff;cursor:pointer}
+        .kvt-card .kvt-notes .row button.kvt-danger{background:#b91c1c}
+        .kvt-empty{padding:16px;color:#475569;font-style:italic}
+        .kvt-delete{background:none !important;border:none !important;color:#b91c1c !important;font-size:18px;line-height:1;cursor:pointer;padding:0}
+        .kvt-delete:hover{color:#7f1d1d !important}
+        .kvt-delete.dashicons{vertical-align:middle}
+        .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
+        #kvt_table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
+        #kvt_table thead th{position:sticky;top:0;background:#0A212E;color:#fff;padding:10px;border-bottom:1px solid #0A212E;text-align:left}
+        #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
+        .kvt-modal{position:fixed;inset:0;background:rgba(2,6,23,.5);display:flex;align-items:center;justify-content:center;z-index:9999}
+        .kvt-modal-content{background:#fff;max-width:980px;width:95%;border-radius:12px;box-shadow:0 15px 40px rgba(0,0,0,.2)}
+        #kvt_modal .kvt-modal-content{width:95vw;height:90vh;max-width:95vw;max-height:95vh;resize:both;overflow:auto}
+        .kvt-modal-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb}
+        .kvt-modal-body{padding:12px 16px}
+        .kvt-modal-close{background:none;border:none;cursor:pointer}
+        .kvt-tabs{display:flex;gap:8px;margin-bottom:12px}
+        .kvt-tabs button{background:#eef2f7;color:#0A212E;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;cursor:pointer}
+        .kvt-tabs button.active{background:#0A212E;color:#fff}
+        .kvt-tab-panel{display:none}
+        .kvt-tab-panel.active{display:block}
+        .kvt-modal-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+        .kvt-modal-controls select,.kvt-modal-controls input{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
+        .kvt-modal-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;max-height:420px;overflow:auto}
+        #kvt_modal .kvt-modal-list{max-height:calc(90vh - 200px)}
+        .kvt-card-mini{border:1px solid #e5e7eb;border-radius:10px;padding:10px}
+          .kvt-card-mini h4{margin:0 0 6px}
+          .kvt-mini-panel{display:none;margin-top:8px;border-top:1px dashed #e2e8f0;padding-top:8px}
+          .kvt-mini-actions{display:flex;gap:8px;margin-top:8px}
+        .kvt-ai-summary{margin:.2em 0;color:#64748b}
+        .kvt-loading{display:flex;align-items:center;gap:8px;color:#475569}
+        .kvt-loading:before{content:'';width:16px;height:16px;border:2px solid #e5e7eb;border-top-color:#0A212E;border-radius:50%;animation:kvt-spin 1s linear infinite}
+        @keyframes kvt-spin{to{transform:rotate(360deg)}}
+        .kvt-modal-pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px}
+        ";
+        wp_register_style('kvt-style', false);
+        wp_enqueue_style('kvt-style');
+        wp_add_inline_style('kvt-style', $css);
+
+        if (is_user_logged_in() && current_user_can('edit_posts')) {
+            // PDF.js and Tesseract.js for client-side text extraction
+            wp_enqueue_script(
+                'pdfjs',
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+                [],
+                '3.11.174',
+                true
+            );
+            wp_add_inline_script('pdfjs', 'window["pdfjs-dist/build/pdf"] && (window.pdfjsLib = window["pdfjs-dist/build/pdf"]);', 'after');
+
+            wp_enqueue_script(
+                'tesseract',
+                'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+                [],
+                '5.0.0',
+                true
+            );
+
+            // Register a tiny empty script handle and attach our inlines to it, to avoid theme collisions
+            wp_register_script('kvt-app', '', ['pdfjs','tesseract'], null, true);
+            wp_enqueue_script('kvt-app');
+
+            // Inline constants BEFORE app
+            $statuses = $this->get_statuses();
+            $columns  = $this->get_columns();
+            wp_add_inline_script('kvt-app', 'const KVT_STATUSES='.wp_json_encode($statuses).';', 'before');
+            wp_add_inline_script('kvt-app', 'const KVT_COLUMNS='.wp_json_encode($columns).';',  'before');
+            wp_add_inline_script('kvt-app', 'const KVT_AJAX="'.esc_js(admin_url('admin-ajax.php')).'";', 'before');
+            wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
+
+            // App JS
+            $js = <<<'JS'
 document.addEventListener('DOMContentLoaded', function(){
-  var form = document.querySelector('form.kcvf-form');
-  if(!form) return;
-
-  var fileInput = form.querySelector('input[type="file"][name="kcvf_file"]');
-  var cvTextField = document.createElement('input');
-  cvTextField.type = 'hidden';
-  cvTextField.name = 'cv_text';
-  form.appendChild(cvTextField);
-
-  var submitting = false;
+  const el = (sel, root=document)=>root.querySelector(sel);
+  const els = (sel, root=document)=>Array.from(root.querySelectorAll(sel));
+  const esc = (s)=>String(s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m]));
+  const escAttr = esc;
 
   async function extractPdfWithPDFjs(file){
     if (!window.pdfjsLib) return '';
@@ -249,7 +959,7 @@ document.addEventListener('DOMContentLoaded', function(){
         const page = await pdf.getPage(p);
         const content = await page.getTextContent();
         const strings = content.items.map(it=>it.str);
-        full += strings.join(' ') + '\\n\\n';
+        full += strings.join(' ') + '\n\n';
       }
       return full.trim();
     } catch(e){ return ''; }
@@ -270,820 +980,1740 @@ document.addEventListener('DOMContentLoaded', function(){
       await page.render({ canvasContext: ctx, viewport }).promise;
       const dataURL = canvas.toDataURL('image/png');
       try {
-        const { data:{ text } } = await Tesseract.recognize(dataURL, 'spa+eng', { logger: ()=>{} });
-        if (text) ocrText += text + '\\n\\n';
+        const { data: { text } } = await Tesseract.recognize(dataURL, 'spa+eng', { logger: ()=>{} });
+        if (text) ocrText += text + '\n\n';
       } catch(e){}
       ctx.clearRect(0,0,canvas.width,canvas.height);
     }
     return ocrText.trim();
   }
 
-  async function extractPdfText(file){
-    let txt = await extractPdfWithPDFjs(file);
-    if (!txt) txt = await ocrPdfWithTesseract(file);
-    return txt;
+  const board = el('#kvt_board');
+  if (!board) return;
+
+  const tableWrap = el('#kvt_table_wrap');
+  const tHead = el('#kvt_table_head');
+  const tBody = el('#kvt_table_body');
+
+  const selClient  = el('#kvt_client');
+  const selProcess = el('#kvt_process');
+  const btnRefresh = el('#kvt_refresh');
+  const btnToggle  = el('#kvt_toggle_table');
+    const btnCSV     = el('#kvt_export_csv');
+    const btnXLS     = el('#kvt_export_xls');
+    const btnAdd     = el('#kvt_add_profile');
+    const btnNew     = el('#kvt_new_btn');
+    const newMenu    = el('#kvt_new_menu');
+    const btnAllCSV  = el('#kvt_export_all_csv');
+    const btnAllXLS  = el('#kvt_export_all_xls');
+    const exportAllForm   = el('#kvt_export_all_form');
+    const exportAllFormat = el('#kvt_export_all_format');
+  const selInfo    = el('#kvt_selected_info');
+  const selToggle  = el('#kvt_selected_toggle');
+  const selDetails = el('#kvt_selected_details');
+  const selClientInfo = el('#kvt_selected_client');
+  const selProcessInfo = el('#kvt_selected_process');
+  const infoModal = el('#kvt_info_modal');
+  const infoClose = el('#kvt_info_close');
+  const infoBody  = el('#kvt_info_body');
+
+  const modal      = el('#kvt_modal');
+  const modalClose = el('.kvt-modal-close', modal);
+  const modalList  = el('#kvt_modal_list', modal);
+  const modalCountry= el('#kvt_modal_country', modal);
+  const modalCity   = el('#kvt_modal_city', modal);
+  const modalPrev  = el('#kvt_modal_prev', modal);
+  const modalNext  = el('#kvt_modal_next', modal);
+  const modalPage  = el('#kvt_modal_pageinfo', modal);
+  const modalSearch= el('#kvt_modal_search', modal);
+  const tabs = els('.kvt-tab', modal);
+  const tabCandidates = el('#kvt_tab_candidates', modal);
+  const tabClients = el('#kvt_tab_clients', modal);
+  const tabProcesses = el('#kvt_tab_processes', modal);
+  const tabAI = el('#kvt_tab_ai', modal);
+  const clientsList = el('#kvt_clients_list', modal);
+  const processesList = el('#kvt_processes_list', modal);
+  const aiInput = el('#kvt_ai_input', modal);
+  const aiBtn = el('#kvt_ai_search', modal);
+  const aiResults = el('#kvt_ai_results', modal);
+
+  function getClientById(id){
+    if(!Array.isArray(window.KVT_CLIENT_MAP)) return null;
+    id = parseInt(id,10);
+    return window.KVT_CLIENT_MAP.find(c=>c.id===id) || null;
+  }
+  function getProcessById(id){
+    if(!Array.isArray(window.KVT_PROCESS_MAP)) return null;
+    id = parseInt(id,10);
+    return window.KVT_PROCESS_MAP.find(p=>p.id===id) || null;
   }
 
-  if (fileInput){
-    fileInput.addEventListener('change', async function(){
-      cvTextField.value = '';
-      var f = fileInput.files && fileInput.files[0];
-      if (!f) return;
-      var isPdf = (f.type === 'application/pdf') || (/\.pdf$/i.test(f.name));
-      if (isPdf) {
-        cvTextField.value = await extractPdfText(f);
+  let currentPage = 1;
+
+  function switchTab(target){
+    if(tabCandidates) tabCandidates.classList.toggle('active', target==='candidates');
+    if(tabClients) tabClients.classList.toggle('active', target==='clients');
+    if(tabProcesses) tabProcesses.classList.toggle('active', target==='processes');
+    if(tabAI) tabAI.classList.toggle('active', target==='ai');
+    tabs.forEach(b=>b.classList.toggle('active', b.dataset.target===target));
+    if(target==='clients') listClients();
+    if(target==='processes') listProcesses();
+    if(target==='candidates') listProfiles(1);
+  }
+  tabs.forEach(b=>b.addEventListener('click', ()=>switchTab(b.dataset.target)));
+
+  function openModal(){
+    modal.style.display = 'flex';
+    modalSearch.value = '';
+    if(modalCountry){
+      Array.from(modalCountry.options).forEach(o=>o.selected=false);
+      const allOpt = modalCountry.querySelector('option[value=""]');
+      if(allOpt) allOpt.selected = true;
+    }
+    if(modalCity){
+      Array.from(modalCity.options).forEach(o=>o.selected=false);
+      const allOpt = modalCity.querySelector('option[value=""]');
+      if(allOpt) allOpt.selected = true;
+    }
+    switchTab('candidates');
+  }
+  function closeModal(){ modal.style.display = 'none'; }
+  modalClose && modalClose.addEventListener('click', closeModal);
+  modal && modal.addEventListener('click', (e)=>{ if(e.target===modal) closeModal(); });
+
+  function filterProcessOptions(){
+    if (!selClient || !selProcess) return;
+    const clientId = parseInt(selClient.value || '0', 10);
+    const current = selProcess.value;
+    selProcess.innerHTML = '<option value="">— Todos —</option>';
+    (window.KVT_PROCESS_MAP||[]).forEach(p=>{
+      if (!clientId || p.client_id === clientId) {
+        const opt = document.createElement('option');
+        opt.value = String(p.id);
+        opt.textContent = p.name;
+        selProcess.appendChild(opt);
       }
+    });
+    if (current && Array.from(selProcess.options).some(o=>o.value===current)) selProcess.value = current;
+  }
+
+  function getClientIdForProcess(pid){
+    const map = window.KVT_PROCESS_MAP || [];
+    const item = map.find(p=>String(p.id)===String(pid));
+    return item ? String(item.client_id) : '';
+  }
+
+  function renderBoardSkeleton(){
+    board.innerHTML = '';
+    KVT_STATUSES.forEach(st=>{
+      const col = document.createElement('div');
+      col.className = 'kvt-col'; col.dataset.status = st;
+      const h = document.createElement('h3'); h.textContent = st;
+      const zone = document.createElement('div'); zone.className = 'kvt-dropzone'; zone.dataset.status = st;
+      col.appendChild(h); col.appendChild(zone);
+      board.appendChild(col);
     });
   }
 
-  form.addEventListener('submit', function(e){
-    if (submitting) return;
-    e.preventDefault();
-    var file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
-    var isPdf = file && ((file.type === 'application/pdf') || (/\.pdf$/i.test(file.name)));
-    (async function(){
-      if (isPdf && !cvTextField.value) {
-        cvTextField.value = await extractPdfText(file);
+  function ajaxForm(params){
+    const body = new URLSearchParams(params);
+    return fetch(KVT_AJAX, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body.toString() }).then(r=>r.json());
+  }
+
+  function lastNoteSnippet(notes){
+    const txt = String(notes||'').trim();
+    if (!txt) return '';
+    const lines = txt.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    if (!lines.length) return '';
+    const last = lines[lines.length-1];
+    const words = last.split(/\s+/);
+    const slice = words.slice(0,30).join(' ');
+    return slice + (words.length>30 ? '…' : '');
+  }
+
+    function cardTemplate(c){
+      const card = document.createElement('div');
+      card.className = 'kvt-card'; card.setAttribute('draggable','true'); card.dataset.id = c.id;
+
+      const head = document.createElement('div'); head.className='kvt-card-head';
+      const title = document.createElement('p'); title.className = 'kvt-title';
+      title.textContent = (c.meta.first_name||'') + ' ' + (c.meta.last_name||'');
+      if (title.textContent.trim()==='') title.textContent = c.title;
+      head.appendChild(title);
+      if (c.meta.cv_url){
+        const cv = document.createElement('a');
+        cv.href = c.meta.cv_url; cv.target='_blank';
+        cv.className = 'kvt-cv-link dashicons dashicons-media-document';
+        cv.setAttribute('title','Ver CV');
+        head.appendChild(cv);
       }
-      var tokenField = form.querySelector('input[name="kcvf_recaptcha_token"]');
-      if (window.grecaptcha && typeof grecaptcha.execute === 'function') {
-        grecaptcha.ready(function(){
-          grecaptcha.execute('%SITE_KEY%', {action:'cv_submit'}).then(function(token){
-            if (tokenField) tokenField.value = token;
-            submitting = true;
-            form.submit();
+
+      const sub = document.createElement('p'); sub.className = 'kvt-sub';
+      sub.textContent = lastNoteSnippet(c.meta.notes);
+      const tagsWrap = document.createElement('div'); tagsWrap.className = 'kvt-tags';
+      if (c.meta && c.meta.tags){
+        c.meta.tags.split(',').map(t=>t.trim()).filter(Boolean).forEach(t=>{
+          const span = document.createElement('button');
+          span.type = 'button';
+          span.className = 'kvt-tag';
+          span.textContent = t;
+          tagsWrap.appendChild(span);
+        });
+      }
+
+    const expand = document.createElement('div'); expand.className='kvt-expand';
+    const btn = document.createElement('button'); btn.type='button'; btn.textContent='Ver perfil';
+    const btnDel = document.createElement('button'); btnDel.type='button'; btnDel.className='kvt-delete dashicons dashicons-trash'; btnDel.setAttribute('title','Eliminar candidato');
+    expand.appendChild(btn); expand.appendChild(btnDel);
+
+    const panel = document.createElement('div'); panel.className='kvt-panel';
+    panel.innerHTML = buildProfileHTML(c);
+
+    btn.addEventListener('click', ()=>{
+      const visible = panel.style.display === 'block';
+      panel.style.display = visible ? 'none' : 'block';
+      btn.textContent = visible ? 'Ver perfil' : 'Ocultar perfil';
+    });
+
+    card.addEventListener('dragstart', e=>{
+      card.classList.add('dragging'); e.dataTransfer.setData('text/plain', String(c.id));
+    });
+    card.addEventListener('dragend', ()=> card.classList.remove('dragging'));
+
+    btnDel.addEventListener('click', ()=>{
+      if (!confirm('¿Quitar a este candidato del proceso/cliente actual?')) return;
+      ajaxForm({
+        action:'kvt_unassign_candidate',
+        _ajax_nonce:KVT_NONCE,
+        id:String(c.id),
+        client_id: selClient ? selClient.value || '' : '',
+        process_id: selProcess ? selProcess.value || '' : ''
+      })
+        .then(j=>{
+          if (!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo eliminar.');
+          card.remove();
+        });
+    });
+
+      card.appendChild(head); card.appendChild(tagsWrap); card.appendChild(sub);
+    card.appendChild(expand); card.appendChild(panel);
+
+    // Enable handlers after elements are in the DOM
+    enableNotesHandlers(card, String(c.id));
+    enableProfileEditHandlers(card, String(c.id));
+    enableCvUploadHandlers(card, String(c.id));
+    return card;
+  }
+
+  function buildProfileHTML(c){
+    const m = c.meta||{};
+    const input = (val,type='text',ph='')=>'<input class="kvt-input" type="'+type+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'">';
+    const kvInp = (label, html)=>'<dt>'+esc(label)+'</dt><dd>'+html+'</dd>';
+
+    const dl =
+      kvInp('Nombre',       input((m.first_name||''))) +
+      kvInp('Apellidos',    input((m.last_name||''))) +
+      kvInp('Email',        input((m.email||''), 'email')) +
+      kvInp('Teléfono',     input((m.phone||''))) +
+      kvInp('País',         input((m.country||''))) +
+      kvInp('Ciudad',       input((m.city||''))) +
+      kvInp('Tags',         input((m.tags||''))) +
+      kvInp('CV (URL)',     input((m.cv_url||''), 'url', 'https://...')) +
+      kvInp('Subir CV',     '<input class=\"kvt-input kvt-cv-file\" type=\"file\" accept=\".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document\">'+
+                            '<button type=\"button\" class=\"kvt-upload-cv\" style=\"margin-top:6px\">Subir y guardar</button>') +
+      kvInp('Fecha subida', input((m.cv_uploaded||''), 'text', 'DD-MM-YYYY'));
+
+    const notesVal = m.notes || '';
+    const notes =
+      '<div class="kvt-notes">'+
+        '<label><strong>Notas</strong></label>'+
+        '<textarea class="kvt-notes-text">'+esc(notesVal)+'</textarea>'+
+        '<div class="row">'+
+          '<button type="button" class="kvt-delete-notes kvt-danger">Borrar notas</button>'+
+          '<button type="button" class="kvt-save-profile">Guardar perfil</button>'+
+        '</div>'+
+      '</div>';
+
+    return '<dl>'+dl+'</dl>'+notes;
+  }
+
+  function enableNotesHandlers(card, id){
+    const txt = card.querySelector('.kvt-notes-text');
+    const btnDel  = card.querySelector('.kvt-delete-notes');
+
+    btnDel && btnDel.addEventListener('click', ()=>{
+      if (!confirm('¿Seguro que deseas borrar todas las notas?')) return;
+      ajaxForm({action:'kvt_delete_notes', _ajax_nonce:KVT_NONCE, id:id})
+        .then(j=>{
+          if (!j.success) return alert('No se pudo borrar.');
+          if (txt) txt.value = '';
+          const sub = card.querySelector('.kvt-sub'); if (sub) sub.textContent = '';
+          alert('Notas borradas.');
+        });
+    });
+  }
+
+  function enableProfileEditHandlers(card, id){
+    const inputs = card.querySelectorAll('dl .kvt-input');
+    const txtNotes = card.querySelector('.kvt-notes-text');
+    const btnSaveProfile = card.querySelector('.kvt-save-profile');
+    if (!btnSaveProfile) return;
+
+    btnSaveProfile.addEventListener('click', ()=>{
+      const vals = Array.from(inputs).map(i=>i.value || '');
+      const payload = {
+        first_name: vals[0] || '',
+        last_name:  vals[1] || '',
+        email:      vals[2] || '',
+        phone:      vals[3] || '',
+        country:    vals[4] || '',
+        city:       vals[5] || '',
+        tags:       vals[6] || '',
+        cv_url:     vals[7] || '',
+        cv_uploaded:vals[9] || '',
+        notes:      txtNotes ? txtNotes.value : '',
+      };
+      fetch(KVT_AJAX, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:new URLSearchParams({action:'kvt_update_profile', _ajax_nonce:KVT_NONCE, id, ...payload}).toString()})
+        .then(r=>r.json()).then(j=>{
+          if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo guardar el perfil.');
+          const title = card.querySelector('.kvt-title');
+          if (title) title.textContent = (payload.first_name+' '+payload.last_name).trim() || title.textContent;
+          const sub = card.querySelector('.kvt-sub');
+          if (sub) sub.textContent = payload.notes ? lastNoteSnippet(payload.notes) : '';
+          const tagWrap = card.querySelector('.kvt-tags');
+          if (tagWrap){
+            tagWrap.innerHTML = '';
+            if (payload.tags){
+              payload.tags.split(',').map(t=>t.trim()).filter(Boolean).forEach(t=>{
+                const span = document.createElement('button');
+                span.type = 'button';
+                span.className = 'kvt-tag';
+                span.textContent = t;
+                tagWrap.appendChild(span);
+              });
+            }
+          }
+          alert('Perfil guardado.');
+        });
+    });
+  }
+
+  function enableCvUploadHandlers(card, id){
+    const fileInput = card.querySelector('.kvt-cv-file');
+    const urlInput  = card.querySelector('dl .kvt-input[type="url"]');
+    const dateInput = card.querySelectorAll('dl .kvt-input')[9];
+    const btnUpload = card.querySelector('.kvt-upload-cv');
+    if (!fileInput || !btnUpload) return;
+    btnUpload.addEventListener('click', async ()=>{
+      if (!fileInput.files || !fileInput.files[0]) { alert('Selecciona un archivo.'); return; }
+      const file = fileInput.files[0];
+      const fd = new FormData();
+      fd.append('action','kvt_upload_cv');
+      fd.append('_ajax_nonce', KVT_NONCE);
+      fd.append('id', id);
+      fd.append('file', file);
+      if (file.type === 'application/pdf') {
+        let txt = await extractPdfWithPDFjs(file);
+        if (!txt) txt = await ocrPdfWithTesseract(file);
+        if (txt) fd.append('cv_text', txt);
+      }
+      const res = await fetch(KVT_AJAX, { method:'POST', body: fd });
+      const j = await res.json();
+      if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo subir el CV.');
+      if (urlInput) urlInput.value = j.data.url || '';
+      if (dateInput) dateInput.value = j.data.date || '';
+      alert('CV subido y guardado.');
+    });
+  }
+
+  function enableDnD(){
+    els('.kvt-dropzone').forEach(zone=>{
+      zone.addEventListener('dragover', e=>{ e.preventDefault(); });
+      zone.addEventListener('drop', e=>{
+        e.preventDefault();
+        const id = e.dataTransfer.getData('text/plain');
+        const newStatus = zone.dataset.status;
+        const card = el('.kvt-card[data-id="'+id+'"]');
+        if (card) zone.appendChild(card);
+        ajaxForm({action:'kvt_update_status', _ajax_nonce:KVT_NONCE, id:id, status:newStatus});
+      });
+    });
+  }
+
+  function fetchCandidates(){
+    const params = new URLSearchParams();
+    params.set('action','kvt_get_candidates');
+    params.set('_ajax_nonce', KVT_NONCE);
+    params.set('client', selClient ? selClient.value : '');
+    params.set('process', selProcess ? selProcess.value : '');
+    return fetch(KVT_AJAX, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params.toString() }).then(r=>r.json());
+  }
+
+  function renderData(data){
+    board.innerHTML = '';
+    KVT_STATUSES.forEach(st=>{
+      const col = document.createElement('div');
+      col.className = 'kvt-col'; col.dataset.status = st;
+      const h = document.createElement('h3'); h.textContent = st;
+      const zone = document.createElement('div'); zone.className = 'kvt-dropzone'; zone.dataset.status = st;
+      col.appendChild(h); col.appendChild(zone); board.appendChild(col);
+    });
+
+    if (!data || data.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'kvt-empty';
+      empty.innerHTML = 'Selecciona un <strong>Cliente</strong> o un <strong>Proceso</strong> para ver candidatos.';
+      board.prepend(empty);
+    }
+
+    data.forEach(c=>{
+      const zone = el('.kvt-dropzone[data-status="'+(c.status||'')+'"]') || el('.kvt-dropzone');
+      if (zone) {
+        const card = cardTemplate(c);
+        zone.appendChild(card);
+      }
+    });
+
+    enableDnD();
+
+    tHead.innerHTML = KVT_COLUMNS.map(c=>'<th>'+esc(c.label)+'</th>').join('');
+    tBody.innerHTML = data.map(row=>{
+      const tds = KVT_COLUMNS.map(col=>{
+        const val = row.meta[col.key] || '';
+        if (col.key==='cv_url') {
+          return '<td>'+(val ? '<a href="'+escAttr(val)+'" target="_blank" rel="noopener">Abrir</a>' : '')+'</td>';
+        }
+        return '<td>'+esc(val)+'</td>';
+      }).join('');
+      return '<tr>'+tds+'</tr>';
+    }).join('');
+  }
+
+  function syncExportHidden(){
+    el('#kvt_export_client').value  = selClient ? selClient.value : '';
+    el('#kvt_export_process').value = selProcess ? selProcess.value : '';
+  }
+
+  function updateSelectedInfo(){
+    if(!selInfo) return;
+    const cid = selClient && selClient.value ? selClient.value : '';
+    const pid = selProcess && selProcess.value ? selProcess.value : '';
+    if(!cid && !pid){ selInfo.style.display='none'; return; }
+    selInfo.style.display='block';
+    selToggle.style.display = 'inline-block';
+    selDetails.style.display = 'none';
+    let clientDet='';
+    if(cid && Array.isArray(window.KVT_CLIENT_MAP)){
+      const c = window.KVT_CLIENT_MAP.find(x=>String(x.id)===cid);
+      if(c){
+        clientDet = '<strong>Cliente:</strong> '+esc(c.name||'');
+        if(c.contact_name || c.contact_email || c.contact_phone){
+          clientDet += '<br><em>Contacto:</em> '+esc(c.contact_name||'');
+          if(c.contact_email) clientDet += ', '+esc(c.contact_email);
+          if(c.contact_phone) clientDet += ', '+esc(c.contact_phone);
+        }
+        if(c.description) clientDet += '<br><em>Descripción:</em> '+esc(c.description);
+        const procNames = Array.isArray(window.KVT_PROCESS_MAP)?window.KVT_PROCESS_MAP.filter(p=>String(p.client_id)===cid).map(p=>p.name):[];
+        if(procNames.length) clientDet += '<br><em>Procesos:</em> '+esc(procNames.join(', '));
+      }
+      clientDet += ' <button type="button" class="kvt-edit-client-inline" data-id="'+cid+'">Editar</button>';
+    }
+    selClientInfo.innerHTML = clientDet;
+    let procDet='';
+    if(pid && Array.isArray(window.KVT_PROCESS_MAP)){
+      const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
+      if(p){
+        procDet = '<strong>Proceso:</strong> '+esc(p.name||'');
+        const cl = getClientById(p.client_id);
+        if(cl) procDet += '<br><em>Cliente:</em> '+esc(cl.name||'');
+        if(p.contact_name || p.contact_email){
+          procDet += '<br><em>Contacto:</em> '+esc(p.contact_name||'');
+          if(p.contact_email) procDet += ', '+esc(p.contact_email);
+        }
+        if(p.description) procDet += '<br><em>Descripción:</em> '+esc(p.description);
+      }
+      procDet += ' <button type="button" class="kvt-edit-process-inline" data-id="'+pid+'">Editar</button>';
+    }
+    selProcessInfo.innerHTML = procDet;
+  }
+
+  const exportForm = el('#kvt_export_form');
+  btnCSV && btnCSV.addEventListener('click', ()=>{ el('#kvt_export_format').value='csv'; syncExportHidden(); exportForm.submit(); });
+  btnXLS && btnXLS.addEventListener('click', ()=>{ el('#kvt_export_format').value='xls'; syncExportHidden(); exportForm.submit(); });
+  btnAllCSV && btnAllCSV.addEventListener('click', ()=>{ exportAllFormat.value='csv'; exportAllForm && exportAllForm.submit(); });
+  btnAllXLS && btnAllXLS.addEventListener('click', ()=>{ exportAllFormat.value='xls'; exportAllForm && exportAllForm.submit(); });
+  infoClose && infoClose.addEventListener('click', ()=>{ infoModal.style.display='none'; });
+  infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
+  selToggle && selToggle.addEventListener('click', ()=>{
+    infoBody.innerHTML = selDetails.innerHTML;
+    infoModal.style.display='flex';
+  });
+  aiBtn && aiBtn.addEventListener('click', ()=>{
+    const desc = (aiInput.value||'').trim();
+    if(!desc) return;
+    aiResults.innerHTML = '<div class="kvt-loading">Buscando...</div>';
+    aiBtn.disabled = true;
+    const params = new URLSearchParams();
+    params.set('action','kvt_ai_search');
+    params.set('_ajax_nonce', KVT_NONCE);
+    params.set('description', desc);
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json()).then(j=>{
+        aiBtn.disabled = false;
+        if(!j.success){ alert('No se pudo buscar.'); aiResults.innerHTML=''; return; }
+        const items = Array.isArray(j.data.items)?j.data.items:[];
+        if(!items.length){ aiResults.innerHTML = '<p>No hay coincidencias reales.</p>'; return; }
+        aiResults.innerHTML = items.map(it=>{
+          const m = it.meta||{};
+          return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
+            '<h4>'+esc((m.first_name||'')+' '+(m.last_name||''))+(m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'')+'</h4>'+
+            '<p class="kvt-ai-summary">'+esc(it.summary||'')+'</p>'+
+            '<div class="kvt-mini-actions"><button type="button" class="kvt-btn kvt-secondary kvt-mini-view">Ver perfil</button></div>'+
+            '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
+          '</div>';
+        }).join('');
+        els('.kvt-mini-view', aiResults).forEach(b=>{
+          b.addEventListener('click', ()=>{
+            const card = b.closest('.kvt-card-mini');
+            const panel = card.querySelector('.kvt-mini-panel');
+            const show = panel.style.display==='block';
+            panel.style.display = show?'none':'block';
+            b.textContent = show?'Ver perfil':'Ocultar';
           });
         });
-      } else {
-        submitting = true;
-        form.submit();
-      }
-    })();
+      }).catch(()=>{ aiBtn.disabled=false; aiResults.innerHTML=''; });
   });
+
+  btnToggle && btnToggle.addEventListener('click', ()=>{
+    tableWrap.style.display = (tableWrap.style.display==='none' || !tableWrap.style.display) ? 'block' : 'none';
+  });
+
+  function refresh(){
+    fetchCandidates().then(j=>{
+      if(j.success){ renderData(j.data); } else { alert('Error cargando candidatos'); }
+    });
+  }
+  btnRefresh && btnRefresh.addEventListener('click', ()=>{ refresh(); updateSelectedInfo(); });
+  selClient && selClient.addEventListener('change', ()=>{ filterProcessOptions(); refresh(); updateSelectedInfo(); });
+  selProcess && selProcess.addEventListener('change', ()=>{ refresh(); updateSelectedInfo(); });
+
+  updateSelectedInfo();
+
+  // Modal list & clone/create
+  function listProfiles(page){
+    currentPage = page || 1;
+    const params = new URLSearchParams();
+    params.set('action','kvt_list_profiles');
+    params.set('_ajax_nonce', KVT_NONCE);
+    params.set('page', currentPage);
+    params.set('q', modalSearch.value || '');
+    const cvals = modalCountry ? Array.from(modalCountry.selectedOptions).map(o=>o.value).filter(v=>v).join(',') : '';
+    const cityVals = modalCity ? Array.from(modalCity.selectedOptions).map(o=>o.value).filter(v=>v).join(',') : '';
+    params.set('countries', cvals);
+    params.set('cities', cityVals);
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json())
+      .then(j=>{
+        if(!j.success) return alert('No se pudo cargar la lista.');
+        const {items,pages} = j.data;
+        const procSel = selProcess && selProcess.value;
+        const cliSel  = selClient && selClient.value;
+        const allowAdd = !!(procSel && (cliSel || getClientIdForProcess(procSel)));
+        modalList.innerHTML = items.map(it=>{
+            const m = it.meta||{};
+            return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
+              '<h4>'+esc((m.first_name||'')+' '+(m.last_name||''))+(m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'')+'</h4>'+
+              '<p style="margin:.2em 0;color:#64748b">'+esc(m.email||'')+'</p>'+
+              (m.tags?'<div class="kvt-tags">'+m.tags.split(',').map(t=>'<span class="kvt-tag">'+esc(t.trim())+'</span>').join('')+'</div>':'')+
+              '<div class="kvt-mini-actions">'+
+                (allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'')+
+                '<button type="button" class="kvt-btn kvt-secondary kvt-mini-view" data-id="'+it.id+'">Ver perfil</button>'+
+              '</div>'+
+              '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
+            '</div>';
+          }).join('');
+          modalPage.textContent = 'Página '+currentPage+' de '+(pages||1);
+          if(modalPrev) modalPrev.style.display = pages>1 ? 'inline-block' : 'none';
+          if(modalNext) modalNext.style.display = pages>1 ? 'inline-block' : 'none';
+          if(allowAdd){
+            els('.kvt-mini-add', modalList).forEach(b=>{
+              b.addEventListener('click', ()=>{
+                const id = b.getAttribute('data-id');
+                const proc = selProcess.value;
+                let cli  = selClient.value;
+                if(!cli) cli = getClientIdForProcess(proc);
+                if(!proc || !cli){ alert('Seleccione cliente y proceso en el tablero.'); return; }
+                const p = new URLSearchParams();
+                p.set('action','kvt_assign_candidate');
+                p.set('_ajax_nonce', KVT_NONCE);
+                p.set('candidate_id', id);
+                p.set('process_id', proc);
+                p.set('client_id', cli);
+                fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+                  .then(r=>r.json()).then(j=>{
+                    if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo asignar.');
+                    alert('Candidato asignado.');
+                    closeModal();
+                    refresh();
+                  });
+              });
+            });
+          }
+          els('.kvt-mini-view', modalList).forEach(b=>{
+            b.addEventListener('click', ()=>{
+              const card = b.closest('.kvt-card-mini');
+              const panel = card.querySelector('.kvt-mini-panel');
+              const show = panel.style.display==='block';
+              panel.style.display = show?'none':'block';
+              b.textContent = show?'Ver perfil':'Ocultar';
+            });
+          });
+          items.forEach(it=>{
+            const card = modalList.querySelector('.kvt-card-mini[data-id="'+it.id+'"]');
+            if(card){
+              enableNotesHandlers(card, String(it.id));
+              enableProfileEditHandlers(card, String(it.id));
+              enableCvUploadHandlers(card, String(it.id));
+            }
+          });
+      });
+  }
+  modalPrev && modalPrev.addEventListener('click', ()=>{ if(currentPage>1) listProfiles(currentPage-1); });
+  modalNext && modalNext.addEventListener('click', ()=>{ listProfiles(currentPage+1); });
+  modalCountry && modalCountry.addEventListener('change', ()=>{
+    if(Array.from(modalCountry.selectedOptions).some(o=>o.value==='')){
+      Array.from(modalCountry.options).forEach(o=>{ o.selected = (o.value===''); });
+    }
+    listProfiles(1);
+  });
+  modalCity && modalCity.addEventListener('change', ()=>{
+    if(Array.from(modalCity.selectedOptions).some(o=>o.value==='')){
+      Array.from(modalCity.options).forEach(o=>{ o.selected = (o.value===''); });
+    }
+    listProfiles(1);
+  });
+  let mto=null;
+  modalSearch && modalSearch.addEventListener('input', ()=>{ clearTimeout(mto); mto=setTimeout(()=>listProfiles(1), 300); });
+
+  function listClients(){
+    const params = new URLSearchParams();
+    params.set('action','kvt_list_clients');
+    params.set('_ajax_nonce', KVT_NONCE);
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json()).then(j=>{
+        if(!j.success) return alert('No se pudo cargar la lista.');
+        if(Array.isArray(window.KVT_CLIENT_MAP)){
+          j.data.items.forEach(c=>{
+            const idx = window.KVT_CLIENT_MAP.findIndex(x=>x.id===c.id);
+            if(idx>=0){
+              window.KVT_CLIENT_MAP[idx].name = c.name;
+              window.KVT_CLIENT_MAP[idx].contact_name = c.contact_name;
+              window.KVT_CLIENT_MAP[idx].contact_email = c.contact_email;
+              window.KVT_CLIENT_MAP[idx].contact_phone = c.contact_phone;
+              window.KVT_CLIENT_MAP[idx].description = c.description;
+            } else {
+              window.KVT_CLIENT_MAP.push(c);
+            }
+          });
+        }
+        if(clientsList) clientsList.innerHTML = j.data.items.map(c=>{
+          return '<div class="kvt-card-mini">'+
+            '<h4>'+esc(c.name)+'</h4>'+
+            (c.contact_name?'<p>'+esc(c.contact_name)+(c.contact_email?' ('+esc(c.contact_email)+')':'')+'</p>':'')+
+            (c.contact_phone?'<p>'+esc(c.contact_phone)+'</p>':'')+
+            (c.description?'<p>'+esc(c.description)+'</p>':'')+
+            (c.processes && c.processes.length?'<p>'+esc(c.processes.join(', '))+'</p>':'')+
+            '<p><button type="button" class="kvt-edit-client" data-id="'+escAttr(c.id)+'" data-name="'+escAttr(c.name||'')+'" data-contact-name="'+escAttr(c.contact_name||'')+'" data-contact-email="'+escAttr(c.contact_email||'')+'" data-contact-phone="'+escAttr(c.contact_phone||'')+'" data-desc="'+escAttr(c.description||'')+'">Editar</button></p>'+
+            '</div>';
+        }).join('');
+      });
+    }
+
+  function listProcesses(){
+    const params = new URLSearchParams();
+    params.set('action','kvt_list_processes');
+    params.set('_ajax_nonce', KVT_NONCE);
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json()).then(j=>{
+        if(!j.success) return alert('No se pudo cargar la lista.');
+        if(Array.isArray(window.KVT_PROCESS_MAP)){
+          j.data.items.forEach(p=>{
+            const idx = window.KVT_PROCESS_MAP.findIndex(x=>x.id===p.id);
+            if(idx>=0){
+              window.KVT_PROCESS_MAP[idx].name = p.name;
+              window.KVT_PROCESS_MAP[idx].contact_name = p.contact_name;
+              window.KVT_PROCESS_MAP[idx].contact_email = p.contact_email;
+              window.KVT_PROCESS_MAP[idx].description = p.description;
+              if(typeof p.client_id!=='undefined') window.KVT_PROCESS_MAP[idx].client_id = p.client_id;
+            } else {
+              window.KVT_PROCESS_MAP.push(p);
+            }
+          });
+        }
+        if(processesList) processesList.innerHTML = j.data.items.map(p=>{
+          return '<div class="kvt-card-mini">'+
+            '<h4>'+esc(p.name)+'</h4>'+
+            (p.client?'<p>Cliente: '+esc(p.client)+'</p>':'')+
+            (p.contact_name?'<p>'+esc(p.contact_name)+(p.contact_email?' ('+esc(p.contact_email)+')':'')+'</p>':'')+
+            (p.description?'<p>'+esc(p.description)+'</p>':'')+
+            '<p><button type="button" class="kvt-edit-process" data-id="'+escAttr(p.id)+'" data-name="'+escAttr(p.name||'')+'" data-client-id="'+escAttr(p.client_id||'')+'" data-contact-name="'+escAttr(p.contact_name||'')+'" data-contact-email="'+escAttr(p.contact_email||'')+'" data-desc="'+escAttr(p.description||'')+'">Editar</button></p>'+
+            '</div>';
+        }).join('');
+      });
+    }
+
+  btnAdd && btnAdd.addEventListener('click', openModal);
+  // Create candidate modal
+    const cmodal = el('#kvt_create_modal');
+  const cclose = el('#kvt_create_close');
+  const cfirst = el('#kvt_new_first');
+  const clast  = el('#kvt_new_last');
+  const cemail = el('#kvt_new_email');
+  const ccli   = el('#kvt_new_client');
+  const cproc  = el('#kvt_new_process');
+  const csubmit= el('#kvt_new_submit');
+
+  function openCModal(){
+    if (selClient && selClient.value) ccli.value = selClient.value;
+    // Populate process by client if map available
+    if (window.KVT_PROCESS_MAP && Array.isArray(window.KVT_PROCESS_MAP)) {
+      const cid = parseInt(ccli.value||'0',10);
+      cproc.innerHTML = '<option value=\"\">— Proceso —</option>';
+      window.KVT_PROCESS_MAP.forEach(p=>{
+        if (!cid || p.client_id === cid) {
+          const opt = document.createElement('option');
+          opt.value = String(p.id); opt.textContent = p.name;
+          cproc.appendChild(opt);
+        }
+      });
+    }
+    cfirst.value=''; clast.value=''; cemail.value='';
+    cmodal.style.display = 'flex';
+  }
+  function closeCModal(){ cmodal.style.display='none'; }
+  cclose && cclose.addEventListener('click', closeCModal);
+  cmodal && cmodal.addEventListener('click', (e)=>{ if(e.target===cmodal) closeCModal(); });
+  ccli && ccli.addEventListener('change', ()=>{
+    if (!window.KVT_PROCESS_MAP || !Array.isArray(window.KVT_PROCESS_MAP)) return;
+    const cid = parseInt(ccli.value||'0',10);
+    cproc.innerHTML = '<option value=\"\">— Proceso —</option>';
+    window.KVT_PROCESS_MAP.forEach(p=>{ if(!cid || p.client_id===cid){ const o=document.createElement('option'); o.value=String(p.id); o.textContent=p.name; cproc.appendChild(o);} });
+  });
+    csubmit && csubmit.addEventListener('click', ()=>{
+    const params = new URLSearchParams();
+    params.set('action','kvt_create_candidate');
+    params.set('_ajax_nonce', KVT_NONCE);
+    params.set('first_name', cfirst.value||'');
+    params.set('last_name',  clast.value||'');
+    params.set('email',      cemail.value||'');
+    params.set('client_id',  ccli.value||'');
+    params.set('process_id', cproc.value||'');
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json()).then(j=>{
+        if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo crear el candidato.');
+        alert('Candidato creado (#'+j.data.id+').');
+        closeCModal(); refresh();
+      });
+    });
+
+    // Create client modal
+    const clmodal = el('#kvt_new_client_modal');
+    const clclose = el('#kvt_new_client_close');
+    const clname  = el('#kvt_client_name');
+    const clcont  = el('#kvt_client_contact');
+    const clemail = el('#kvt_client_email');
+    const clphone = el('#kvt_client_phone');
+    const cldesc  = el('#kvt_client_desc');
+    const clsubmit= el('#kvt_client_submit');
+    function openClModal(){ clmodal.dataset.edit=''; clname.value=''; clcont.value=''; clemail.value=''; clphone.value=''; cldesc.value=''; clsubmit.textContent='Crear'; clmodal.style.display='flex'; }
+    function openEditClModal(c){ clmodal.dataset.edit=c.id; clname.value=c.name||''; clcont.value=c.contact_name||''; clemail.value=c.contact_email||''; clphone.value=c.contact_phone||''; cldesc.value=c.description||''; clsubmit.textContent='Guardar'; clmodal.style.display='flex'; }
+    function closeClModal(){ clmodal.style.display='none'; clmodal.dataset.edit=''; clsubmit.textContent='Crear'; if(cldesc) cldesc.value=''; }
+    clclose && clclose.addEventListener('click', closeClModal);
+    clmodal && clmodal.addEventListener('click', e=>{ if(e.target===clmodal) closeClModal(); });
+    clsubmit && clsubmit.addEventListener('click', ()=>{
+      const params = new URLSearchParams();
+      const editing = clmodal.dataset.edit;
+      params.set('action', editing ? 'kvt_update_client' : 'kvt_create_client');
+      params.set('_ajax_nonce', KVT_NONCE);
+      if(editing) params.set('id', editing);
+      params.set('name', clname.value||'');
+      params.set('contact_name', clcont.value||'');
+      params.set('contact_email', clemail.value||'');
+      params.set('contact_phone', clphone.value||'');
+      params.set('description', cldesc.value||'');
+      fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+        .then(r=>r.json()).then(j=>{
+          if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo guardar.');
+          if(editing){
+            alert('Cliente actualizado (#'+editing+').');
+            const cid=parseInt(editing,10); const obj=getClientById(cid); if(obj){ obj.name=clname.value||''; obj.contact_name=clcont.value||''; obj.contact_email=clemail.value||''; obj.contact_phone=clphone.value||''; obj.description=cldesc.value||''; }
+            const opt = selClient ? selClient.querySelector('option[value="'+cid+'"]') : null; if(opt) opt.textContent = clname.value||'';
+            closeClModal(); listClients(); updateSelectedInfo();
+          } else {
+            alert('Cliente creado (#'+j.data.id+').');
+            closeClModal(); location.reload();
+          }
+        });
+    });
+
+    // Create process modal
+    const pmodal = el('#kvt_new_process_modal');
+    const pclose = el('#kvt_new_process_close');
+    const pname  = el('#kvt_process_name_new');
+    const pcli   = el('#kvt_process_client_new');
+    const pcontact = el('#kvt_process_contact_new');
+    const pemail   = el('#kvt_process_email_new');
+    const pdesc    = el('#kvt_process_desc_new');
+    const psubmit  = el('#kvt_process_submit');
+    function openPModal(){
+      pmodal.dataset.edit='';
+      pname.value='';
+      pcli.value='';
+      if(pcontact) pcontact.value='';
+      if(pemail) pemail.value='';
+      if(pdesc) pdesc.value='';
+      psubmit.textContent='Crear';
+      pmodal.style.display='flex';
+    }
+    function openEditPModal(p){
+      pmodal.dataset.edit=p.id;
+      pname.value=p.name||'';
+      pcli.value=p.client_id?String(p.client_id):'';
+      if(pcontact) pcontact.value=p.contact_name||'';
+      if(pemail) pemail.value=p.contact_email||'';
+      if(pdesc) pdesc.value=p.description||'';
+      psubmit.textContent='Guardar';
+      pmodal.style.display='flex';
+    }
+    function closePModal(){ pmodal.style.display='none'; pmodal.dataset.edit=''; psubmit.textContent='Crear'; }
+    pclose && pclose.addEventListener('click', closePModal);
+    pmodal && pmodal.addEventListener('click', e=>{ if(e.target===pmodal) closePModal(); });
+    psubmit && psubmit.addEventListener('click', ()=>{
+      const params = new URLSearchParams();
+      const editing = pmodal.dataset.edit;
+      params.set('action', editing ? 'kvt_update_process' : 'kvt_create_process');
+      params.set('_ajax_nonce', KVT_NONCE);
+      if(editing) params.set('id', editing);
+      params.set('name', pname.value||'');
+      params.set('client_id', pcli.value||'');
+      if(pcontact) params.set('contact_name', pcontact.value||'');
+      if(pemail) params.set('contact_email', pemail.value||'');
+      if(pdesc) params.set('description', pdesc.value||'');
+      fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+        .then(r=>r.json()).then(j=>{
+          if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo guardar.');
+          if(editing){
+            alert('Proceso actualizado (#'+editing+').');
+            const pid=parseInt(editing,10); const obj=getProcessById(pid); if(obj){ obj.name=pname.value||''; obj.client_id=parseInt(pcli.value||'0',10); obj.contact_name=pcontact?pcontact.value:''; obj.contact_email=pemail?pemail.value:''; obj.description=pdesc?pdesc.value:''; }
+            const opt = selProcess ? selProcess.querySelector('option[value="'+pid+'"]') : null; if(opt) opt.textContent = pname.value||'';
+            closePModal(); listProcesses(); updateSelectedInfo();
+          } else {
+            alert('Proceso creado (#'+j.data.id+').');
+            closePModal(); location.reload();
+          }
+        });
+    });
+
+    clientsList && clientsList.addEventListener('click', e=>{
+      const btn = e.target.closest('.kvt-edit-client');
+      if(!btn) return;
+      let data = getClientById(btn.dataset.id);
+      if(!data){
+        data = {
+          id: parseInt(btn.dataset.id,10),
+          name: btn.dataset.name || '',
+          contact_name: btn.dataset.contactName || '',
+          contact_email: btn.dataset.contactEmail || '',
+          contact_phone: btn.dataset.contactPhone || '',
+          description: btn.dataset.desc || ''
+        };
+      }
+      openEditClModal(data);
+    });
+    processesList && processesList.addEventListener('click', e=>{
+      const btn = e.target.closest('.kvt-edit-process');
+      if(!btn) return;
+      let data = getProcessById(btn.dataset.id);
+      if(!data){
+        data = {
+          id: parseInt(btn.dataset.id,10),
+          name: btn.dataset.name || '',
+          client_id: btn.dataset.clientId?parseInt(btn.dataset.clientId,10):0,
+          contact_name: btn.dataset.contactName || '',
+          contact_email: btn.dataset.contactEmail || '',
+          description: btn.dataset.desc || ''
+        };
+      }
+      openEditPModal(data);
+    });
+    selInfo && selInfo.addEventListener('click', e=>{ if(e.target.classList.contains('kvt-edit-client-inline')){ const d=getClientById(e.target.dataset.id); if(d) openEditClModal(d); } if(e.target.classList.contains('kvt-edit-process-inline')){ const d=getProcessById(e.target.dataset.id); if(d) openEditPModal(d); } });
+
+    // Nuevo menu actions
+    btnNew && btnNew.addEventListener('click', ()=>{ newMenu.style.display = newMenu.style.display==='flex' ? 'none' : 'flex'; });
+    document.addEventListener('click', e=>{ if(!btnNew.contains(e.target) && !newMenu.contains(e.target)) newMenu.style.display='none'; });
+    els('#kvt_new_menu button').forEach(b=>{
+      b.addEventListener('click', e=>{
+        e.preventDefault();
+        e.stopPropagation();
+        const act = b.dataset.action;
+        newMenu.style.display='none';
+        setTimeout(()=>{
+          if(act==='candidate') openCModal();
+          if(act==='client') openClModal();
+          if(act==='process') openPModal();
+        },0);
+      });
+    });
+
+  // Easier drag & drop: allow drop anywhere in column and highlight
+  els('.kvt-col').forEach(col=>{
+    col.addEventListener('dragover', e=>{ e.preventDefault(); col.classList.add('dragover'); });
+    col.addEventListener('dragleave', ()=>{ col.classList.remove('dragover'); });
+    col.addEventListener('drop', e=>{
+      e.preventDefault(); col.classList.remove('dragover');
+      const id = e.dataTransfer.getData('text/plain');
+      const zone = col.querySelector('.kvt-dropzone');
+      const newStatus = zone ? zone.dataset.status : col.dataset.status;
+      const card = el('.kvt-card[data-id=\"'+id+'\"]');
+      if (zone && card) zone.appendChild(card);
+      ajaxForm({action:'kvt_update_status', _ajax_nonce:KVT_NONCE, id:id, status:newStatus});
+    });
+  });
+
+  // Make dropzones taller
+  els('.kvt-dropzone').forEach(zone=> zone.style.minHeight = '200px');
+
+  // Safer process filter if map missing
+  function safeHasProcessMap(){ return Array.isArray(window.KVT_PROCESS_MAP) && window.KVT_PROCESS_MAP.length>0; }
+  const __origFilterProcessOptions = filterProcessOptions;
+  filterProcessOptions = function(){
+    if (!safeHasProcessMap()) return; // keep server-rendered options
+    __origFilterProcessOptions();
+  };
+
+
+  // Init
+  renderBoardSkeleton();
+  filterProcessOptions();
 });
 JS;
+            wp_add_inline_script('kvt-app', $js, 'after');
+        }
+    }
 
-        // Sustituir site key si existe
-        if ($recaptcha_on && $site_key) {
-            $inline = str_replace('%SITE_KEY%', esc_js($site_key), $inline);
+    /* Data API */
+    public function ajax_get_candidates() {
+        check_ajax_referer('kvt_nonce');
+
+        $client_id  = isset($_POST['client'])  ? intval($_POST['client'])  : 0;
+        $process_id = isset($_POST['process']) ? intval($_POST['process']) : 0;
+        $search     = isset($_POST['search'])  ? trim(sanitize_text_field($_POST['search'])) : '';
+
+        if (!$client_id && !$process_id) {
+            wp_send_json_success([]);
+        }
+
+        $tax_query = [];
+        if ($process_id) {
+            $tax_query[] = ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>[$process_id]];
+            if ($client_id) $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
         } else {
-            $inline = str_replace('%SITE_KEY%', '', $inline);
-        }
-
-        wp_register_script('kcvf-es-form', '', ['pdfjs','tesseract'], null, true);
-        wp_enqueue_script('kcvf-es-form');
-        wp_add_inline_script('kcvf-es-form', $inline);
-    }
-
-    public function shortcode() {
-        if (
-            $_SERVER['REQUEST_METHOD'] === 'POST'
-            && isset($_POST['kcvf_es_nonce'])
-            && isset($_POST['kcvf_mode'])
-            && $_POST['kcvf_mode'] === 'submit'
-        ) {
-            return $this->handle_submission(false);
-        }
-        return $this->render_form();
-    }
-
-    public function shortcode_register() {
-        if (
-            $_SERVER['REQUEST_METHOD'] === 'POST'
-            && isset($_POST['kcvf_es_nonce'])
-            && isset($_POST['kcvf_mode'])
-            && $_POST['kcvf_mode'] === 'register'
-        ) {
-            return $this->handle_submission(true);
-        }
-        return $this->render_form([], [], true);
-    }
-
-    /** Normaliza fences/comillas raras del modelo */
-    private function kcvf_normalize_ai_html( $raw ) {
-        $out = trim( (string) $raw );
-        $out = preg_replace('/^\s*```(?:html|markdown|md)?\s*/i', '', $out);
-        $out = preg_replace('/\s*```\s*$/', '', $out);
-        $out = preg_replace('/^[\x{00AB}\x{00BB}\x{0060}\s]*(html)?[\x{0060}\s]*/u', '', $out);
-        $out = preg_replace('/[\x{00AB}\x{00BB}]+$/u', '', $out);
-        return trim($out);
-    }
-
-    /** Quita <strong> del cuerpo: solo H2/H3 en negrita por CSS */
-    private function strip_strong_from_body($html) {
-        return preg_replace('/<\/?strong>/', '', (string)$html);
-    }
-
-    private function render_form($errors = [], $old = [], $register_only = false) {
-        ob_start();
-        $gdpr_text = get_option(self::OPT_GDPR_TEXT);
-        $recaptcha_on = get_option(self::OPT_RECAPTCHA_ENABLE) === '1';
-        $title = $register_only ? 'Registra tu CV' : 'Envía tu CV para feedback';
-        $btn   = $register_only ? 'Subir CV' : 'Enviar y obtener feedback';
-        ?>
-        <div class="kcvf-wrapper">
-            <h2><?php echo esc_html($title); ?></h2>
-            <?php if (!empty($errors)): ?>
-                <div class="kcvf-error"><strong>Por favor corrige:</strong><br><?php echo implode('<br>', array_map('esc_html', $errors)); ?></div>
-            <?php endif; ?>
-
-            <form method="post" enctype="multipart/form-data" class="kcvf-form">
-                <?php wp_nonce_field('kcvf_es_submit', 'kcvf_es_nonce'); ?>
-                <input type="hidden" name="kcvf_mode" value="<?php echo $register_only ? 'register' : 'submit'; ?>">
-
-                <div class="kcvf-field">
-                    <label for="kcvf_name">Nombre completo</label>
-                    <input class="kcvf-input" type="text" name="kcvf_name" id="kcvf_name" value="<?php echo isset($old['name']) ? esc_attr($old['name']) : ''; ?>" required placeholder="Nombre Apellidos">
-                </div>
-
-                <div class="kcvf-field">
-                    <label for="kcvf_email">Correo electrónico</label>
-                    <input class="kcvf-input" type="email" name="kcvf_email" id="kcvf_email" value="<?php echo isset($old['email']) ? esc_attr($old['email']) : ''; ?>" required placeholder="nombre@ejemplo.com">
-                </div>
-
-                <div class="kcvf-field">
-                    <label for="kcvf_role">Rol / Área objetivo</label>
-                    <input class="kcvf-input" type="text" name="kcvf_role" id="kcvf_role" placeholder="p. ej., Country Manager, Administrativo, CFO..." value="<?php echo isset($old['role']) ? esc_attr($old['role']) : ''; ?>">
-                </div>
-
-                <div class="kcvf-field">
-                    <label for="kcvf_sector">Sector</label>
-                    <select class="kcvf-select" name="kcvf_sector" id="kcvf_sector">
-                        <option value="">— Seleccionar —</option>
-                        <option>Energías renovables (eólica/solar/almacenamiento)</option>
-                        <option>Red / Transmisión</option>
-                        <option>Oil & Gas</option>
-                        <option>Construcción / EPC</option>
-                        <option>Minería</option>
-                        <option>Ingeniería</option>
-                        <option>Finanzas / Inversión</option>
-                        <option>Otro</option>
-                    </select>
-                </div>
-
-                <div class="kcvf-field">
-    <label for="kcvf_file">Subir CV (PDF o DOCX, máximo 5 MB)</label>
-    <input type="file" name="kcvf_file" id="kcvf_file"
-           accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-           required>
-    <p style="font-size:13px;color:#666;margin-top:6px;">
-    </p>
-</div>
-
-
-                <div class="kcvf-field">
-                    <label for="kcvf_notes">Notas (opcional)</label>
-                    <textarea class="kcvf-textarea" name="kcvf_notes" id="kcvf_notes" rows="4" placeholder="Notas adicionales"></textarea>
-                </div>
-
-                <div class="kcvf-field kcvf-consent">
-                    <input type="checkbox" name="kcvf_consent" id="kcvf_consent" required>
-                    <label for="kcvf_consent"><?php echo wp_kses_post($gdpr_text); ?></label>
-                </div>
-
-                <?php if ($recaptcha_on): ?>
-                    <input type="hidden" name="kcvf_recaptcha_token" value="">
-                <?php endif; ?>
-
-                <button class="kcvf-btn" type="submit"><?php echo esc_html($btn); ?></button>
-            </form>
-        </div>
-        <?php
-        return ob_get_clean();
-    }
-
-    private function handle_submission($register_only = false) {
-        if (!wp_verify_nonce($_POST['kcvf_es_nonce'], 'kcvf_es_submit')) {
-            return $this->render_form(['Token de formulario inválido. Recarga la página e inténtalo de nuevo.'], [], $register_only);
-        }
-
-        $errors = [];
-        $name   = isset($_POST['kcvf_name']) ? sanitize_text_field($_POST['kcvf_name']) : '';
-        $email  = isset($_POST['kcvf_email']) ? sanitize_email($_POST['kcvf_email']) : '';
-        $role   = isset($_POST['kcvf_role']) ? sanitize_text_field($_POST['kcvf_role']) : '';
-        $sector = isset($_POST['kcvf_sector']) ? sanitize_text_field($_POST['kcvf_sector']) : '';
-        $notes  = isset($_POST['kcvf_notes']) ? sanitize_textarea_field($_POST['kcvf_notes']) : '';
-        $consent = !empty($_POST['kcvf_consent']);
-
-        $first = $last = '';
-        if ($name) {
-            $parts = preg_split('/\s+/', trim($name));
-            $first = array_shift($parts);
-            $last  = trim(implode(' ', $parts));
-        }
-
-        if (!$name) $errors[] = 'Introduce tu nombre.';
-        if (!$email || !is_email($email)) $errors[] = 'Introduce un correo válido.';
-        if (!$consent) $errors[] = 'Debes aceptar el consentimiento.';
-        if (empty($_FILES['kcvf_file']['name'])) $errors[] = 'Adjunta tu CV en PDF o DOCX.';
-
-        // ==== Validación reCAPTCHA v3 ====
-        $recaptcha_on = get_option(self::OPT_RECAPTCHA_ENABLE) === '1';
-        $site_key = trim((string)get_option(self::OPT_RECAPTCHA_SITE));
-        $secret   = trim((string)get_option(self::OPT_RECAPTCHA_SECRET));
-        $threshold = floatval(get_option(self::OPT_RECAPTCHA_THRESH, '0.5'));
-
-        if ($recaptcha_on && $site_key && $secret) {
-            $token = isset($_POST['kcvf_recaptcha_token']) ? sanitize_text_field($_POST['kcvf_recaptcha_token']) : '';
-            if (!$token) {
-                $errors[] = 'No se pudo verificar reCAPTCHA. Recarga la página e inténtalo de nuevo.';
-            } else {
-                $resp = wp_remote_post('https://www.google.com/recaptcha/api/siteverify', [
-                    'timeout' => 20,
-                    'body' => ['secret' => $secret, 'response' => $token]
-                ]);
-                if (is_wp_error($resp)) {
-                    $errors[] = 'Error al contactar con reCAPTCHA. Inténtalo de nuevo.';
-                } else {
-                    $data = json_decode(wp_remote_retrieve_body($resp), true);
-                    $ok = isset($data['success']) && $data['success'];
-                    $score_ok = isset($data['score']) ? floatval($data['score']) >= $threshold : false;
-                    $action_ok = !isset($data['action']) || $data['action'] === 'cv_submit';
-                    if (!($ok && $score_ok && $action_ok)) $errors[] = 'Verificación reCAPTCHA fallida. Por favor, vuelve a intentarlo.';
+            if ($client_id) {
+                $proc_terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
+                $proc_ids = [];
+                foreach ($proc_terms as $t) {
+                    $cid = (int) get_term_meta($t->term_id, 'kvt_process_client', true);
+                    if ($cid === $client_id) $proc_ids[] = $t->term_id;
                 }
-            }
-        }
-        // ==== Fin reCAPTCHA ====
-
-        // Subida + extracción
-        $file_text = '';
-        $stored_path = '';
-        $extract_method = 'unknown';
-        $char_count = 0;
-        $excerpt_400 = '';
-        $converted_docx = '';
-        $candidate_id = 0;
-
-        if (empty($errors) && !empty($_FILES['kcvf_file']['name'])) {
-            $file = $_FILES['kcvf_file'];
-            if ($file['error'] !== UPLOAD_ERR_OK) {
-                $errors[] = 'Error al subir el archivo. Inténtalo otra vez.';
-            } else {
-                $allowed = [
-                    'application/pdf' => 'pdf',
-                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
-                ];
-                $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                $mime  = finfo_file($finfo, $file['tmp_name']);
-                finfo_close($finfo);
-                $ext = $allowed[$mime] ?? '';
-                if (!$ext) {
-                    $name_ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
-                    if (in_array($name_ext, ['pdf','docx'], true)) $ext = $name_ext;
-                }
-
-                if (!$ext) {
-                    $errors[] = 'Tipo de archivo no permitido. Usa PDF o DOCX.';
-                } elseif ($file['size'] > 5 * 1024 * 1024) {
-                    $errors[] = 'Archivo demasiado grande (máximo 5 MB).';
-                } else {
-                    $upload_dir = wp_upload_dir();
-                    $cv_dir = trailingslashit($upload_dir['basedir']) . 'cv-uploads';
-                    if (!file_exists($cv_dir)) wp_mkdir_p($cv_dir);
-                      $filename = 'cv_' . time() . '_' . wp_generate_password(6, false) . '.' . $ext;
-                    $dest = trailingslashit($cv_dir) . $filename;
-                    if (!move_uploaded_file($file['tmp_name'], $dest)) {
-                        $errors[] = 'No se pudo guardar el archivo en el servidor.';
-                    } else {
-                        $stored_path = $dest;
-
-                        if ($ext === 'docx') {
-                            $file_text = $this->extract_docx_text($dest);
-                            $extract_method = 'docx-zip';
-                        }
-
-                        if ($ext === 'pdf') {
-                            // 0) ¿Vino texto extraído/OCR por el cliente?
-                            $client_text = isset($_POST['cv_text']) ? sanitize_textarea_field(wp_unslash($_POST['cv_text'])) : '';
-                            if ($client_text !== '') {
-                                $file_text = $client_text;
-                                $extract_method = 'client-pdfjs/tesseract';
-                            } else {
-                                // 1) Intento servidor (si existen binarios)
-                                $file_text = $this->extract_pdf_text_server($dest, $extract_method); // puede devolver ''
-                            }
-
-                            // 2) Si tenemos texto (cliente o servidor) → crear DOCX temporal desde texto
-                            if ($file_text) {
-                                $base = pathinfo($dest, PATHINFO_FILENAME);
-                                $converted_docx = trailingslashit($cv_dir) . $base . '_frompdf.docx';
-                                if ($this->generate_docx_from_text($file_text, $converted_docx)) {
-                                    // Reutiliza extractor DOCX por coherencia
-                                    $file_text = $this->extract_docx_text($converted_docx);
-                                    $extract_method .= ' -> pdf2docx';
-                                }
-                            }
-                        }
-
-                        if (!$file_text) {
-                            $file_text = "(No se pudo extraer texto automáticamente del archivo. Puede tratarse de un PDF escaneado o protegido).
-Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También puedes pegar el contenido en texto en el campo de notas.";
-                        }
-
-                        $char_count = mb_strlen((string)$file_text);
-                        $excerpt_400 = mb_substr((string)$file_text, 0, 400);
-                        error_log('[KCVF] Extract method: ' . $extract_method . ' | chars=' . $char_count);
-                    }
-                }
-            }
-        }
-
-        if (!empty($errors)) {
-            return $this->render_form($errors, ['name' => $name, 'email' => $email, 'role' => $role], $register_only);
-        }
-
-        // Guardar envío
-        $post_id = wp_insert_post([
-            'post_type' => 'cv_submission',
-            'post_status' => 'publish',
-            'post_title' => $email . ' — ' . current_time('mysql'),
-            'post_content' => wp_kses_post($notes),
-        ]);
-
-        if ($post_id && $stored_path) {
-            add_post_meta($post_id, '_kcvf_file', $stored_path);
-            add_post_meta($post_id, '_kcvf_name', $name);
-            add_post_meta($post_id, '_kcvf_first_name', $first);
-            add_post_meta($post_id, '_kcvf_last_name', $last);
-            add_post_meta($post_id, '_kcvf_email', $email);
-            add_post_meta($post_id, '_kcvf_role', $role);
-            add_post_meta($post_id, '_kcvf_sector', $sector);
-            add_post_meta($post_id, '_kcvf_extract_method', $extract_method);
-            add_post_meta($post_id, '_kcvf_char_count', $char_count);
-            add_post_meta($post_id, '_kcvf_text_excerpt', $excerpt_400);
-            if ($converted_docx) add_post_meta($post_id, '_kcvf_converted_docx', $converted_docx);
-        }
-
-        // Sincronizar con la base del pipeline
-        if ($stored_path && post_type_exists('kvt_candidate')) {
-            $candidate_id = wp_insert_post([
-                'post_type'   => 'kvt_candidate',
-                'post_status' => 'publish',
-                'post_title'  => $name ?: ($email ?: 'Candidate'),
-            ]);
-            if ($candidate_id && !is_wp_error($candidate_id)) {
-                // Datos básicos
-                update_post_meta($candidate_id, 'kvt_first_name', $first);
-                update_post_meta($candidate_id, 'first_name', $first);
-                update_post_meta($candidate_id, 'kvt_last_name', $last);
-                update_post_meta($candidate_id, 'last_name', $last);
-                update_post_meta($candidate_id, 'kvt_email', $email);
-                update_post_meta($candidate_id, 'email', $email);
-
-                // Adjuntar CV al candidato
-                if (!function_exists('media_handle_sideload')) {
-                    require_once ABSPATH . 'wp-admin/includes/image.php';
-                    require_once ABSPATH . 'wp-admin/includes/file.php';
-                    require_once ABSPATH . 'wp-admin/includes/media.php';
-                }
-                $tmp = wp_tempnam($stored_path);
-                if ($tmp && @copy($stored_path, $tmp)) {
-                    $file_array = [
-                        'name'     => basename($stored_path),
-                        'tmp_name' => $tmp,
+                if (!empty($proc_ids)) {
+                    $tax_query = [
+                        'relation' => 'OR',
+                        ['taxonomy'=>self::TAX_CLIENT, 'field'=>'term_id','terms'=>[$client_id]],
+                        ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>$proc_ids],
                     ];
-                    $attach_id = media_handle_sideload($file_array, $candidate_id);
-                    if (!is_wp_error($attach_id)) {
-                        $url   = wp_get_attachment_url($attach_id);
-                        $today = date_i18n('d-m-Y');
-                        update_post_meta($candidate_id, 'kvt_cv_attachment_id', $attach_id);
-                        update_post_meta($candidate_id, 'kvt_cv_url', esc_url_raw($url));
-                        update_post_meta($candidate_id, 'cv_url', esc_url_raw($url));
-                        update_post_meta($candidate_id, 'kvt_cv_uploaded', $today);
-                        update_post_meta($candidate_id, 'cv_uploaded', $today);
-                    }
-                }
-
-                if ($file_text) {
-                    update_post_meta($candidate_id, 'kvt_cv_text', $file_text);
-                    if ($converted_docx && file_exists($converted_docx)) {
-                        $upload = wp_upload_dir();
-                        $docx_url = str_replace($upload['basedir'], $upload['baseurl'], $converted_docx);
-                        update_post_meta($candidate_id, 'kvt_cv_text_url', esc_url_raw($docx_url));
-                    }
+                } else {
+                    $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
                 }
             }
         }
 
-        $thankyou = $register_only
-            ? '¡Gracias! Hemos recibido tu CV. Te mantendremos informado.'
-            : get_option(self::OPT_THANKYOU_TEXT);
-        $instant = !$register_only && get_option(self::OPT_AUTO_FEEDBACK) === '1';
-        $feedback_block = '';
+        $args = [
+            'post_type'      => self::CPT,
+            'post_status'    => 'any',
+            'posts_per_page' => 999, // ilimitado práctico
+            'no_found_rows'  => true,
+        ];
+        if (!empty($tax_query)) $args['tax_query'] = $tax_query;
 
-        if ($instant) {
-            $api_key = trim((string)get_option(self::OPT_API_KEY));
-            $cv_source = $file_text;
-            if ($candidate_id) {
-                $cached = get_post_meta($candidate_id, 'kvt_cv_text', true);
-                if ($cached) $cv_source = $cached;
-            }
-            $cv_excerpt = mb_substr($cv_source, 0, 18000);
-            $feedback = $api_key ? $this->generate_ai_feedback($api_key, $cv_excerpt, $role, $sector) : 'Feedback por IA no configurado. Añade tu API key en Ajustes.';
-            if ($post_id) add_post_meta($post_id, '_kcvf_feedback', $feedback);
-
-            // Normaliza -> quita <strong> -> sanea HTML
-            $normalized = $this->kcvf_normalize_ai_html( $feedback );
-            $no_strong  = $this->strip_strong_from_body( $normalized );
-            $allowed = [
-              'h2'=>[], 'h3'=>[], 'p'=>[], 'br'=>[],
-              'ul'=>[], 'ol'=>[], 'li'=>[],
-              'em'=>[],
-              'a'=>['href'=>[], 'target'=>[], 'rel'=>[]],
-              'div'=>['class'=>[]], 'span'=>['class'=>[]],
+        if ($search !== '') {
+            $args['meta_query'] = [
+                'relation' => 'OR',
+                ['key'=>'kvt_first_name','value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'kvt_last_name', 'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'kvt_email',     'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'first_name','value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'last_name', 'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'email',     'value'=>$search,'compare'=>'LIKE'],
             ];
-            $safe_feedback = wp_kses( $no_strong, $allowed );
+        }
 
-            // Email al candidato (HTML)
-            if (is_email($email)) {
-                $headers = ['Content-Type: text/html; charset=UTF-8'];
-                $body = '<p>Hola,</p><p>Gracias por compartir tu CV. Aquí tienes tu feedback:</p>'
-                      . $safe_feedback
-                      . '<p>— Kovacic Executive Talent Research</p>';
-                wp_mail($email, 'Tu feedback de CV', $body, $headers);
-            }
+        $q = new WP_Query($args);
+        $data = [];
+        foreach ($q->posts as $p) {
+            $notes_raw = get_post_meta($p->ID,'kvt_notes',true);
+            if ($notes_raw === '') $notes_raw = get_post_meta($p->ID,'notes',true);
+            $meta = [
+                'first_name'  => $this->meta_get_compat($p->ID,'kvt_first_name',['first_name']),
+                'last_name'   => $this->meta_get_compat($p->ID,'kvt_last_name',['last_name']),
+                'email'       => $this->meta_get_compat($p->ID,'kvt_email',['email']),
+                'phone'       => $this->meta_get_compat($p->ID,'kvt_phone',['phone']),
+                'country'     => $this->meta_get_compat($p->ID,'kvt_country',['country']),
+                'city'        => $this->meta_get_compat($p->ID,'kvt_city',['city']),
+                'cv_url'      => $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']),
+                'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
+                'notes'       => $notes_raw,
+                'notes_count' => $this->count_notes($notes_raw),
+                'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
+            ];
+            $data[] = [
+                'id'     => $p->ID,
+                'title'  => get_the_title($p),
+                'status' => get_post_meta($p->ID,'kvt_status',true),
+                'meta'   => $meta,
+            ];
+        }
+        wp_send_json_success($data);
+    }
 
-            // Aviso interno (texto)
-            $notify = get_option(self::OPT_NOTIFY_EMAIL);
-            if ($notify && is_email($notify)) {
-                $body_admin = "Nuevo envío de CV: {$email}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\nConvertido DOCX: " . ($converted_docx ?: '—') . "\n\n--- FEEDBACK (texto plano) ---\n" . wp_strip_all_tags($safe_feedback);
-                wp_mail($notify, 'Nuevo envío de CV + Feedback', $body_admin);
-            }
+    public function ajax_update_status() {
+        check_ajax_referer('kvt_nonce');
 
-            // Bloque visible + DEBUG solo admin
-            $feedback_block = '<div class="kcvf-alert"><strong>' . esc_html($thankyou) . '</strong></div>'
-                            . '<h3>Feedback instantáneo</h3>'
-                            . '<div class="kcvf-feedback">' . $safe_feedback . '</div>';
+        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        $st = isset($_POST['status']) ? sanitize_text_field($_POST['status']) : '';
 
-            if ( current_user_can('manage_options') ) {
-                $preview = esc_html( mb_substr( (string)$cv_source, 0, 400 ) );
-                $feedback_block .= '<div class="kcvf-debug"><strong>DEBUG (solo admin):</strong>'
-                                 . '<br>Método de extracción: ' . esc_html($extract_method)
-                                 . '<br>Caracteres extraídos: ' . intval($char_count)
-                                 . '<br>DOCX convertido: ' . ($converted_docx ? esc_html($converted_docx) : '—')
-                                 . '<br><pre style="white-space:pre-wrap;margin:8px 0 0;">' . $preview . '</pre></div>';
-            }
+        $statuses = $this->get_statuses();
+        if (!$id || !in_array($st, $statuses, true)) {
+            wp_send_json_error(['msg'=>'Invalid'], 400);
+        }
+        update_post_meta($id, 'kvt_status', $st);
+        wp_send_json_success(['ok'=>true]);
+    }
 
+    public function ajax_update_notes() {
+        check_ajax_referer('kvt_nonce');
+        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        $notes = isset($_POST['notes']) ? wp_kses_post($_POST['notes']) : '';
+        if (!$id) wp_send_json_error(['msg'=>'Invalid'], 400);
+        update_post_meta($id, 'kvt_notes', $notes);
+        update_post_meta($id, 'notes', $notes);
+        wp_send_json_success(['ok'=>true]);
+    }
+
+    public function ajax_delete_notes() {
+        check_ajax_referer('kvt_nonce');
+        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        if (!$id) wp_send_json_error(['msg'=>'Invalid'], 400);
+        delete_post_meta($id, 'kvt_notes');
+        delete_post_meta($id, 'notes');
+        wp_send_json_success(['ok'=>true]);
+    }
+
+    public function ajax_delete_candidate() {
+        check_ajax_referer('kvt_nonce');
+        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        if (!$id) wp_send_json_error(['msg'=>'Invalid'], 400);
+        $res = wp_trash_post($id);
+        if (!$res) wp_send_json_error(['msg'=>'No se pudo mover a la papelera.']);
+        wp_send_json_success(['ok'=>true]);
+    }
+
+    public function ajax_update_profile() {
+        check_ajax_referer('kvt_nonce');
+
+        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        if (!$id || get_post_type($id)!==self::CPT) wp_send_json_error(['msg'=>'Invalid'],400);
+
+        $fields = [
+            'kvt_first_name' => isset($_POST['first_name']) ? sanitize_text_field($_POST['first_name']) : '',
+            'kvt_last_name'  => isset($_POST['last_name'])  ? sanitize_text_field($_POST['last_name'])  : '',
+            'kvt_email'      => isset($_POST['email'])      ? sanitize_email($_POST['email'])           : '',
+            'kvt_phone'      => isset($_POST['phone'])      ? sanitize_text_field($_POST['phone'])      : '',
+            'kvt_country'    => isset($_POST['country'])    ? sanitize_text_field($_POST['country'])    : '',
+            'kvt_city'       => isset($_POST['city'])       ? sanitize_text_field($_POST['city'])       : '',
+            'kvt_tags'       => isset($_POST['tags'])       ? sanitize_text_field($_POST['tags'])       : '',
+            'kvt_cv_url'     => isset($_POST['cv_url'])     ? esc_url_raw($_POST['cv_url'])             : '',
+            'kvt_cv_uploaded'=> isset($_POST['cv_uploaded'])? sanitize_text_field($_POST['cv_uploaded']): '',
+            'kvt_notes'      => isset($_POST['notes'])      ? wp_kses_post($_POST['notes'])             : '',
+        ];
+        if ($fields['kvt_cv_uploaded']) $fields['kvt_cv_uploaded'] = $this->fmt_date_ddmmyyyy($fields['kvt_cv_uploaded']);
+
+        foreach ($fields as $k=>$v) {
+            update_post_meta($id, $k, $v);
+            $legacy = str_replace('kvt_', '', $k);
+            update_post_meta($id, $legacy, $v);
+        }
+
+        $title = get_the_title($id);
+        if (!$title) {
+            $fn = $fields['kvt_first_name']; $ln = $fields['kvt_last_name'];
+            $new = trim($fn.' '.$ln);
+            if ($new) wp_update_post(['ID'=>$id,'post_title'=>$new]);
+        }
+
+        wp_send_json_success(['ok'=>true]);
+    }
+
+    public function ajax_upload_cv() {
+        check_ajax_referer('kvt_nonce');
+
+        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        if (!$id || get_post_type($id)!==self::CPT) wp_send_json_error(['msg'=>'Invalid'],400);
+        if (empty($_FILES['file']['name'])) wp_send_json_error(['msg'=>'Archivo no recibido'],400);
+
+        if (!function_exists('media_handle_upload')) {
+            require_once ABSPATH . 'wp-admin/includes/image.php';
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+            require_once ABSPATH . 'wp-admin/includes/media.php';
+        }
+        add_filter('upload_mimes', function($mimes){
+            $mimes['pdf']  = 'application/pdf';
+            $mimes['doc']  = 'application/msword';
+            $mimes['docx'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            return $mimes;
+        });
+
+        // Remove previous cached text if exists
+        $old_txt = get_post_meta($id, 'kvt_cv_text_url', true);
+        if ($old_txt) {
+            $path = wp_parse_url($old_txt, PHP_URL_PATH);
+            if ($path) @unlink(ABSPATH . ltrim($path, '/'));
+        }
+        delete_post_meta($id, 'kvt_cv_text');
+        delete_post_meta($id, 'kvt_cv_text_url');
+
+        $attach_id = media_handle_upload('file', $id);
+        if (is_wp_error($attach_id)) wp_send_json_error(['msg'=>$attach_id->get_error_message()],500);
+
+        $url = wp_get_attachment_url($attach_id);
+        update_post_meta($id, 'kvt_cv_attachment_id', $attach_id);
+        update_post_meta($id, 'kvt_cv_url', esc_url_raw($url));
+        update_post_meta($id, 'cv_url', esc_url_raw($url));
+        $today = date_i18n('d-m-Y');
+        update_post_meta($id, 'kvt_cv_uploaded', $today);
+        update_post_meta($id, 'cv_uploaded', $today);
+
+        // Generate text version for AI processing
+        $client_text = isset($_POST['cv_text']) ? sanitize_textarea_field(wp_unslash($_POST['cv_text'])) : '';
+        $txt_url = '';
+        if ($client_text !== '') {
+            update_post_meta($id, 'kvt_cv_text', $client_text);
         } else {
-            $notify = get_option(self::OPT_NOTIFY_EMAIL);
-            if ($notify && is_email($notify)) {
-                $subject = $register_only ? 'Nuevo registro de CV' : 'Nuevo envío de CV';
-                $body_admin = "Nuevo envío de CV: {$email}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo:{$stored_path}\n";
-                if (!$register_only) {
-                    $body_admin .= "(El feedback instantáneo está desactivado.)";
-                }
-                wp_mail($notify, $subject, $body_admin);
-            }
-            if ($register_only && is_email($email)) {
-                $headers = ['Content-Type: text/html; charset=UTF-8'];
-                $body = '<p>Hola,</p><p>Gracias por compartir tu CV. Te contactaremos para futuras oportunidades.</p><p>— Kovacic Executive Talent Research</p>';
-                wp_mail($email, 'CV recibido', $body, $headers);
-            }
-            $feedback_block = '<div class="kcvf-alert"><strong>' . esc_html($thankyou) . '</strong></div>';
+            $this->save_cv_text_attachment($id, $attach_id);
+            $txt_url = get_post_meta($id, 'kvt_cv_text_url', true);
+        }
 
-            if ( current_user_can('manage_options') ) {
-                $preview = esc_html( mb_substr( (string)$file_text, 0, 400 ) );
-                $feedback_block .= '<div class="kcvf-debug"><strong>DEBUG (solo admin):</strong>'
-                                 . '<br>Método de extracción: ' . esc_html($extract_method)
-                                 . '<br>Caracteres extraídos: ' . intval($char_count)
-                                 . '<br>DOCX convertido: ' . ($converted_docx ? esc_html($converted_docx) : '—')
-                                 . '<br><pre style="white-space:pre-wrap;margin:8px 0 0;">' . $preview . '</pre></div>';
+        wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url]);
+    }
+
+    public function ajax_list_profiles() {
+        check_ajax_referer('kvt_nonce');
+
+        $page   = isset($_POST['page']) ? max(1, intval($_POST['page'])) : 1;
+        $search = isset($_POST['q']) ? sanitize_text_field(trim($_POST['q'])) : '';
+        $countries = isset($_POST['countries']) && $_POST['countries'] !== '' ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['countries']))) : [];
+        $cities    = isset($_POST['cities']) && $_POST['cities'] !== '' ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['cities']))) : [];
+
+        // Return all candidates so modal shows complete list
+        $args = [
+            'post_type'      => self::CPT,
+            'post_status'    => 'any',
+            'posts_per_page' => -1,
+            'paged'          => $page,
+        ];
+
+        $meta_query = ['relation' => 'AND'];
+
+        if (!empty($countries)) {
+            $meta_query[] = [
+                'relation' => 'OR',
+                ['key'=>'kvt_country','value'=>$countries,'compare'=>'IN'],
+                ['key'=>'country','value'=>$countries,'compare'=>'IN'],
+            ];
+        }
+
+        if (!empty($cities)) {
+            $meta_query[] = [
+                'relation' => 'OR',
+                ['key'=>'kvt_city','value'=>$cities,'compare'=>'IN'],
+                ['key'=>'city','value'=>$cities,'compare'=>'IN'],
+            ];
+        }
+
+        if ($search !== '') {
+            $meta_query[] = [
+                'relation' => 'OR',
+                ['key'=>'kvt_first_name','value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'kvt_last_name', 'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'kvt_email',     'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'kvt_country',   'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'kvt_city',      'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'kvt_tags',      'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'first_name','value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'last_name', 'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'email',     'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'country',   'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'city',      'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'tags',      'value'=>$search,'compare'=>'LIKE'],
+            ];
+        }
+
+        if (count($meta_query) > 1) {
+            $args['meta_query'] = $meta_query;
+        }
+
+        $q = new WP_Query($args);
+        $items = [];
+        foreach ($q->posts as $p) {
+            $notes_raw = get_post_meta($p->ID,'kvt_notes',true);
+            if ($notes_raw === '') $notes_raw = get_post_meta($p->ID,'notes',true);
+            $items[] = [
+                'id'   => $p->ID,
+                'meta' => [
+                    'first_name'  => $this->meta_get_compat($p->ID,'kvt_first_name',['first_name']),
+                    'last_name'   => $this->meta_get_compat($p->ID,'kvt_last_name',['last_name']),
+                    'email'       => $this->meta_get_compat($p->ID,'kvt_email',['email']),
+                    'phone'       => $this->meta_get_compat($p->ID,'kvt_phone',['phone']),
+                    'country'     => $this->meta_get_compat($p->ID,'kvt_country',['country']),
+                    'city'        => $this->meta_get_compat($p->ID,'kvt_city',['city']),
+                    'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
+                    'cv_url'      => $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']),
+                    'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
+                    'notes'       => $notes_raw,
+                    'notes_count' => $this->count_notes($notes_raw),
+                ],
+            ];
+        }
+        wp_send_json_success(['items'=>$items,'pages'=>$q->max_num_pages]);
+    }
+
+    public function ajax_list_clients() {
+        check_ajax_referer('kvt_nonce');
+        $terms = get_terms(['taxonomy'=>self::TAX_CLIENT,'hide_empty'=>false]);
+        $items = [];
+        foreach ($terms as $t) {
+            $procs = get_terms([
+                'taxonomy'=>self::TAX_PROCESS,
+                'hide_empty'=>false,
+                'meta_query'=>[
+                    ['key'=>'kvt_process_client','value'=>$t->term_id]
+                ]
+            ]);
+            $items[] = [
+                'id' => $t->term_id,
+                'name' => $t->name,
+                'contact_name'  => get_term_meta($t->term_id,'contact_name',true),
+                'contact_email' => get_term_meta($t->term_id,'contact_email',true),
+                'contact_phone' => get_term_meta($t->term_id,'contact_phone',true),
+                'description'   => wp_strip_all_tags($t->description),
+                'processes'     => wp_list_pluck($procs,'name'),
+                'edit_url'      => admin_url('term.php?taxonomy=' . self::TAX_CLIENT . '&tag_ID=' . $t->term_id),
+            ];
+        }
+        wp_send_json_success(['items'=>$items]);
+    }
+
+    public function ajax_list_processes() {
+        check_ajax_referer('kvt_nonce');
+        $terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
+        $items = [];
+        foreach ($terms as $t) {
+            $client_id = (int) get_term_meta($t->term_id,'kvt_process_client',true);
+            $client_name = $client_id ? get_term($client_id)->name : '';
+            $items[] = [
+                'id' => $t->term_id,
+                'name' => $t->name,
+                'client_id' => $client_id,
+                'client' => $client_name,
+                'contact_name'  => get_term_meta($t->term_id,'contact_name',true),
+                'contact_email' => get_term_meta($t->term_id,'contact_email',true),
+                'description'   => $t->description,
+                'edit_url'      => admin_url('term.php?taxonomy=' . self::TAX_PROCESS . '&tag_ID=' . $t->term_id),
+            ];
+        }
+        wp_send_json_success(['items'=>$items]);
+    }
+
+    public function ajax_clone_profile() {
+        check_ajax_referer('kvt_nonce');
+
+        $source_id  = isset($_POST['source_id']) ? intval($_POST['source_id']) : 0;
+        $process_id = isset($_POST['process_id']) ? intval($_POST['process_id']) : 0;
+        $client_id  = isset($_POST['client_id']) ? intval($_POST['client_id']) : 0;
+
+        $title = '';
+        $meta  = [];
+        if ($source_id) {
+            if (get_post_type($source_id) !== self::CPT) {
+                wp_send_json_error(['msg'=>'Invalid source'],400);
+            }
+            $title = get_the_title($source_id);
+            $all_meta = get_post_meta($source_id);
+            foreach ($all_meta as $k => $vals) {
+                $meta[$k] = maybe_unserialize($vals[0]);
             }
         }
 
-        return '<div class="kcvf-wrapper">' . $feedback_block . '</div>';
+        $new_id = wp_insert_post([
+            'post_type'   => self::CPT,
+            'post_status' => 'publish',
+            'post_title'  => $title,
+        ]);
+        if (!$new_id || is_wp_error($new_id)) {
+            wp_send_json_error(['msg'=>'No se pudo crear.'],500);
+        }
+
+        foreach ($meta as $k => $v) {
+            update_post_meta($new_id, $k, $v);
+        }
+        if (!isset($meta['kvt_status'])) {
+            $statuses = $this->get_statuses();
+            if (!empty($statuses)) update_post_meta($new_id,'kvt_status',$statuses[0]);
+        }
+        if ($client_id) wp_set_object_terms($new_id, [$client_id], self::TAX_CLIENT, false);
+        if ($process_id) wp_set_object_terms($new_id, [$process_id], self::TAX_PROCESS, false);
+
+        $title = get_the_title($new_id);
+        if (!$title) {
+            $fn = get_post_meta($new_id,'kvt_first_name',true);
+            $ln = get_post_meta($new_id,'kvt_last_name',true);
+            $new = trim($fn.' '.$ln);
+            if ($new) wp_update_post(['ID'=>$new_id,'post_title'=>$new]);
+        }
+
+        wp_send_json_success(['id'=>$new_id]);
     }
 
-    private function extract_docx_text($path) {
+    public function ajax_create_candidate() {
+        check_ajax_referer('kvt_nonce');
+
+        $first      = isset($_POST['first_name']) ? sanitize_text_field($_POST['first_name']) : '';
+        $last       = isset($_POST['last_name'])  ? sanitize_text_field($_POST['last_name'])  : '';
+        $email      = isset($_POST['email'])      ? sanitize_email($_POST['email'])           : '';
+        $client_id  = isset($_POST['client_id'])  ? intval($_POST['client_id'])               : 0;
+        $process_id = isset($_POST['process_id']) ? intval($_POST['process_id'])              : 0;
+
+        $title = trim($first.' '.$last);
+        if (!$title) $title = $email;
+
+        $new_id = wp_insert_post([
+            'post_type'   => self::CPT,
+            'post_status' => 'publish',
+            'post_title'  => $title ?: 'Candidate',
+        ]);
+        if (!$new_id || is_wp_error($new_id)) {
+            wp_send_json_error(['msg'=>'No se pudo crear el candidato.'],500);
+        }
+
+        $fields = [
+            'kvt_first_name' => $first,
+            'kvt_last_name'  => $last,
+            'kvt_email'      => $email,
+        ];
+        foreach ($fields as $k => $v) {
+            update_post_meta($new_id, $k, $v);
+            update_post_meta($new_id, str_replace('kvt_','',$k), $v);
+        }
+        $statuses = $this->get_statuses();
+        if (!empty($statuses)) update_post_meta($new_id,'kvt_status',$statuses[0]);
+        if ($client_id) wp_set_object_terms($new_id, [$client_id], self::TAX_CLIENT, false);
+        if ($process_id) wp_set_object_terms($new_id, [$process_id], self::TAX_PROCESS, false);
+
+      wp_send_json_success(['id'=>$new_id]);
+      }
+
+      public function ajax_create_client() {
+          check_ajax_referer('kvt_nonce');
+
+          $name  = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
+          $cname = isset($_POST['contact_name'])  ? sanitize_text_field($_POST['contact_name'])  : '';
+          $cemail= isset($_POST['contact_email']) ? sanitize_email($_POST['contact_email'])      : '';
+          $cphone= isset($_POST['contact_phone']) ? sanitize_text_field($_POST['contact_phone']) : '';
+          $desc  = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+
+          if ($name === '') wp_send_json_error(['msg'=>'Nombre requerido'],400);
+
+          $term = wp_insert_term($name, self::TAX_CLIENT, ['description'=>$desc]);
+          if (is_wp_error($term)) wp_send_json_error(['msg'=>$term->get_error_message()],500);
+          $tid = (int) $term['term_id'];
+          update_term_meta($tid, 'contact_name', $cname);
+          update_term_meta($tid, 'contact_email', $cemail);
+          update_term_meta($tid, 'contact_phone', $cphone);
+
+          wp_send_json_success(['id'=>$tid]);
+      }
+
+      public function ajax_create_process() {
+          check_ajax_referer('kvt_nonce');
+
+        $name = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
+        $client_id = isset($_POST['client_id']) ? intval($_POST['client_id']) : 0;
+        $contact_name  = isset($_POST['contact_name']) ? sanitize_text_field($_POST['contact_name']) : '';
+        $contact_email = isset($_POST['contact_email']) ? sanitize_email($_POST['contact_email']) : '';
+        $desc = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+        if ($name === '') wp_send_json_error(['msg'=>'Nombre requerido'],400);
+
+        $term = wp_insert_term($name, self::TAX_PROCESS, ['description'=>$desc]);
+        if (is_wp_error($term)) wp_send_json_error(['msg'=>$term->get_error_message()],500);
+        $tid = (int) $term['term_id'];
+        if ($client_id) update_term_meta($tid, 'kvt_process_client', $client_id);
+        if ($contact_name)  update_term_meta($tid, 'contact_name', $contact_name);
+        if ($contact_email) update_term_meta($tid, 'contact_email', $contact_email);
+
+        wp_send_json_success(['id'=>$tid]);
+    }
+
+    public function ajax_update_client() {
+        check_ajax_referer('kvt_nonce');
+
+        $id    = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        $name  = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
+        $cname = isset($_POST['contact_name'])  ? sanitize_text_field($_POST['contact_name'])  : '';
+        $cemail= isset($_POST['contact_email']) ? sanitize_email($_POST['contact_email'])      : '';
+        $cphone= isset($_POST['contact_phone']) ? sanitize_text_field($_POST['contact_phone']) : '';
+        $desc  = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+
+        if (!$id) wp_send_json_error(['msg'=>'ID inválido'],400);
+
+        $term = wp_update_term($id, self::TAX_CLIENT, ['name'=>$name, 'description'=>$desc]);
+        if (is_wp_error($term)) wp_send_json_error(['msg'=>$term->get_error_message()],500);
+
+        update_term_meta($id, 'contact_name', $cname);
+        update_term_meta($id, 'contact_email', $cemail);
+        update_term_meta($id, 'contact_phone', $cphone);
+
+        wp_send_json_success(['id'=>$id]);
+    }
+
+    public function ajax_update_process() {
+        check_ajax_referer('kvt_nonce');
+
+        $id    = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        $name  = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
+        $client_id = isset($_POST['client_id']) ? intval($_POST['client_id']) : 0;
+        $contact_name  = isset($_POST['contact_name']) ? sanitize_text_field($_POST['contact_name']) : '';
+        $contact_email = isset($_POST['contact_email']) ? sanitize_email($_POST['contact_email']) : '';
+        $desc = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+
+        if (!$id) wp_send_json_error(['msg'=>'ID inválido'],400);
+
+        $term = wp_update_term($id, self::TAX_PROCESS, ['name'=>$name, 'description'=>$desc]);
+        if (is_wp_error($term)) wp_send_json_error(['msg'=>$term->get_error_message()],500);
+
+        if ($client_id) update_term_meta($id, 'kvt_process_client', $client_id); else delete_term_meta($id, 'kvt_process_client');
+        update_term_meta($id, 'contact_name', $contact_name);
+        update_term_meta($id, 'contact_email', $contact_email);
+
+        wp_send_json_success(['id'=>$id]);
+    }
+
+    public function ajax_ai_search() {
+        check_ajax_referer('kvt_nonce');
+
+        $desc = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+        if (!$desc) wp_send_json_error(['msg' => 'Descripción vacía'], 400);
+
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        if (!$key) wp_send_json_error(['msg' => 'Falta la clave'], 400);
+
+        $candidates = get_posts(['post_type' => self::CPT, 'posts_per_page' => -1]);
+        $items = [];
+        foreach ($candidates as $c) {
+            $cv_text = $this->get_candidate_cv_text($c->ID);
+            if (!$cv_text) continue;
+            $res = $this->openai_match_summary($key, $desc, $cv_text);
+            if ($res) {
+                $meta = [
+                    'first_name'  => $this->meta_get_compat($c->ID,'kvt_first_name',['first_name']),
+                    'last_name'   => $this->meta_get_compat($c->ID,'kvt_last_name',['last_name']),
+                    'email'       => $this->meta_get_compat($c->ID,'kvt_email',['email']),
+                    'phone'       => $this->meta_get_compat($c->ID,'kvt_phone',['phone']),
+                    'country'     => $this->meta_get_compat($c->ID,'kvt_country',['country']),
+                    'city'        => $this->meta_get_compat($c->ID,'kvt_city',['city']),
+                    'cv_url'      => $this->meta_get_compat($c->ID,'kvt_cv_url',['cv_url']),
+                    'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($c->ID,'kvt_cv_uploaded',['cv_uploaded'])),
+                    'tags'        => $this->meta_get_compat($c->ID,'kvt_tags',['tags']),
+                ];
+                $items[] = [
+                    'id'      => $c->ID,
+                    'meta'    => $meta,
+                    'summary' => $res['summary'],
+                    'score'   => $res['score'],
+                ];
+            }
+        }
+
+        usort($items, function($a, $b){ return $b['score'] <=> $a['score']; });
+        // Keep only candidates with a score of 7 or higher (scale 0-10)
+        $items = array_values(array_filter($items, function($it){ return $it['score'] >= 7; }));
+
+        wp_send_json_success(['items' => $items]);
+    }
+
+    private function get_candidate_cv_text($post_id) {
+        // Use cached text if available (e.g. from client-side extraction)
+        $cached = get_post_meta($post_id, 'kvt_cv_text', true);
+        if (is_string($cached) && trim($cached) !== '') {
+            return $cached;
+        }
+
+        $cached_url = get_post_meta($post_id, 'kvt_cv_text_url', true);
+        if ($cached_url) {
+            $path = wp_parse_url($cached_url, PHP_URL_PATH);
+            if ($path) {
+                $full = ABSPATH . ltrim($path, '/');
+                if (file_exists($full)) {
+                    $text = $this->extract_text_from_file($full);
+                    if ($text) {
+                        update_post_meta($post_id, 'kvt_cv_text', $text);
+                        return $text;
+                    }
+                }
+            }
+        }
+
+        $cv_url = $this->meta_get_compat($post_id, 'kvt_cv_url', ['cv_url']);
+        if (!$cv_url) return '';
+
+        $response = wp_remote_get($cv_url);
+        if (is_wp_error($response)) return '';
+        $body = wp_remote_retrieve_body($response);
+        $file = wp_tempnam($cv_url);
+        if (!$file) return '';
+        file_put_contents($file, $body);
+
+        $text = $this->extract_text_from_file($file);
+        @unlink($file);
+
+        if ($text) update_post_meta($post_id, 'kvt_cv_text', $text);
+        return $text;
+    }
+
+    private function extract_text_from_file($file) {
+        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
         $text = '';
-        if (!class_exists('ZipArchive')) return $text;
-        $zip = new ZipArchive;
-        if ($zip->open($path) === true) {
-            $xml = $zip->getFromName('word/document.xml');
-            $zip->close();
-            if ($xml) {
-                $xml = preg_replace('/<w:p[^>]*>/', "\n", $xml);
-                $xml = preg_replace('/<\/w:p>/', "\n", $xml);
-                $xml = strip_tags($xml);
-                $text = html_entity_decode($xml, ENT_QUOTES | ENT_XML1, 'UTF-8');
+        if ($ext === 'pdf') {
+            if (function_exists('shell_exec')) {
+                $text = shell_exec('pdftotext ' . escapeshellarg($file) . ' -');
+                if (!trim($text)) {
+                    $img_base = $file . '-ocr';
+                    @shell_exec('pdftoppm ' . escapeshellarg($file) . ' ' . escapeshellarg($img_base));
+                    $i = 1;
+                    while (file_exists($img_base . '-' . $i . '.ppm')) {
+                        $ocr = shell_exec('tesseract ' . escapeshellarg($img_base . '-' . $i . '.ppm') . ' stdout');
+                        if ($ocr) $text .= $ocr . "\n";
+                        @unlink($img_base . '-' . $i . '.ppm');
+                        $i++;
+                    }
+                }
+            }
+        } elseif ($ext === 'docx') {
+            if (class_exists('ZipArchive')) {
+                $zip = new \ZipArchive();
+                if ($zip->open($file) === true) {
+                    $xml = $zip->getFromName('word/document.xml');
+                    if ($xml) $text = strip_tags($xml);
+                    $zip->close();
+                }
+            }
+        } else {
+            $text = @file_get_contents($file);
+        }
+        return wp_strip_all_tags($text);
+    }
+
+    private function save_cv_text_attachment($post_id, $attach_id) {
+        $path = get_attached_file($attach_id);
+        if (!$path) return;
+        $text = $this->extract_text_from_file($path);
+        if (!$text) return;
+        update_post_meta($post_id, 'kvt_cv_text', $text);
+
+        $info = pathinfo($path);
+        if (strtolower($info['extension'] ?? '') !== 'pdf') return;
+        // Create a .docx file with plain text for reference
+        $docx_path = $info['dirname'] . '/' . $info['filename'] . '.docx';
+        @unlink($docx_path);
+        if (class_exists('ZipArchive')) {
+            $zip = new \ZipArchive();
+            if ($zip->open($docx_path, \ZipArchive::CREATE) === true) {
+                $zip->addFromString('[Content_Types].xml',
+                    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                    .'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                    .'<Default Extension="xml" ContentType="application/xml"/>'
+                    .'<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+                    .'</Types>');
+                $zip->addFromString('_rels/.rels',
+                    '<?xml version="1.0" encoding="UTF-8"?>'
+                    .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                    .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+                    .'</Relationships>');
+                $body = '';
+                foreach (preg_split('/\r\n|\r|\n/', $text) as $line) {
+                    $body .= '<w:p><w:r><w:t>'.htmlspecialchars($line, ENT_XML1).'</w:t></w:r></w:p>';
+                }
+                $doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                    .'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+                    .$body.'</w:body></w:document>';
+                $zip->addFromString('word/document.xml', $doc);
+                $zip->close();
+
+                $upload = wp_upload_dir();
+                $docx_url = str_replace($upload['basedir'], $upload['baseurl'], $docx_path);
+                update_post_meta($post_id, 'kvt_cv_text_url', esc_url_raw($docx_url));
             }
         }
-        return trim($text);
     }
 
-    /** Intento de extracción en servidor con binarios (opcional). Devuelve texto o ''. */
-    private function extract_pdf_text_server($path, &$extract_method = 'pdf') {
-        $extract_method = 'pdf:';
-        $run = function($cmd) {
-            $desc = [1 => ['pipe','w'], 2 => ['pipe','w']];
-            $p = proc_open($cmd, $desc, $pipes);
-            if (!is_resource($p)) return ['', 'proc_open failed', 1];
-            $out = stream_get_contents($pipes[1]);
-            $err = stream_get_contents($pipes[2]);
-            foreach ($pipes as $pp) { if (is_resource($pp)) fclose($pp); }
-            $code = proc_close($p);
-            return [$out,$err,$code];
-        };
-
-        // pdftotext
-        if (trim(@shell_exec('which pdftotext')) !== '') {
-            list($o,$e,$c) = $run('pdftotext -enc UTF-8 -eol unix ' . escapeshellarg($path) . ' -');
-            if ($c === 0 && trim($o) !== '') { $extract_method .= 'pdftotext'; return trim($o); }
-            list($o2,$e2,$c2) = $run('pdftotext -layout -enc UTF-8 -eol unix ' . escapeshellarg($path) . ' -');
-            if ($c2 === 0 && trim($o2) !== '') { $extract_method .= 'pdftotext-layout'; return trim($o2); }
-        }
-
-        // mutool
-        if (trim(@shell_exec('which mutool')) !== '') {
-            list($o3,$e3,$c3) = $run('mutool draw -F txt -o - ' . escapeshellarg($path));
-            if ($c3 === 0 && trim($o3) !== '') { $extract_method .= 'mutool'; return trim($o3); }
-        }
-
-        // ocrmypdf → pdftotext/mutool
-        if (trim(@shell_exec('which ocrmypdf')) !== '') {
-            $tmp_ocr = $path . '.ocr.pdf';
-            list($o4,$e4,$c4) = $run('ocrmypdf --skip-text -l spa+eng ' . escapeshellarg($path) . ' ' . escapeshellarg($tmp_ocr) . ' 2>&1');
-            if ($c4 === 0 && file_exists($tmp_ocr)) {
-                if (trim(@shell_exec('which pdftotext')) !== '') {
-                    list($o5,$e5,$c5) = $run('pdftotext -enc UTF-8 -eol unix ' . escapeshellarg($tmp_ocr) . ' -');
-                    @unlink($tmp_ocr);
-                    if ($c5 === 0 && trim($o5) !== '') { $extract_method .= 'ocrmypdf->pdftotext'; return trim($o5); }
-                }
-                if (trim(@shell_exec('which mutool')) !== '') {
-                    list($o6,$e6,$c6) = $run('mutool draw -F txt -o - ' . escapeshellarg($tmp_ocr));
-                    @unlink($tmp_ocr);
-                    if ($c6 === 0 && trim($o6) !== '') { $extract_method .= 'ocrmypdf->mutool'; return trim($o6); }
-                }
-                @unlink($tmp_ocr);
-            }
-        }
-
-        $extract_method .= 'none';
-        return '';
-    }
-
-    /**
-     * Genera un DOCX mínimo a partir de texto plano.
-     */
-    private function generate_docx_from_text($text, $out_path) {
-        if (!class_exists('ZipArchive')) return false;
-
-        $zip = new ZipArchive();
-        if ($zip->open($out_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) return false;
-
-        // Normalizar saltos de línea
-        $lines = preg_split("/\r\n|\r|\n/", (string)$text);
-
-        // document.xml
-        $doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-             . '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-             . '<w:body>';
-        foreach ($lines as $line) {
-            $safe = htmlspecialchars($line, ENT_XML1 | ENT_COMPAT, 'UTF-8');
-            $doc .= '<w:p><w:r><w:t xml:space="preserve">'.$safe.'</w:t></w:r></w:p>';
-        }
-        $doc .= '<w:sectPr/></w:body></w:document>';
-
-        // [Content_Types].xml
-        $ct = '<?xml version="1.0" encoding="UTF-8"?>'
-            . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-            . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-            . '<Default Extension="xml" ContentType="application/xml"/>'
-            . '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
-            . '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
-            . '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>'
-            . '</Types>';
-
-        // _rels/.rels
-        $rels = '<?xml version="1.0" encoding="UTF-8"?>'
-              . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-              . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
-              . '</Relationships>';
-
-        // word/_rels/document.xml.rels
-        $docrels = '<?xml version="1.0" encoding="UTF-8"?>'
-                 . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>';
-
-        // docProps/core.xml
-        $now = gmdate('Y-m-d\TH:i:s\Z');
-        $core = '<?xml version="1.0" encoding="UTF-8"?>'
-              . '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
-              . 'xmlns:dc="http://purl.org/dc/elements/1.1/" '
-              . 'xmlns:dcterms="http://purl.org/dc/terms/" '
-              . 'xmlns:dcmitype="http://purl.org/dc/dcmitype/" '
-              . 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
-              . '<dc:title>CV convertido desde PDF</dc:title>'
-              . '<dc:creator>KCVF</dc:creator>'
-              . '<cp:lastModifiedBy>KCVF</cp:lastModifiedBy>'
-              . '<dcterms:created xsi:type="dcterms:W3CDTF">'.$now.'</dcterms:created>'
-              . '<dcterms:modified xsi:type="dcterms:W3CDTF">'.$now.'</dcterms:modified>'
-              . '</cp:coreProperties>';
-
-        // docProps/app.xml
-        $app = '<?xml version="1.0" encoding="UTF-8"?>'
-             . '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" '
-             . 'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">'
-             . '<Application>KCVF</Application>'
-             . '</Properties>';
-
-        // Escribir archivos en el zip DOCX
-        $zip->addFromString('[Content_Types].xml', $ct);
-        $zip->addFromString('_rels/.rels', $rels);
-        $zip->addFromString('word/document.xml', $doc);
-        $zip->addFromString('word/_rels/document.xml.rels', $docrels);
-        $zip->addFromString('docProps/core.xml', $core);
-        $zip->addFromString('docProps/app.xml', $app);
-
-        $zip->close();
-        return file_exists($out_path);
-    }
-
-    private function generate_ai_feedback($api_key, $cv_text, $role, $sector) {
-        $model = 'gpt-4o-mini'; // puedes cambiarlo si lo deseas
-        $prompt = $this->build_prompt_es($cv_text, $role, $sector);
-
-        $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+    private function openai_match_summary($key, $desc, $cv_text) {
+        $req = [
+            'model' => 'gpt-4o-mini',
+            'messages' => [
+                ['role' => 'system', 'content' => 'Eres un asistente de reclutamiento. Devuelve JSON con "score" (0-10) y "summary" (breve explicación en español) indicando por qué el candidato encaja.'],
+                ['role' => 'user', 'content' => "Descripción del trabajo:\n$desc\nCV del candidato:\n$cv_text"],
+            ],
+            'max_tokens' => 150,
+            'response_format' => ['type' => 'json_object'],
+        ];
+        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
-                'Authorization' => 'Bearer ' . $api_key,
+                'Authorization' => 'Bearer ' . $key,
                 'Content-Type'  => 'application/json',
             ],
+            'body' => wp_json_encode($req),
             'timeout' => 60,
-            'body' => wp_json_encode([
-                'model' => $model,
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' =>
-"Eres un/a reclutador/a senior. Devuelves feedback breve, claro y accionable.
-
-FORMATO:
-- Responde ÚNICAMENTE como un fragmento HTML válido (sin <html> ni <body>).
-- Usa <h2> y <h3> para encabezados de secciones (no uses <strong> en los títulos).
-- Usa <p>, <ul>, <ol>, <li> para el contenido.
-- NO uses <strong> o <em> en el contenido normal. Reserva negritas SOLO para encabezados mediante <h2>/<h3>.
-- No incluyas bloques de código ni fences (```).
-
-CONTENIDO:
-- Ajusta TODO al rol y sector proporcionados por el usuario.
-- NO inventes datos que no estén en el CV.
-- NO menciones “energía/infra/renovables” salvo que el SECTOR lo requiera explícitamente."
-                    ],
-                    ['role' => 'user', 'content' => $prompt],
-                ],
-                'temperature' => 0.3,
-            ]),
         ]);
-
-        if (is_wp_error($resp)) {
-            return 'Fallo en la petición de IA: ' . $resp->get_error_message();
-        }
-        $code = wp_remote_retrieve_response_code($resp);
-        $body = wp_remote_retrieve_body($resp);
-        $json = json_decode($body, true);
-        if ($code !== 200 || !isset($json['choices'][0]['message']['content'])) {
-            return 'La IA devolvió una respuesta inesperada. Revisa la API key y límites de uso.';
-        }
-        return trim($json['choices'][0]['message']['content']);
+        if (is_wp_error($response)) return null;
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (!isset($body['choices'][0]['message']['content'])) return null;
+        $data = json_decode($body['choices'][0]['message']['content'], true);
+        if (!is_array($data) || !isset($data['score'])) return null;
+        return [
+            'score'   => floatval($data['score']),
+            'summary' => isset($data['summary']) ? trim($data['summary']) : '',
+        ];
     }
 
-    private function build_prompt_es($cv_text, $role, $sector) {
-        $role = trim((string)$role);
-        $sector = trim((string)$sector);
+      public function ajax_assign_candidate() {
+          check_ajax_referer('kvt_nonce');
 
-        // Detectar si el sector es energía/infra
-        $s = mb_strtolower($sector);
-        $is_energy = preg_match('/energ|renov|solar|eólic|hidro|infraestruct|grid|transmis|oil\s*&?\s*gas/i', $s);
+          $id        = isset($_POST['candidate_id']) ? intval($_POST['candidate_id']) : 0;
+          $client_id = isset($_POST['client_id']) ? intval($_POST['client_id']) : 0;
+          $process_id= isset($_POST['process_id']) ? intval($_POST['process_id']) : 0;
 
-        $ban_clause = $is_energy
-            ? 'Puedes referirte al sector energético/infra si procede.'
-            : 'PROHIBIDO mencionar “energía”, “infraestructura” o “renovables”. Usa lenguaje general aplicable al sector indicado.';
+          if (!$id || get_post_type($id) !== self::CPT) {
+              wp_send_json_error(['msg'=>'Invalid candidate'],400);
+          }
+          if ($process_id && has_term($process_id, self::TAX_PROCESS, $id)) {
+              wp_send_json_error(['msg'=>'Ya asignado'],400);
+          }
+          if ($client_id) wp_set_object_terms($id, [$client_id], self::TAX_CLIENT, true);
+          if ($process_id) wp_set_object_terms($id, [$process_id], self::TAX_PROCESS, true);
 
-        $cv_len = mb_strlen($cv_text);
-        $cv_notice = ($cv_len < 400)
-            ? "NOTA: El texto del CV es escaso o no se pudo extraer bien. Da recomendaciones útiles y pide datos faltantes (logros, métricas, herramientas), centrado en el rol/sector."
-            : "";
+          wp_send_json_success(['id'=>$id]);
+      }
 
-        return
-"DATOS DEL USUARIO
-- Rol/área objetivo: " . ($role ?: "(no especificado)") . "
-- Sector: " . ($sector ?: "(no especificado)") . "
+      public function ajax_unassign_candidate() {
+          check_ajax_referer('kvt_nonce');
 
-REGLAS CRÍTICAS
-- Adapta el feedback al rol y sector de arriba.
-- No inventes logros, empresas ni tecnologías.
-- $ban_clause
-- Devuelve SOLO HTML (sin bloques de código, sin ```).
-- Los encabezados de secciones deben ir en <h2> o <h3> (ya se muestran en negrita).
-- El contenido debe ir en <p>, <ul>, <ol>, <li> — sin <strong> ni <em>.
+          $id        = isset($_POST['id']) ? intval($_POST['id']) : 0;
+          $client_id = isset($_POST['client_id']) ? intval($_POST['client_id']) : 0;
+          $process_id= isset($_POST['process_id']) ? intval($_POST['process_id']) : 0;
 
-$cv_notice
+          if (!$id || get_post_type($id) !== self::CPT) {
+              wp_send_json_error(['msg'=>'Invalid candidate'],400);
+          }
+          if ($client_id) wp_remove_object_terms($id, [$client_id], self::TAX_CLIENT);
+          if ($process_id) wp_remove_object_terms($id, [$process_id], self::TAX_PROCESS);
 
-CONTENIDO DEL CV (texto plano):
-----------------------
-$cv_text
+          wp_send_json_success(['id'=>$id]);
+      }
 
-DEVUELVE (en HTML):
-<p><em>Rol detectado: " . ($role ?: "—") . " | Sector: " . ($sector ?: "—") . "</em></p>
+      /* Export */
+      public function handle_export() {
+        if (!is_user_logged_in() || !current_user_can('edit_posts')) wp_die('Unauthorized');
+        check_admin_referer('kvt_export','kvt_export_nonce');
 
-<h2>1) Top 5 mejoras</h2>
-<ul><li>Texto normal…</li></ul>
+        $format     = isset($_POST['format']) ? sanitize_text_field($_POST['format']) : 'csv';
+        $client_id  = isset($_POST['filter_client'])  ? intval($_POST['filter_client'])  : 0;
+        $process_id = isset($_POST['filter_process']) ? intval($_POST['filter_process']) : 0;
+        $search     = isset($_POST['filter_search'])  ? sanitize_text_field($_POST['filter_search']) : '';
 
-<h2>2) Consejos para cuantificar impacto</h2>
-<p>Texto normal…</p>
-<ul><li>Texto normal…</li></ul>
-
-<h2>3) Revisión por secciones</h2>
-<h3>Resumen</h3><p>Texto normal…</p>
-<h3>Experiencia</h3><p>Texto normal…</p>
-<h3>Educación</h3><p>Texto normal…</p>
-<h3>Habilidades</h3><p>Texto normal…</p>
-
-<h2>4) Consejos de ATS/legibilidad</h2>
-<ul><li>Texto normal…</li></ul>
-
-<h2>5) Resumen mejorado</h2>
-<p>Texto normal (3–5 líneas, adaptado al rol/sector)…</p>";
-    }
-
-    public function metabox() {
-        add_meta_box('kcvf_es_details', 'Detalles del envío', [$this, 'metabox_render'], 'cv_submission', 'side', 'high');
-    }
-
-    public function metabox_render($post) {
-        $email = get_post_meta($post->ID, '_kcvf_email', true);
-        $role = get_post_meta($post->ID, '_kcvf_role', true);
-        $sector = get_post_meta($post->ID, '_kcvf_sector', true);
-        $file = get_post_meta($post->ID, '_kcvf_file', true);
-        $feedback = get_post_meta($post->ID, '_kcvf_feedback', true);
-
-        $char_count = (int) get_post_meta($post->ID, '_kcvf_char_count', true);
-        $extract_method = get_post_meta($post->ID, '_kcvf_extract_method', true);
-        $text_excerpt = get_post_meta($post->ID, '_kcvf_text_excerpt', true);
-        $converted_docx = get_post_meta($post->ID, '_kcvf_converted_docx', true);
-
-        // Derivar URL pública
-        $upload_dir = wp_upload_dir();
-        $file_url = '';
-        if ($file && isset($upload_dir['basedir'], $upload_dir['baseurl'])) {
-            $file_url = str_replace($upload_dir['basedir'], $upload_dir['baseurl'], $file);
-        }
-        $conv_url = '';
-        if ($converted_docx && isset($upload_dir['basedir'], $upload_dir['baseurl'])) {
-            $conv_url = str_replace($upload_dir['basedir'], $upload_dir['baseurl'], $converted_docx);
-        }
-
-        wp_nonce_field('kcvf_es_meta_save', 'kcvf_es_meta_nonce');
-        ?>
-        <p><strong>Email:</strong><br><?php echo esc_html($email); ?></p>
-        <p><strong>Rol:</strong><br><?php echo esc_html($role); ?></p>
-        <p><strong>Sector:</strong><br><?php echo esc_html($sector); ?></p>
-        <p><strong>Archivo:</strong><br><?php echo $file ? esc_html($file) : '—'; ?></p>
-        <?php if ($file_url): ?>
-            <p><a href="<?php echo esc_url($file_url); ?>" target="_blank" rel="noopener">Abrir archivo guardado</a></p>
-        <?php endif; ?>
-        <?php if ($converted_docx): ?>
-            <p><strong>DOCX convertido:</strong><br><?php echo esc_html($converted_docx); ?>
-            <?php if ($conv_url): ?><br><a href="<?php echo esc_url($conv_url); ?>" target="_blank" rel="noopener">Descargar DOCX generado</a><?php endif; ?></p>
-        <?php endif; ?>
-        <p><strong>Método de extracción:</strong><br><?php echo esc_html($extract_method ?: '—'); ?></p>
-        <p><strong>Nº de caracteres extraídos:</strong><br><?php echo esc_html($char_count ?: 0); ?></p>
-        <p><strong>Extracto de texto (primeros 400):</strong></p>
-        <textarea readonly style="width:100%;min-height:120px;"><?php echo esc_textarea($text_excerpt); ?></textarea>
-        <p><strong>Feedback (editable):</strong></p>
-        <textarea name="kcvf_feedback" style="width:100%;min-height:160px;"><?php echo esc_textarea($feedback); ?></textarea>
-        <p><button class="button button-primary" name="kcvf_regenerate" value="1">Regenerar con IA (usa el archivo actual)</button></p>
-        <?php
-    }
-
-    public function save_meta($post_id) {
-        if (!isset($_POST['kcvf_es_meta_nonce']) || !wp_verify_nonce($_POST['kcvf_es_meta_nonce'], 'kcvf_es_meta_save')) return;
-        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
-        if (!current_user_can('edit_post', $post_id)) return;
-
-        if (isset($_POST['kcvf_feedback'])) {
-            update_post_meta($post_id, '_kcvf_feedback', sanitize_textarea_field($_POST['kcvf_feedback']));
-        }
-        if (isset($_POST['kcvf_regenerate']) && $_POST['kcvf_regenerate']) {
-            $api_key = trim((string)get_option(self::OPT_API_KEY));
-            if (!$api_key) return;
-
-            $file = get_post_meta($post_id, '_kcvf_file', true);
-            $role = get_post_meta($post_id, '_kcvf_role', true);
-            $sector = get_post_meta($post_id, '_kcvf_sector', true);
-
-            $text = '';
-            if ($file && file_exists($file)) {
-                $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-                $extract_method = 'manual:';
-                if ($ext === 'docx') $text = $this->extract_docx_text($file);
-                if ($ext === 'pdf')  $text = $this->extract_pdf_text_server($file, $extract_method);
+        $tax_query = [];
+        if ($process_id) {
+            $tax_query[] = ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>[$process_id]];
+            if ($client_id) $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
+        } else {
+            if ($client_id) {
+                $proc_terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
+                $proc_ids = [];
+                foreach ($proc_terms as $t) {
+                    $cid = (int) get_term_meta($t->term_id, 'kvt_process_client', true);
+                    if ($cid === $client_id) $proc_ids[] = $t->term_id;
+                }
+                if (!empty($proc_ids)) {
+                    $tax_query = [
+                        'relation' => 'OR',
+                        ['taxonomy'=>self::TAX_CLIENT, 'field'=>'term_id','terms'=>[$client_id]],
+                        ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>$proc_ids],
+                    ];
+                } else {
+                    $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
+                }
             }
-            if (!$text) $text = '(No se extrajo texto automáticamente. Puedes pegar manualmente el contenido del CV en el prompt.)';
-
-            $feedback = $this->generate_ai_feedback($api_key, mb_substr($text, 0, 18000), $role, $sector);
-            update_post_meta($post_id, '_kcvf_feedback', $feedback);
         }
+
+        $args = [
+            'post_type'      => self::CPT,
+            'post_status'    => 'any',
+            'posts_per_page' => -1,
+            's'              => $search,
+        ];
+        if (!empty($tax_query)) $args['tax_query'] = $tax_query;
+
+        $q = new WP_Query($args);
+
+        // Fixed order export
+        $headers = ['email','first_name','surname','country','city','proceso','cliente','phone','cv_url'];
+        $filename = 'pipeline_export_' . date('Ymd_His');
+
+        if ($format === 'xls') {
+            header('Content-Type: application/vnd.ms-excel; charset=UTF-8');
+            header('Content-Disposition: attachment; filename="'.$filename.'.xls"');
+        } else {
+            header('Content-Type: text/csv; charset=UTF-8');
+            header('Content-Disposition: attachment; filename="'.$filename.'.csv"');
+        }
+        header('Pragma: no-cache'); header('Expires: 0');
+
+        $out = fopen('php://output', 'w');
+        fwrite($out, "\xEF\xBB\xBF");
+        fputcsv($out, $headers);
+
+        foreach ($q->posts as $p) {
+            $email   = $this->meta_get_compat($p->ID,'kvt_email',['email']);
+            $fname   = $this->meta_get_compat($p->ID,'kvt_first_name',['first_name']);
+            $lname   = $this->meta_get_compat($p->ID,'kvt_last_name',['last_name']);
+            $country = $this->meta_get_compat($p->ID,'kvt_country',['country']);
+            $city    = $this->meta_get_compat($p->ID,'kvt_city',['city']);
+            $proc    = $this->get_term_name($p->ID, self::TAX_PROCESS);
+            $client  = $this->get_term_name($p->ID, self::TAX_CLIENT);
+            $phone   = $this->meta_get_compat($p->ID,'kvt_phone',['phone']);
+            $cv      = $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']);
+            fputcsv($out, [$email,$fname,$lname,$country,$city,$proc,$client,$phone,$cv]);
+        }
+        fclose($out);
+        exit;
     }
 }
 
-new Kovacic_CV_Feedback_ES();
+new Kovacic_Pipeline_Visualizer();
