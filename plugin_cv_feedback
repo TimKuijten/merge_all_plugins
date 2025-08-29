@@ -1,0 +1,1009 @@
+<?php
+/*
+Plugin Name: Kovacic CV Feedback (ES) + reCAPTCHA v3
+Description: Envío de CV con feedback por IA (PDF/DOCX). Si el PDF no es legible en el servidor, el navegador extrae el texto con PDF.js y, si es escaneado, hace OCR con Tesseract.js; luego envía el texto oculto y el servidor genera un DOCX temporal desde ese texto (flujo fiable).
+Version: 1.6.0
+Author: Tim Kuijten - Kovacic Executive Talent Research
+*/
+
+if (!defined('ABSPATH')) exit;
+
+class Kovacic_CV_Feedback_ES {
+    const OPT_GROUP = 'kcvf_es_options';
+    const OPT_API_KEY = 'kcvf_es_openai_api_key';
+    const OPT_AUTO_FEEDBACK = 'kcvf_es_auto_feedback';
+    const OPT_NOTIFY_EMAIL = 'kcvf_es_notify_email';
+    const OPT_GDPR_TEXT = 'kcvf_es_gdpr_text';
+    const OPT_THANKYOU_TEXT = 'kcvf_es_thankyou_text';
+
+    // reCAPTCHA v3
+    const OPT_RECAPTCHA_ENABLE = 'kcvf_es_recaptcha_enable';
+    const OPT_RECAPTCHA_SITE   = 'kcvf_es_recaptcha_site';
+    const OPT_RECAPTCHA_SECRET = 'kcvf_es_recaptcha_secret';
+    const OPT_RECAPTCHA_THRESH = 'kcvf_es_recaptcha_threshold';
+
+    public function __construct() {
+        add_action('init', [$this, 'register_cpt']);
+        add_action('admin_menu', [$this, 'admin_menu']);
+        add_action('admin_init', [$this, 'register_settings']);
+        add_action('admin_notices', [$this, 'admin_notices_tools']);
+        add_shortcode('kovacic_cv_submit', [$this, 'shortcode']);
+        add_shortcode('kovacic_cv_register', [$this, 'shortcode_register']);
+        add_action('wp_enqueue_scripts', [$this, 'assets']);
+        add_action('add_meta_boxes', [$this, 'metabox']);
+        add_action('save_post', [$this, 'save_meta']);
+    }
+
+    public function register_cpt() {
+        register_post_type('cv_submission', [
+            'labels' => [
+                'name' => 'Envíos de CV',
+                'singular_name' => 'Envío de CV',
+                'add_new_item' => 'Añadir nuevo envío',
+                'edit_item' => 'Editar envío',
+                'view_item' => 'Ver envío',
+                'search_items' => 'Buscar envíos',
+            ],
+            'public' => false,
+            'show_ui' => true,
+            'supports' => ['title', 'editor'],
+            'menu_icon' => 'dashicons-id',
+        ]);
+    }
+
+    public function admin_menu() {
+        add_options_page('Kovacic CV Feedback (ES)', 'Kovacic CV Feedback', 'manage_options', 'kcvf-es', [$this, 'settings_page']);
+    }
+
+    public function register_settings() {
+        register_setting(self::OPT_GROUP, self::OPT_API_KEY);
+        register_setting(self::OPT_GROUP, self::OPT_AUTO_FEEDBACK);
+        register_setting(self::OPT_GROUP, self::OPT_NOTIFY_EMAIL);
+        register_setting(self::OPT_GROUP, self::OPT_GDPR_TEXT);
+        register_setting(self::OPT_GROUP, self::OPT_THANKYOU_TEXT);
+
+        if (!get_option(self::OPT_GDPR_TEXT)) {
+            update_option(self::OPT_GDPR_TEXT, 'Acepto el tratamiento de mis datos personales con fines de reclutamiento conforme a la Política de Privacidad (RGPD).');
+        }
+        if (!get_option(self::OPT_THANKYOU_TEXT)) {
+            update_option(self::OPT_THANKYOU_TEXT, '¡Gracias! Hemos recibido tu CV. El feedback se encuentra a continuación.');
+        }
+
+        // reCAPTCHA v3
+        register_setting(self::OPT_GROUP, self::OPT_RECAPTCHA_ENABLE);
+        register_setting(self::OPT_GROUP, self::OPT_RECAPTCHA_SITE);
+        register_setting(self::OPT_GROUP, self::OPT_RECAPTCHA_SECRET);
+        register_setting(self::OPT_GROUP, self::OPT_RECAPTCHA_THRESH);
+
+        if (get_option(self::OPT_RECAPTCHA_THRESH) === false) {
+            update_option(self::OPT_RECAPTCHA_THRESH, '0.5');
+        }
+    }
+
+    /** Aviso de binarios útiles en servidor (opcionales gracias a PDF.js/Tesseract.js) */
+    public function admin_notices_tools() {
+        if (!current_user_can('manage_options')) return;
+        $missing = [];
+        if (empty(trim(@shell_exec('which pdftotext')))) $missing[] = '<code>pdftotext</code>';
+        if (empty(trim(@shell_exec('which mutool'))))    $missing[] = '<code>mutool</code>';
+        if (empty(trim(@shell_exec('which ocrmypdf'))))  $missing[] = '<code>ocrmypdf</code>';
+        if (!class_exists('ZipArchive'))                 $missing[] = '<code>ZipArchive (PHP)</code>';
+        if (!empty($missing)) {
+            echo '<div class="notice notice-info"><p><strong>KCVF:</strong> Recomendado en servidor (opcional): '
+                . implode(', ', $missing)
+                . '. Este plugin también usa PDF.js + Tesseract.js en el navegador para leer PDFs sin estas herramientas.</p></div>';
+        }
+    }
+
+    public function settings_page() {
+        ?>
+        <div class="wrap">
+            <h1>Kovacic CV Feedback (ES) — Ajustes</h1>
+            <form method="post" action="options.php">
+                <?php settings_fields(self::OPT_GROUP); ?>
+                <h2 class="title">General</h2>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_API_KEY; ?>">OpenAI API Key</label></th>
+                        <td>
+                            <input type="password" id="<?php echo self::OPT_API_KEY; ?>" name="<?php echo self::OPT_API_KEY; ?>" value="<?php echo esc_attr(get_option(self::OPT_API_KEY)); ?>" class="regular-text" placeholder="sk-..." />
+                            <p class="description">Se usa para generar feedback automático del CV.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Feedback instantáneo</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="<?php echo self::OPT_AUTO_FEEDBACK; ?>" value="1" <?php checked(get_option(self::OPT_AUTO_FEEDBACK), '1'); ?> />
+                                Generar feedback inmediatamente tras el envío
+                            </label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_NOTIFY_EMAIL; ?>">Email de aviso interno</label></th>
+                        <td>
+                            <input type="email" id="<?php echo self::OPT_NOTIFY_EMAIL; ?>" name="<?php echo self::OPT_NOTIFY_EMAIL; ?>" value="<?php echo esc_attr(get_option(self::OPT_NOTIFY_EMAIL)); ?>" class="regular-text" placeholder="talent@tudominio.com" />
+                            <p class="description">Opcional. Si se indica, enviaremos un aviso con cada envío.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_GDPR_TEXT; ?>">Texto de consentimiento (RGPD)</label></th>
+                        <td><textarea id="<?php echo self::OPT_GDPR_TEXT; ?>" name="<?php echo self::OPT_GDPR_TEXT; ?>" class="large-text" rows="3"><?php echo esc_textarea(get_option(self::OPT_GDPR_TEXT)); ?></textarea></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_THANKYOU_TEXT; ?>">Mensaje de gracias</label></th>
+                        <td><textarea id="<?php echo self::OPT_THANKYOU_TEXT; ?>" name="<?php echo self::OPT_THANKYOU_TEXT; ?>" class="large-text" rows="3"><?php echo esc_textarea(get_option(self::OPT_THANKYOU_TEXT)); ?></textarea></td>
+                    </tr>
+                </table>
+
+                <h2 class="title">Seguridad — Google reCAPTCHA v3</h2>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row">Activar reCAPTCHA v3</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="<?php echo self::OPT_RECAPTCHA_ENABLE; ?>" value="1" <?php checked(get_option(self::OPT_RECAPTCHA_ENABLE), '1'); ?> />
+                                Proteger el formulario con reCAPTCHA v3 (invisible)
+                            </label>
+                            <p class="description">Crea tus claves en <a href="https://www.google.com/recaptcha/admin/create" target="_blank">Google reCAPTCHA</a> (elige v3).</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_RECAPTCHA_SITE; ?>">Site Key</label></th>
+                        <td><input type="text" id="<?php echo self::OPT_RECAPTCHA_SITE; ?>" name="<?php echo self::OPT_RECAPTCHA_SITE; ?>" value="<?php echo esc_attr(get_option(self::OPT_RECAPTCHA_SITE)); ?>" class="regular-text" placeholder="6Le..."></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_RECAPTCHA_SECRET; ?>">Secret Key</label></th>
+                        <td><input type="password" id="<?php echo self::OPT_RECAPTCHA_SECRET; ?>" name="<?php echo self::OPT_RECAPTCHA_SECRET; ?>" value="<?php echo esc_attr(get_option(self::OPT_RECAPTCHA_SECRET)); ?>" class="regular-text" placeholder="6Le..."></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_RECAPTCHA_THRESH; ?>">Umbral (score mínimo)</label></th>
+                        <td>
+                            <input type="number" step="0.1" min="0" max="1" id="<?php echo self::OPT_RECAPTCHA_THRESH; ?>" name="<?php echo self::OPT_RECAPTCHA_THRESH; ?>" value="<?php echo esc_attr(get_option(self::OPT_RECAPTCHA_THRESH, '0.5')); ?>" class="small-text">
+                            <p class="description">Valores más altos = más estricto. Recomendado 0.5–0.7.</p>
+                        </td>
+                    </tr>
+                </table>
+
+                <?php submit_button('Guardar ajustes'); ?>
+            </form>
+        </div>
+        <?php
+    }
+
+    public function assets() {
+        // Estilos UI
+        $css = "
+        .kcvf-wrapper{max-width:720px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.06)}
+        .kcvf-wrapper h2{font-size:28px;line-height:1.2;margin:0 0 14px;color:#0A212E}
+        .kcvf-field{margin-bottom:16px}
+        .kcvf-field label{display:block;font-weight:600;margin-bottom:6px}
+        .kcvf-input, .kcvf-select, .kcvf-textarea{width:100%;padding:12px;border:1px solid #e5e7eb;border-radius:10px;font-size:15px}
+        .kcvf-select{height:44px}
+        .kcvf-consent{display:flex;gap:10px;align-items:flex-start}
+        .kcvf-consent input{margin-top:3px}
+        .kcvf-btn{background:#0A212E;color:#fff;border:none;padding:14px 18px;border-radius:12px;cursor:pointer;font-weight:600}
+        .kcvf-btn:hover{opacity:.95}
+        .kcvf-alert{background:#f6ffed;border:1px solid #b7eb8f;padding:12px;border-radius:10px;margin-bottom:16px}
+        .kcvf-error{background:#fff1f0;border:1px solid #ffa39e;padding:12px;border-radius:10px;margin-bottom:16px}
+        .kcvf-feedback{white-space:normal;border:1px dashed #e5e7eb;border-radius:10px;padding:14px}
+        .kcvf-debug{background:#fff7ed;border:1px solid #fdba74;padding:12px;border-radius:10px;margin-top:12px}
+        ";
+        wp_register_style('kcvf-es-inline', false);
+        wp_enqueue_style('kcvf-es-inline');
+        wp_add_inline_style('kcvf-es-inline', $css);
+
+        // PDF.js y Tesseract.js para extracción/OCR en el cliente
+        wp_enqueue_script(
+            'pdfjs',
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+            [],
+            '3.11.174',
+            true
+        );
+        wp_add_inline_script('pdfjs', 'window["pdfjs-dist/build/pdf"] && (window.pdfjsLib = window["pdfjs-dist/build/pdf"]);', 'after');
+
+        wp_enqueue_script(
+            'tesseract',
+            'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+            [],
+            '5.0.0',
+            true
+        );
+
+        // Script reCAPTCHA v3 si procede
+        $recaptcha_on = get_option(self::OPT_RECAPTCHA_ENABLE) === '1';
+        $site_key = trim((string)get_option(self::OPT_RECAPTCHA_SITE));
+        if ($recaptcha_on && $site_key) {
+            wp_enqueue_script('google-recaptcha', 'https://www.google.com/recaptcha/api.js?render=' . rawurlencode($site_key), [], null, true);
+        }
+
+        // JS del formulario: PDF.js → texto; si vacío → Tesseract.js OCR; luego reCAPTCHA si está activo
+        $inline = <<<JS
+document.addEventListener('DOMContentLoaded', function(){
+  var form = document.querySelector('form.kcvf-form');
+  if(!form) return;
+
+  var fileInput = form.querySelector('input[type="file"][name="kcvf_file"]');
+  var hiddenPdfText = document.createElement('textarea');
+  hiddenPdfText.name = 'kcvf_pdf_text';
+  hiddenPdfText.style.display = 'none';
+  form.appendChild(hiddenPdfText);
+
+  var submitting = false;
+
+  async function extractPdfWithPDFjs(file){
+    if (!window.pdfjsLib) return '';
+    try {
+      const buf = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+      let full = '';
+      for (let p=1; p<=pdf.numPages; p++){
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const strings = content.items.map(it => it.str);
+        full += strings.join(' ') + '\\n\\n';
+      }
+      return full.trim();
+    } catch(e){ return ''; }
+  }
+
+  async function ocrPdfWithTesseract(file){
+    if (!window.Tesseract || !window.pdfjsLib) return '';
+    const buf = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+
+    // offscreen canvas
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let ocrText = '';
+    for (let p=1; p<=pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const viewport = page.getViewport({ scale: 2.0 });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      const dataURL = canvas.toDataURL('image/png');
+      try {
+        const { data: { text } } = await Tesseract.recognize(
+          dataURL,
+          'spa+eng',
+          { logger: ()=>{} }
+        );
+        if (text) ocrText += text + '\\n\\n';
+      } catch(e) {
+        // continuar aunque una página falle
+      }
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+    }
+    return ocrText.trim();
+  }
+
+  form.addEventListener('submit', function(e){
+    if (submitting) return;
+    var file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+    if (!file) return;
+
+    if (file.type === 'application/pdf') {
+      e.preventDefault();
+      (async function(){
+        // 1) Intento PDF.js
+        if (!hiddenPdfText.value) {
+          const pdfText = await extractPdfWithPDFjs(file);
+          if (pdfText && pdfText.length > 0) hiddenPdfText.value = pdfText;
+        }
+        // 2) OCR si sigue vacío (escaneado)
+        if (!hiddenPdfText.value) {
+          const ocrText = await ocrPdfWithTesseract(file);
+          if (ocrText && ocrText.length > 0) hiddenPdfText.value = ocrText;
+        }
+
+        // Continuar (con reCAPTCHA si está)
+        var tokenField = form.querySelector('input[name="kcvf_recaptcha_token"]');
+        if (window.grecaptcha && typeof grecaptcha.execute === 'function') {
+          grecaptcha.ready(function(){
+            grecaptcha.execute('%SITE_KEY%', {action: 'cv_submit'}).then(function(token){
+              if (tokenField) tokenField.value = token;
+              submitting = true;
+              form.submit();
+            });
+          });
+        } else {
+          submitting = true;
+          form.submit();
+        }
+      })();
+    }
+  });
+});
+JS;
+
+        // Sustituir site key si existe
+        if ($recaptcha_on && $site_key) {
+            $inline = str_replace('%SITE_KEY%', esc_js($site_key), $inline);
+        } else {
+            $inline = str_replace('%SITE_KEY%', '', $inline);
+        }
+
+        wp_register_script('kcvf-es-form', '', ['pdfjs','tesseract'], null, true);
+        wp_enqueue_script('kcvf-es-form');
+        wp_add_inline_script('kcvf-es-form', $inline);
+    }
+
+    public function shortcode() {
+        if (
+            $_SERVER['REQUEST_METHOD'] === 'POST'
+            && isset($_POST['kcvf_es_nonce'])
+            && isset($_POST['kcvf_mode'])
+            && $_POST['kcvf_mode'] === 'submit'
+        ) {
+            return $this->handle_submission(false);
+        }
+        return $this->render_form();
+    }
+
+    public function shortcode_register() {
+        if (
+            $_SERVER['REQUEST_METHOD'] === 'POST'
+            && isset($_POST['kcvf_es_nonce'])
+            && isset($_POST['kcvf_mode'])
+            && $_POST['kcvf_mode'] === 'register'
+        ) {
+            return $this->handle_submission(true);
+        }
+        return $this->render_form([], [], true);
+    }
+
+    /** Normaliza fences/comillas raras del modelo */
+    private function kcvf_normalize_ai_html( $raw ) {
+        $out = trim( (string) $raw );
+        $out = preg_replace('/^\s*```(?:html|markdown|md)?\s*/i', '', $out);
+        $out = preg_replace('/\s*```\s*$/', '', $out);
+        $out = preg_replace('/^[\x{00AB}\x{00BB}\x{0060}\s]*(html)?[\x{0060}\s]*/u', '', $out);
+        $out = preg_replace('/[\x{00AB}\x{00BB}]+$/u', '', $out);
+        return trim($out);
+    }
+
+    /** Quita <strong> del cuerpo: solo H2/H3 en negrita por CSS */
+    private function strip_strong_from_body($html) {
+        return preg_replace('/<\/?strong>/', '', (string)$html);
+    }
+
+    private function render_form($errors = [], $old = [], $register_only = false) {
+        ob_start();
+        $gdpr_text = get_option(self::OPT_GDPR_TEXT);
+        $recaptcha_on = get_option(self::OPT_RECAPTCHA_ENABLE) === '1';
+        $title = $register_only ? 'Registra tu CV' : 'Envía tu CV para feedback';
+        $btn   = $register_only ? 'Subir CV' : 'Enviar y obtener feedback';
+        ?>
+        <div class="kcvf-wrapper">
+            <h2><?php echo esc_html($title); ?></h2>
+            <?php if (!empty($errors)): ?>
+                <div class="kcvf-error"><strong>Por favor corrige:</strong><br><?php echo implode('<br>', array_map('esc_html', $errors)); ?></div>
+            <?php endif; ?>
+
+            <form method="post" enctype="multipart/form-data" class="kcvf-form">
+                <?php wp_nonce_field('kcvf_es_submit', 'kcvf_es_nonce'); ?>
+                <input type="hidden" name="kcvf_mode" value="<?php echo $register_only ? 'register' : 'submit'; ?>">
+
+                <div class="kcvf-field">
+                    <label for="kcvf_email">Correo electrónico</label>
+                    <input class="kcvf-input" type="email" name="kcvf_email" id="kcvf_email" value="<?php echo isset($old['email']) ? esc_attr($old['email']) : ''; ?>" required placeholder="nombre@ejemplo.com">
+                </div>
+
+                <div class="kcvf-field">
+                    <label for="kcvf_role">Rol / Área objetivo</label>
+                    <input class="kcvf-input" type="text" name="kcvf_role" id="kcvf_role" placeholder="p. ej., Conductor de autobús, Administrativo, CFO..." value="<?php echo isset($old['role']) ? esc_attr($old['role']) : ''; ?>">
+                </div>
+
+                <div class="kcvf-field">
+                    <label for="kcvf_sector">Sector</label>
+                    <select class="kcvf-select" name="kcvf_sector" id="kcvf_sector">
+                        <option value="">— Seleccionar —</option>
+                        <option>Energías renovables (eólica/solar/almacenamiento)</option>
+                        <option>Red / Transmisión</option>
+                        <option>Oil & Gas</option>
+                        <option>Construcción / EPC</option>
+                        <option>Minería</option>
+                        <option>Ingeniería</option>
+                        <option>Finanzas / Inversión</option>
+                        <option>Otro</option>
+                    </select>
+                </div>
+
+                <div class="kcvf-field">
+    <label for="kcvf_file">Subir CV (PDF o DOCX, máximo 5 MB)</label>
+    <input type="file" name="kcvf_file" id="kcvf_file"
+           accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+           required>
+    <p style="font-size:13px;color:#666;margin-top:6px;">
+        Nota: si tu CV está en PDF escaneado, el sistema puede tardar unos minutos en procesarlo (OCR).
+    </p>
+</div>
+
+
+                <div class="kcvf-field">
+                    <label for="kcvf_notes">Notas (opcional)</label>
+                    <textarea class="kcvf-textarea" name="kcvf_notes" id="kcvf_notes" rows="4" placeholder="¿En qué debemos enfocarnos? (p. ej., cuantificar impacto, adecuación por país/idioma, etc.)"></textarea>
+                </div>
+
+                <div class="kcvf-field kcvf-consent">
+                    <input type="checkbox" name="kcvf_consent" id="kcvf_consent" required>
+                    <label for="kcvf_consent"><?php echo wp_kses_post($gdpr_text); ?></label>
+                </div>
+
+                <?php if ($recaptcha_on): ?>
+                    <input type="hidden" name="kcvf_recaptcha_token" value="">
+                <?php endif; ?>
+
+                <button class="kcvf-btn" type="submit"><?php echo esc_html($btn); ?></button>
+            </form>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    private function handle_submission($register_only = false) {
+        if (!wp_verify_nonce($_POST['kcvf_es_nonce'], 'kcvf_es_submit')) {
+            return $this->render_form(['Token de formulario inválido. Recarga la página e inténtalo de nuevo.'], [], $register_only);
+        }
+
+        $errors = [];
+        $email  = isset($_POST['kcvf_email']) ? sanitize_email($_POST['kcvf_email']) : '';
+        $role   = isset($_POST['kcvf_role']) ? sanitize_text_field($_POST['kcvf_role']) : '';
+        $sector = isset($_POST['kcvf_sector']) ? sanitize_text_field($_POST['kcvf_sector']) : '';
+        $notes  = isset($_POST['kcvf_notes']) ? sanitize_textarea_field($_POST['kcvf_notes']) : '';
+        $consent = !empty($_POST['kcvf_consent']);
+
+        if (!$email || !is_email($email)) $errors[] = 'Introduce un correo válido.';
+        if (!$consent) $errors[] = 'Debes aceptar el consentimiento.';
+        if (empty($_FILES['kcvf_file']['name'])) $errors[] = 'Adjunta tu CV en PDF o DOCX.';
+
+        // ==== Validación reCAPTCHA v3 ====
+        $recaptcha_on = get_option(self::OPT_RECAPTCHA_ENABLE) === '1';
+        $site_key = trim((string)get_option(self::OPT_RECAPTCHA_SITE));
+        $secret   = trim((string)get_option(self::OPT_RECAPTCHA_SECRET));
+        $threshold = floatval(get_option(self::OPT_RECAPTCHA_THRESH, '0.5'));
+
+        if ($recaptcha_on && $site_key && $secret) {
+            $token = isset($_POST['kcvf_recaptcha_token']) ? sanitize_text_field($_POST['kcvf_recaptcha_token']) : '';
+            if (!$token) {
+                $errors[] = 'No se pudo verificar reCAPTCHA. Recarga la página e inténtalo de nuevo.';
+            } else {
+                $resp = wp_remote_post('https://www.google.com/recaptcha/api/siteverify', [
+                    'timeout' => 20,
+                    'body' => ['secret' => $secret, 'response' => $token]
+                ]);
+                if (is_wp_error($resp)) {
+                    $errors[] = 'Error al contactar con reCAPTCHA. Inténtalo de nuevo.';
+                } else {
+                    $data = json_decode(wp_remote_retrieve_body($resp), true);
+                    $ok = isset($data['success']) && $data['success'];
+                    $score_ok = isset($data['score']) ? floatval($data['score']) >= $threshold : false;
+                    $action_ok = !isset($data['action']) || $data['action'] === 'cv_submit';
+                    if (!($ok && $score_ok && $action_ok)) $errors[] = 'Verificación reCAPTCHA fallida. Por favor, vuelve a intentarlo.';
+                }
+            }
+        }
+        // ==== Fin reCAPTCHA ====
+
+        // Subida + extracción
+        $file_text = '';
+        $stored_path = '';
+        $extract_method = 'unknown';
+        $char_count = 0;
+        $excerpt_400 = '';
+        $converted_docx = '';
+
+        if (empty($errors) && !empty($_FILES['kcvf_file']['name'])) {
+            $file = $_FILES['kcvf_file'];
+            if ($file['error'] !== UPLOAD_ERR_OK) {
+                $errors[] = 'Error al subir el archivo. Inténtalo otra vez.';
+            } else {
+                $allowed = [
+                    'application/pdf' => 'pdf',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                ];
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mime = finfo_file($finfo, $file['tmp_name']);
+                finfo_close($finfo);
+
+                if (!isset($allowed[$mime])) {
+                    $errors[] = 'Tipo de archivo no permitido. Usa PDF o DOCX.';
+                } elseif ($file['size'] > 5 * 1024 * 1024) {
+                    $errors[] = 'Archivo demasiado grande (máximo 5 MB).';
+                } else {
+                    $upload_dir = wp_upload_dir();
+                    $cv_dir = trailingslashit($upload_dir['basedir']) . 'cv-uploads';
+                    if (!file_exists($cv_dir)) wp_mkdir_p($cv_dir);
+                    $ext = $allowed[$mime];
+                    $filename = 'cv_' . time() . '_' . wp_generate_password(6, false) . '.' . $ext;
+                    $dest = trailingslashit($cv_dir) . $filename;
+                    if (!move_uploaded_file($file['tmp_name'], $dest)) {
+                        $errors[] = 'No se pudo guardar el archivo en el servidor.';
+                    } else {
+                        $stored_path = $dest;
+
+                        if ($ext === 'docx') {
+                            $file_text = $this->extract_docx_text($dest);
+                            $extract_method = 'docx-zip';
+                        }
+
+                        if ($ext === 'pdf') {
+                            // 0) ¿Vino texto extraído/OCR por el cliente?
+                            $client_text = isset($_POST['kcvf_pdf_text']) ? (string) $_POST['kcvf_pdf_text'] : '';
+                            if ($client_text !== '') {
+                                $file_text = trim($client_text);
+                                $extract_method = 'client-pdfjs/tesseract';
+                            } else {
+                                // 1) Intento servidor (si existen binarios)
+                                $file_text = $this->extract_pdf_text_server($dest, $extract_method); // puede devolver ''
+                            }
+
+                            // 2) Si tenemos texto (cliente o servidor) → crear DOCX temporal desde texto
+                            if ($file_text) {
+                                $base = pathinfo($dest, PATHINFO_FILENAME);
+                                $converted_docx = trailingslashit($cv_dir) . $base . '_frompdf.docx';
+                                if ($this->generate_docx_from_text($file_text, $converted_docx)) {
+                                    // Reutiliza extractor DOCX por coherencia
+                                    $file_text = $this->extract_docx_text($converted_docx);
+                                    $extract_method .= ' -> pdf2docx';
+                                }
+                            }
+                        }
+
+                        if (!$file_text) {
+                            $file_text = "(No se pudo extraer texto automáticamente del archivo. Puede tratarse de un PDF escaneado o protegido).
+Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También puedes pegar el contenido en texto en el campo de notas.";
+                        }
+
+                        $char_count = mb_strlen((string)$file_text);
+                        $excerpt_400 = mb_substr((string)$file_text, 0, 400);
+                        error_log('[KCVF] Extract method: ' . $extract_method . ' | chars=' . $char_count);
+                    }
+                }
+            }
+        }
+
+        if (!empty($errors)) {
+            return $this->render_form($errors, ['email' => $email, 'role' => $role], $register_only);
+        }
+
+        // Guardar envío
+        $post_id = wp_insert_post([
+            'post_type' => 'cv_submission',
+            'post_status' => 'publish',
+            'post_title' => $email . ' — ' . current_time('mysql'),
+            'post_content' => wp_kses_post($notes),
+        ]);
+
+        if ($post_id && $stored_path) {
+            add_post_meta($post_id, '_kcvf_file', $stored_path);
+            add_post_meta($post_id, '_kcvf_email', $email);
+            add_post_meta($post_id, '_kcvf_role', $role);
+            add_post_meta($post_id, '_kcvf_sector', $sector);
+            add_post_meta($post_id, '_kcvf_extract_method', $extract_method);
+            add_post_meta($post_id, '_kcvf_char_count', $char_count);
+            add_post_meta($post_id, '_kcvf_text_excerpt', $excerpt_400);
+            if ($converted_docx) add_post_meta($post_id, '_kcvf_converted_docx', $converted_docx);
+        }
+
+        $thankyou = $register_only
+            ? '¡Gracias! Hemos recibido tu CV. Te mantendremos informado.'
+            : get_option(self::OPT_THANKYOU_TEXT);
+        $instant = !$register_only && get_option(self::OPT_AUTO_FEEDBACK) === '1';
+        $feedback_block = '';
+
+        if ($instant) {
+            $api_key = trim((string)get_option(self::OPT_API_KEY));
+            $cv_excerpt = mb_substr($file_text, 0, 18000);
+            $feedback = $api_key ? $this->generate_ai_feedback($api_key, $cv_excerpt, $role, $sector) : 'Feedback por IA no configurado. Añade tu API key en Ajustes.';
+            if ($post_id) add_post_meta($post_id, '_kcvf_feedback', $feedback);
+
+            // Normaliza -> quita <strong> -> sanea HTML
+            $normalized = $this->kcvf_normalize_ai_html( $feedback );
+            $no_strong  = $this->strip_strong_from_body( $normalized );
+            $allowed = [
+              'h2'=>[], 'h3'=>[], 'p'=>[], 'br'=>[],
+              'ul'=>[], 'ol'=>[], 'li'=>[],
+              'em'=>[],
+              'a'=>['href'=>[], 'target'=>[], 'rel'=>[]],
+              'div'=>['class'=>[]], 'span'=>['class'=>[]],
+            ];
+            $safe_feedback = wp_kses( $no_strong, $allowed );
+
+            // Email al candidato (HTML)
+            if (is_email($email)) {
+                $headers = ['Content-Type: text/html; charset=UTF-8'];
+                $body = '<p>Hola,</p><p>Gracias por compartir tu CV. Aquí tienes tu feedback:</p>'
+                      . $safe_feedback
+                      . '<p>— Kovacic Executive Talent Research</p>';
+                wp_mail($email, 'Tu feedback de CV', $body, $headers);
+            }
+
+            // Aviso interno (texto)
+            $notify = get_option(self::OPT_NOTIFY_EMAIL);
+            if ($notify && is_email($notify)) {
+                $body_admin = "Nuevo envío de CV: {$email}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\nConvertido DOCX: " . ($converted_docx ?: '—') . "\n\n--- FEEDBACK (texto plano) ---\n" . wp_strip_all_tags($safe_feedback);
+                wp_mail($notify, 'Nuevo envío de CV + Feedback', $body_admin);
+            }
+
+            // Bloque visible + DEBUG solo admin
+            $feedback_block = '<div class="kcvf-alert"><strong>' . esc_html($thankyou) . '</strong></div>'
+                            . '<h3>Feedback instantáneo</h3>'
+                            . '<div class="kcvf-feedback">' . $safe_feedback . '</div>';
+
+            if ( current_user_can('manage_options') ) {
+                $preview = esc_html( mb_substr( (string)$file_text, 0, 400 ) );
+                $feedback_block .= '<div class="kcvf-debug"><strong>DEBUG (solo admin):</strong>'
+                                 . '<br>Método de extracción: ' . esc_html($extract_method)
+                                 . '<br>Caracteres extraídos: ' . intval($char_count)
+                                 . '<br>DOCX convertido: ' . ($converted_docx ? esc_html($converted_docx) : '—')
+                                 . '<br><pre style="white-space:pre-wrap;margin:8px 0 0;">' . $preview . '</pre></div>';
+            }
+
+        } else {
+            $notify = get_option(self::OPT_NOTIFY_EMAIL);
+            if ($notify && is_email($notify)) {
+                $subject = $register_only ? 'Nuevo registro de CV' : 'Nuevo envío de CV';
+                $body_admin = "Nuevo envío de CV: {$email}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo:{$stored_path}\n";
+                if (!$register_only) {
+                    $body_admin .= "(El feedback instantáneo está desactivado.)";
+                }
+                wp_mail($notify, $subject, $body_admin);
+            }
+            if ($register_only && is_email($email)) {
+                $headers = ['Content-Type: text/html; charset=UTF-8'];
+                $body = '<p>Hola,</p><p>Gracias por compartir tu CV. Te contactaremos para futuras oportunidades.</p><p>— Kovacic Executive Talent Research</p>';
+                wp_mail($email, 'CV recibido', $body, $headers);
+            }
+            $feedback_block = '<div class="kcvf-alert"><strong>' . esc_html($thankyou) . '</strong></div>';
+
+            if ( current_user_can('manage_options') ) {
+                $preview = esc_html( mb_substr( (string)$file_text, 0, 400 ) );
+                $feedback_block .= '<div class="kcvf-debug"><strong>DEBUG (solo admin):</strong>'
+                                 . '<br>Método de extracción: ' . esc_html($extract_method)
+                                 . '<br>Caracteres extraídos: ' . intval($char_count)
+                                 . '<br>DOCX convertido: ' . ($converted_docx ? esc_html($converted_docx) : '—')
+                                 . '<br><pre style="white-space:pre-wrap;margin:8px 0 0;">' . $preview . '</pre></div>';
+            }
+        }
+
+        return '<div class="kcvf-wrapper">' . $feedback_block . '</div>';
+    }
+
+    private function extract_docx_text($path) {
+        $text = '';
+        if (!class_exists('ZipArchive')) return $text;
+        $zip = new ZipArchive;
+        if ($zip->open($path) === true) {
+            $xml = $zip->getFromName('word/document.xml');
+            $zip->close();
+            if ($xml) {
+                $xml = preg_replace('/<w:p[^>]*>/', "\n", $xml);
+                $xml = preg_replace('/<\/w:p>/', "\n", $xml);
+                $xml = strip_tags($xml);
+                $text = html_entity_decode($xml, ENT_QUOTES | ENT_XML1, 'UTF-8');
+            }
+        }
+        return trim($text);
+    }
+
+    /** Intento de extracción en servidor con binarios (opcional). Devuelve texto o ''. */
+    private function extract_pdf_text_server($path, &$extract_method = 'pdf') {
+        $extract_method = 'pdf:';
+        $run = function($cmd) {
+            $desc = [1 => ['pipe','w'], 2 => ['pipe','w']];
+            $p = proc_open($cmd, $desc, $pipes);
+            if (!is_resource($p)) return ['', 'proc_open failed', 1];
+            $out = stream_get_contents($pipes[1]);
+            $err = stream_get_contents($pipes[2]);
+            foreach ($pipes as $pp) { if (is_resource($pp)) fclose($pp); }
+            $code = proc_close($p);
+            return [$out,$err,$code];
+        };
+
+        // pdftotext
+        if (trim(@shell_exec('which pdftotext')) !== '') {
+            list($o,$e,$c) = $run('pdftotext -enc UTF-8 -eol unix ' . escapeshellarg($path) . ' -');
+            if ($c === 0 && trim($o) !== '') { $extract_method .= 'pdftotext'; return trim($o); }
+            list($o2,$e2,$c2) = $run('pdftotext -layout -enc UTF-8 -eol unix ' . escapeshellarg($path) . ' -');
+            if ($c2 === 0 && trim($o2) !== '') { $extract_method .= 'pdftotext-layout'; return trim($o2); }
+        }
+
+        // mutool
+        if (trim(@shell_exec('which mutool')) !== '') {
+            list($o3,$e3,$c3) = $run('mutool draw -F txt -o - ' . escapeshellarg($path));
+            if ($c3 === 0 && trim($o3) !== '') { $extract_method .= 'mutool'; return trim($o3); }
+        }
+
+        // ocrmypdf → pdftotext/mutool
+        if (trim(@shell_exec('which ocrmypdf')) !== '') {
+            $tmp_ocr = $path . '.ocr.pdf';
+            list($o4,$e4,$c4) = $run('ocrmypdf --skip-text -l spa+eng ' . escapeshellarg($path) . ' ' . escapeshellarg($tmp_ocr) . ' 2>&1');
+            if ($c4 === 0 && file_exists($tmp_ocr)) {
+                if (trim(@shell_exec('which pdftotext')) !== '') {
+                    list($o5,$e5,$c5) = $run('pdftotext -enc UTF-8 -eol unix ' . escapeshellarg($tmp_ocr) . ' -');
+                    @unlink($tmp_ocr);
+                    if ($c5 === 0 && trim($o5) !== '') { $extract_method .= 'ocrmypdf->pdftotext'; return trim($o5); }
+                }
+                if (trim(@shell_exec('which mutool')) !== '') {
+                    list($o6,$e6,$c6) = $run('mutool draw -F txt -o - ' . escapeshellarg($tmp_ocr));
+                    @unlink($tmp_ocr);
+                    if ($c6 === 0 && trim($o6) !== '') { $extract_method .= 'ocrmypdf->mutool'; return trim($o6); }
+                }
+                @unlink($tmp_ocr);
+            }
+        }
+
+        $extract_method .= 'none';
+        return '';
+    }
+
+    /**
+     * Genera un DOCX mínimo a partir de texto plano.
+     */
+    private function generate_docx_from_text($text, $out_path) {
+        if (!class_exists('ZipArchive')) return false;
+
+        $zip = new ZipArchive();
+        if ($zip->open($out_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) return false;
+
+        // Normalizar saltos de línea
+        $lines = preg_split("/\r\n|\r|\n/", (string)$text);
+
+        // document.xml
+        $doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+             . '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+             . '<w:body>';
+        foreach ($lines as $line) {
+            $safe = htmlspecialchars($line, ENT_XML1 | ENT_COMPAT, 'UTF-8');
+            $doc .= '<w:p><w:r><w:t xml:space="preserve">'.$safe.'</w:t></w:r></w:p>';
+        }
+        $doc .= '<w:sectPr/></w:body></w:document>';
+
+        // [Content_Types].xml
+        $ct = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            . '<Default Extension="xml" ContentType="application/xml"/>'
+            . '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+            . '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
+            . '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>'
+            . '</Types>';
+
+        // _rels/.rels
+        $rels = '<?xml version="1.0" encoding="UTF-8"?>'
+              . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+              . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+              . '</Relationships>';
+
+        // word/_rels/document.xml.rels
+        $docrels = '<?xml version="1.0" encoding="UTF-8"?>'
+                 . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>';
+
+        // docProps/core.xml
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $core = '<?xml version="1.0" encoding="UTF-8"?>'
+              . '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
+              . 'xmlns:dc="http://purl.org/dc/elements/1.1/" '
+              . 'xmlns:dcterms="http://purl.org/dc/terms/" '
+              . 'xmlns:dcmitype="http://purl.org/dc/dcmitype/" '
+              . 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+              . '<dc:title>CV convertido desde PDF</dc:title>'
+              . '<dc:creator>KCVF</dc:creator>'
+              . '<cp:lastModifiedBy>KCVF</cp:lastModifiedBy>'
+              . '<dcterms:created xsi:type="dcterms:W3CDTF">'.$now.'</dcterms:created>'
+              . '<dcterms:modified xsi:type="dcterms:W3CDTF">'.$now.'</dcterms:modified>'
+              . '</cp:coreProperties>';
+
+        // docProps/app.xml
+        $app = '<?xml version="1.0" encoding="UTF-8"?>'
+             . '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" '
+             . 'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">'
+             . '<Application>KCVF</Application>'
+             . '</Properties>';
+
+        // Escribir archivos en el zip DOCX
+        $zip->addFromString('[Content_Types].xml', $ct);
+        $zip->addFromString('_rels/.rels', $rels);
+        $zip->addFromString('word/document.xml', $doc);
+        $zip->addFromString('word/_rels/document.xml.rels', $docrels);
+        $zip->addFromString('docProps/core.xml', $core);
+        $zip->addFromString('docProps/app.xml', $app);
+
+        $zip->close();
+        return file_exists($out_path);
+    }
+
+    private function generate_ai_feedback($api_key, $cv_text, $role, $sector) {
+        $model = 'gpt-4o-mini'; // puedes cambiarlo si lo deseas
+        $prompt = $this->build_prompt_es($cv_text, $role, $sector);
+
+        $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $api_key,
+                'Content-Type'  => 'application/json',
+            ],
+            'timeout' => 60,
+            'body' => wp_json_encode([
+                'model' => $model,
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' =>
+"Eres un/a reclutador/a senior. Devuelves feedback breve, claro y accionable.
+
+FORMATO:
+- Responde ÚNICAMENTE como un fragmento HTML válido (sin <html> ni <body>).
+- Usa <h2> y <h3> para encabezados de secciones (no uses <strong> en los títulos).
+- Usa <p>, <ul>, <ol>, <li> para el contenido.
+- NO uses <strong> o <em> en el contenido normal. Reserva negritas SOLO para encabezados mediante <h2>/<h3>.
+- No incluyas bloques de código ni fences (```).
+
+CONTENIDO:
+- Ajusta TODO al rol y sector proporcionados por el usuario.
+- NO inventes datos que no estén en el CV.
+- NO menciones “energía/infra/renovables” salvo que el SECTOR lo requiera explícitamente."
+                    ],
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+                'temperature' => 0.3,
+            ]),
+        ]);
+
+        if (is_wp_error($resp)) {
+            return 'Fallo en la petición de IA: ' . $resp->get_error_message();
+        }
+        $code = wp_remote_retrieve_response_code($resp);
+        $body = wp_remote_retrieve_body($resp);
+        $json = json_decode($body, true);
+        if ($code !== 200 || !isset($json['choices'][0]['message']['content'])) {
+            return 'La IA devolvió una respuesta inesperada. Revisa la API key y límites de uso.';
+        }
+        return trim($json['choices'][0]['message']['content']);
+    }
+
+    private function build_prompt_es($cv_text, $role, $sector) {
+        $role = trim((string)$role);
+        $sector = trim((string)$sector);
+
+        // Detectar si el sector es energía/infra
+        $s = mb_strtolower($sector);
+        $is_energy = preg_match('/energ|renov|solar|eólic|hidro|infraestruct|grid|transmis|oil\s*&?\s*gas/i', $s);
+
+        $ban_clause = $is_energy
+            ? 'Puedes referirte al sector energético/infra si procede.'
+            : 'PROHIBIDO mencionar “energía”, “infraestructura” o “renovables”. Usa lenguaje general aplicable al sector indicado.';
+
+        $cv_len = mb_strlen($cv_text);
+        $cv_notice = ($cv_len < 400)
+            ? "NOTA: El texto del CV es escaso o no se pudo extraer bien. Da recomendaciones útiles y pide datos faltantes (logros, métricas, herramientas), centrado en el rol/sector."
+            : "";
+
+        return
+"DATOS DEL USUARIO
+- Rol/área objetivo: " . ($role ?: "(no especificado)") . "
+- Sector: " . ($sector ?: "(no especificado)") . "
+
+REGLAS CRÍTICAS
+- Adapta el feedback al rol y sector de arriba.
+- No inventes logros, empresas ni tecnologías.
+- $ban_clause
+- Devuelve SOLO HTML (sin bloques de código, sin ```).
+- Los encabezados de secciones deben ir en <h2> o <h3> (ya se muestran en negrita).
+- El contenido debe ir en <p>, <ul>, <ol>, <li> — sin <strong> ni <em>.
+
+$cv_notice
+
+CONTENIDO DEL CV (texto plano):
+----------------------
+$cv_text
+
+DEVUELVE (en HTML):
+<p><em>Rol detectado: " . ($role ?: "—") . " | Sector: " . ($sector ?: "—") . "</em></p>
+
+<h2>1) Top 5 mejoras</h2>
+<ul><li>Texto normal…</li></ul>
+
+<h2>2) Consejos para cuantificar impacto</h2>
+<p>Texto normal…</p>
+<ul><li>Texto normal…</li></ul>
+
+<h2>3) Revisión por secciones</h2>
+<h3>Resumen</h3><p>Texto normal…</p>
+<h3>Experiencia</h3><p>Texto normal…</p>
+<h3>Educación</h3><p>Texto normal…</p>
+<h3>Habilidades</h3><p>Texto normal…</p>
+
+<h2>4) Consejos de ATS/legibilidad</h2>
+<ul><li>Texto normal…</li></ul>
+
+<h2>5) Resumen mejorado</h2>
+<p>Texto normal (3–5 líneas, adaptado al rol/sector)…</p>";
+    }
+
+    public function metabox() {
+        add_meta_box('kcvf_es_details', 'Detalles del envío', [$this, 'metabox_render'], 'cv_submission', 'side', 'high');
+    }
+
+    public function metabox_render($post) {
+        $email = get_post_meta($post->ID, '_kcvf_email', true);
+        $role = get_post_meta($post->ID, '_kcvf_role', true);
+        $sector = get_post_meta($post->ID, '_kcvf_sector', true);
+        $file = get_post_meta($post->ID, '_kcvf_file', true);
+        $feedback = get_post_meta($post->ID, '_kcvf_feedback', true);
+
+        $char_count = (int) get_post_meta($post->ID, '_kcvf_char_count', true);
+        $extract_method = get_post_meta($post->ID, '_kcvf_extract_method', true);
+        $text_excerpt = get_post_meta($post->ID, '_kcvf_text_excerpt', true);
+        $converted_docx = get_post_meta($post->ID, '_kcvf_converted_docx', true);
+
+        // Derivar URL pública
+        $upload_dir = wp_upload_dir();
+        $file_url = '';
+        if ($file && isset($upload_dir['basedir'], $upload_dir['baseurl'])) {
+            $file_url = str_replace($upload_dir['basedir'], $upload_dir['baseurl'], $file);
+        }
+        $conv_url = '';
+        if ($converted_docx && isset($upload_dir['basedir'], $upload_dir['baseurl'])) {
+            $conv_url = str_replace($upload_dir['basedir'], $upload_dir['baseurl'], $converted_docx);
+        }
+
+        wp_nonce_field('kcvf_es_meta_save', 'kcvf_es_meta_nonce');
+        ?>
+        <p><strong>Email:</strong><br><?php echo esc_html($email); ?></p>
+        <p><strong>Rol:</strong><br><?php echo esc_html($role); ?></p>
+        <p><strong>Sector:</strong><br><?php echo esc_html($sector); ?></p>
+        <p><strong>Archivo:</strong><br><?php echo $file ? esc_html($file) : '—'; ?></p>
+        <?php if ($file_url): ?>
+            <p><a href="<?php echo esc_url($file_url); ?>" target="_blank" rel="noopener">Abrir archivo guardado</a></p>
+        <?php endif; ?>
+        <?php if ($converted_docx): ?>
+            <p><strong>DOCX convertido:</strong><br><?php echo esc_html($converted_docx); ?>
+            <?php if ($conv_url): ?><br><a href="<?php echo esc_url($conv_url); ?>" target="_blank" rel="noopener">Descargar DOCX generado</a><?php endif; ?></p>
+        <?php endif; ?>
+        <p><strong>Método de extracción:</strong><br><?php echo esc_html($extract_method ?: '—'); ?></p>
+        <p><strong>Nº de caracteres extraídos:</strong><br><?php echo esc_html($char_count ?: 0); ?></p>
+        <p><strong>Extracto de texto (primeros 400):</strong></p>
+        <textarea readonly style="width:100%;min-height:120px;"><?php echo esc_textarea($text_excerpt); ?></textarea>
+        <p><strong>Feedback (editable):</strong></p>
+        <textarea name="kcvf_feedback" style="width:100%;min-height:160px;"><?php echo esc_textarea($feedback); ?></textarea>
+        <p><button class="button button-primary" name="kcvf_regenerate" value="1">Regenerar con IA (usa el archivo actual)</button></p>
+        <?php
+    }
+
+    public function save_meta($post_id) {
+        if (!isset($_POST['kcvf_es_meta_nonce']) || !wp_verify_nonce($_POST['kcvf_es_meta_nonce'], 'kcvf_es_meta_save')) return;
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+        if (!current_user_can('edit_post', $post_id)) return;
+
+        if (isset($_POST['kcvf_feedback'])) {
+            update_post_meta($post_id, '_kcvf_feedback', sanitize_textarea_field($_POST['kcvf_feedback']));
+        }
+        if (isset($_POST['kcvf_regenerate']) && $_POST['kcvf_regenerate']) {
+            $api_key = trim((string)get_option(self::OPT_API_KEY));
+            if (!$api_key) return;
+
+            $file = get_post_meta($post_id, '_kcvf_file', true);
+            $role = get_post_meta($post_id, '_kcvf_role', true);
+            $sector = get_post_meta($post_id, '_kcvf_sector', true);
+
+            $text = '';
+            if ($file && file_exists($file)) {
+                $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+                $extract_method = 'manual:';
+                if ($ext === 'docx') $text = $this->extract_docx_text($file);
+                if ($ext === 'pdf')  $text = $this->extract_pdf_text_server($file, $extract_method);
+            }
+            if (!$text) $text = '(No se extrajo texto automáticamente. Puedes pegar manualmente el contenido del CV en el prompt.)';
+
+            $feedback = $this->generate_ai_feedback($api_key, mb_substr($text, 0, 18000), $role, $sector);
+            update_post_meta($post_id, '_kcvf_feedback', $feedback);
+        }
+    }
+}
+
+new Kovacic_CV_Feedback_ES();
