@@ -394,6 +394,11 @@ JS;
                 <input type="hidden" name="kcvf_mode" value="<?php echo $register_only ? 'register' : 'submit'; ?>">
 
                 <div class="kcvf-field">
+                    <label for="kcvf_name">Nombre completo</label>
+                    <input class="kcvf-input" type="text" name="kcvf_name" id="kcvf_name" value="<?php echo isset($old['name']) ? esc_attr($old['name']) : ''; ?>" required placeholder="Tu nombre completo">
+                </div>
+
+                <div class="kcvf-field">
                     <label for="kcvf_email">Correo electrónico</label>
                     <input class="kcvf-input" type="email" name="kcvf_email" id="kcvf_email" value="<?php echo isset($old['email']) ? esc_attr($old['email']) : ''; ?>" required placeholder="nombre@ejemplo.com">
                 </div>
@@ -444,6 +449,9 @@ JS;
                 <?php endif; ?>
 
                 <button class="kcvf-btn" type="submit"><?php echo esc_html($btn); ?></button>
+                <?php if (!$register_only): ?>
+                    <p style="font-size:13px;color:#666;margin-top:6px;">Nota: la generación de feedback puede tardar hasta un minuto.</p>
+                <?php endif; ?>
             </form>
         </div>
         <?php
@@ -456,12 +464,14 @@ JS;
         }
 
         $errors = [];
+        $name   = isset($_POST['kcvf_name']) ? sanitize_text_field($_POST['kcvf_name']) : '';
         $email  = isset($_POST['kcvf_email']) ? sanitize_email($_POST['kcvf_email']) : '';
         $role   = isset($_POST['kcvf_role']) ? sanitize_text_field($_POST['kcvf_role']) : '';
         $sector = isset($_POST['kcvf_sector']) ? sanitize_text_field($_POST['kcvf_sector']) : '';
         $notes  = isset($_POST['kcvf_notes']) ? sanitize_textarea_field($_POST['kcvf_notes']) : '';
         $consent = !empty($_POST['kcvf_consent']);
 
+        if (!$name) $errors[] = 'Introduce tu nombre.';
         if (!$email || !is_email($email)) $errors[] = 'Introduce un correo válido.';
         if (!$consent) $errors[] = 'Debes aceptar el consentimiento.';
         if (empty($_FILES['kcvf_file']['name'])) $errors[] = 'Adjunta tu CV en PDF o DOCX.';
@@ -573,19 +583,20 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
         }
 
         if (!empty($errors)) {
-            return $this->render_form($errors, ['email' => $email, 'role' => $role], $register_only);
+            return $this->render_form($errors, ['name' => $name, 'email' => $email, 'role' => $role], $register_only);
         }
 
         // Guardar envío
         $post_id = wp_insert_post([
             'post_type' => 'cv_submission',
             'post_status' => 'publish',
-            'post_title' => $email . ' — ' . current_time('mysql'),
+            'post_title' => ($name ? $name . ' — ' : '') . $email . ' — ' . current_time('mysql'),
             'post_content' => wp_kses_post($notes),
         ]);
 
         if ($post_id && $stored_path) {
             add_post_meta($post_id, '_kcvf_file', $stored_path);
+            add_post_meta($post_id, '_kcvf_name', $name);
             add_post_meta($post_id, '_kcvf_email', $email);
             add_post_meta($post_id, '_kcvf_role', $role);
             add_post_meta($post_id, '_kcvf_sector', $sector);
@@ -622,7 +633,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             // Email al candidato (HTML)
             if (is_email($email)) {
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
-                $body = '<p>Hola,</p><p>Gracias por compartir tu CV. Aquí tienes tu feedback:</p>'
+                $body = '<p>Hola' . ($name ? ', ' . esc_html($name) : '') . '</p><p>Gracias por compartir tu CV. Aquí tienes tu feedback:</p>'
                       . $safe_feedback
                       . '<p>— Kovacic Executive Talent Research</p>';
                 wp_mail($email, 'Tu feedback de CV', $body, $headers);
@@ -631,7 +642,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             // Aviso interno (texto)
             $notify = get_option(self::OPT_NOTIFY_EMAIL);
             if ($notify && is_email($notify)) {
-                $body_admin = "Nuevo envío de CV: {$email}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\nConvertido DOCX: " . ($converted_docx ?: '—') . "\n\n--- FEEDBACK (texto plano) ---\n" . wp_strip_all_tags($safe_feedback);
+                $body_admin = "Nuevo envío de CV: {$email}\nNombre: {$name}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\nConvertido DOCX: " . ($converted_docx ?: '—') . "\n\n--- FEEDBACK (texto plano) ---\n" . wp_strip_all_tags($safe_feedback);
                 wp_mail($notify, 'Nuevo envío de CV + Feedback', $body_admin);
             }
 
@@ -654,7 +665,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             $notify = get_option(self::OPT_NOTIFY_EMAIL);
             if ($notify && is_email($notify)) {
                 $subject = $register_only ? 'Nuevo registro de CV' : 'Nuevo envío de CV';
-                $body_admin = "Nuevo envío de CV: {$email}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\n";
+                $body_admin = "Nuevo envío de CV: {$email}\nNombre: {$name}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\n";
                 if (!$register_only) {
                     $body_admin .= "(El feedback instantáneo está desactivado.)";
                 }
@@ -662,7 +673,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             }
             if ($register_only && is_email($email)) {
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
-                $body = '<p>Hola,</p><p>Gracias por compartir tu CV. Te contactaremos para futuras oportunidades.</p><p>— Kovacic Executive Talent Research</p>';
+                $body = '<p>Hola' . ($name ? ', ' . esc_html($name) : '') . '</p><p>Gracias por compartir tu CV. Te contactaremos para futuras oportunidades.</p><p>— Kovacic Executive Talent Research</p>';
                 wp_mail($email, 'CV recibido', $body, $headers);
             }
             $feedback_block = '<div class="kcvf-alert"><strong>' . esc_html($thankyou) . '</strong></div>';
@@ -936,6 +947,7 @@ DEVUELVE (en HTML):
     }
 
     public function metabox_render($post) {
+        $name = get_post_meta($post->ID, '_kcvf_name', true);
         $email = get_post_meta($post->ID, '_kcvf_email', true);
         $role = get_post_meta($post->ID, '_kcvf_role', true);
         $sector = get_post_meta($post->ID, '_kcvf_sector', true);
@@ -960,6 +972,7 @@ DEVUELVE (en HTML):
 
         wp_nonce_field('kcvf_es_meta_save', 'kcvf_es_meta_nonce');
         ?>
+        <p><strong>Nombre:</strong><br><?php echo esc_html($name); ?></p>
         <p><strong>Email:</strong><br><?php echo esc_html($email); ?></p>
         <p><strong>Rol:</strong><br><?php echo esc_html($role); ?></p>
         <p><strong>Sector:</strong><br><?php echo esc_html($sector); ?></p>
