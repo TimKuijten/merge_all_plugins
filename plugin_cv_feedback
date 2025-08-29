@@ -229,10 +229,10 @@ document.addEventListener('DOMContentLoaded', function(){
   if(!form) return;
 
   var fileInput = form.querySelector('input[type="file"][name="kcvf_file"]');
-  var hiddenPdfText = document.createElement('input');
-  hiddenPdfText.type = 'hidden';
-  hiddenPdfText.name = 'kcvf_pdf_text';
-  form.appendChild(hiddenPdfText);
+  var cvTextField = document.createElement('input');
+  cvTextField.type = 'hidden';
+  cvTextField.name = 'cv_text';
+  form.appendChild(cvTextField);
 
   var submitting = false;
 
@@ -295,14 +295,14 @@ document.addEventListener('DOMContentLoaded', function(){
       e.preventDefault();
       (async function(){
         // 1) Intento PDF.js
-        if (!hiddenPdfText.value) {
+        if (!cvTextField.value) {
           const pdfText = await extractPdfWithPDFjs(file);
-          if (pdfText && pdfText.length > 0) hiddenPdfText.value = pdfText;
+          if (pdfText && pdfText.length > 0) cvTextField.value = pdfText;
         }
         // 2) OCR si sigue vacío (escaneado)
-        if (!hiddenPdfText.value) {
+        if (!cvTextField.value) {
           const ocrText = await ocrPdfWithTesseract(file);
-          if (ocrText && ocrText.length > 0) hiddenPdfText.value = ocrText;
+          if (ocrText && ocrText.length > 0) cvTextField.value = ocrText;
         }
 
         // Continuar (con reCAPTCHA si está)
@@ -514,6 +514,7 @@ JS;
         $char_count = 0;
         $excerpt_400 = '';
         $converted_docx = '';
+        $candidate_id = 0;
 
         if (empty($errors) && !empty($_FILES['kcvf_file']['name'])) {
             $file = $_FILES['kcvf_file'];
@@ -525,10 +526,15 @@ JS;
                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
                 ];
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                $mime = finfo_file($finfo, $file['tmp_name']);
+                $mime  = finfo_file($finfo, $file['tmp_name']);
                 finfo_close($finfo);
+                $ext = $allowed[$mime] ?? '';
+                if (!$ext) {
+                    $name_ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+                    if (in_array($name_ext, ['pdf','docx'], true)) $ext = $name_ext;
+                }
 
-                if (!isset($allowed[$mime])) {
+                if (!$ext) {
                     $errors[] = 'Tipo de archivo no permitido. Usa PDF o DOCX.';
                 } elseif ($file['size'] > 5 * 1024 * 1024) {
                     $errors[] = 'Archivo demasiado grande (máximo 5 MB).';
@@ -536,8 +542,7 @@ JS;
                     $upload_dir = wp_upload_dir();
                     $cv_dir = trailingslashit($upload_dir['basedir']) . 'cv-uploads';
                     if (!file_exists($cv_dir)) wp_mkdir_p($cv_dir);
-                    $ext = $allowed[$mime];
-                    $filename = 'cv_' . time() . '_' . wp_generate_password(6, false) . '.' . $ext;
+                      $filename = 'cv_' . time() . '_' . wp_generate_password(6, false) . '.' . $ext;
                     $dest = trailingslashit($cv_dir) . $filename;
                     if (!move_uploaded_file($file['tmp_name'], $dest)) {
                         $errors[] = 'No se pudo guardar el archivo en el servidor.';
@@ -551,9 +556,9 @@ JS;
 
                         if ($ext === 'pdf') {
                             // 0) ¿Vino texto extraído/OCR por el cliente?
-                            $client_text = isset($_POST['kcvf_pdf_text']) ? (string) $_POST['kcvf_pdf_text'] : '';
+                            $client_text = isset($_POST['cv_text']) ? sanitize_textarea_field(wp_unslash($_POST['cv_text'])) : '';
                             if ($client_text !== '') {
-                                $file_text = trim($client_text);
+                                $file_text = $client_text;
                                 $extract_method = 'client-pdfjs/tesseract';
                             } else {
                                 // 1) Intento servidor (si existen binarios)
@@ -653,6 +658,11 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
 
                 if ($file_text) {
                     update_post_meta($candidate_id, 'kvt_cv_text', $file_text);
+                    if ($converted_docx && file_exists($converted_docx)) {
+                        $upload = wp_upload_dir();
+                        $docx_url = str_replace($upload['basedir'], $upload['baseurl'], $converted_docx);
+                        update_post_meta($candidate_id, 'kvt_cv_text_url', esc_url_raw($docx_url));
+                    }
                 }
             }
         }
@@ -665,7 +675,12 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
 
         if ($instant) {
             $api_key = trim((string)get_option(self::OPT_API_KEY));
-            $cv_excerpt = mb_substr($file_text, 0, 18000);
+            $cv_source = $file_text;
+            if ($candidate_id) {
+                $cached = get_post_meta($candidate_id, 'kvt_cv_text', true);
+                if ($cached) $cv_source = $cached;
+            }
+            $cv_excerpt = mb_substr($cv_source, 0, 18000);
             $feedback = $api_key ? $this->generate_ai_feedback($api_key, $cv_excerpt, $role, $sector) : 'Feedback por IA no configurado. Añade tu API key en Ajustes.';
             if ($post_id) add_post_meta($post_id, '_kcvf_feedback', $feedback);
 
@@ -703,7 +718,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
                             . '<div class="kcvf-feedback">' . $safe_feedback . '</div>';
 
             if ( current_user_can('manage_options') ) {
-                $preview = esc_html( mb_substr( (string)$file_text, 0, 400 ) );
+                $preview = esc_html( mb_substr( (string)$cv_source, 0, 400 ) );
                 $feedback_block .= '<div class="kcvf-debug"><strong>DEBUG (solo admin):</strong>'
                                  . '<br>Método de extracción: ' . esc_html($extract_method)
                                  . '<br>Caracteres extraídos: ' . intval($char_count)
