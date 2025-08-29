@@ -1312,7 +1312,8 @@ document.addEventListener('DOMContentLoaded', function(){
       fd.append('_ajax_nonce', KVT_NONCE);
       fd.append('id', id);
       fd.append('file', file);
-      if (file.type === 'application/pdf') {
+      const isPdf = (file.type === 'application/pdf') || (/\.pdf$/i.test(file.name));
+      if (isPdf) {
         let txt = await extractPdfWithPDFjs(file);
         if (!txt) txt = await ocrPdfWithTesseract(file);
         if (txt) fd.append('cv_text', txt);
