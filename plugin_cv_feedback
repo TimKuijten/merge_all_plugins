@@ -203,7 +203,7 @@ class Kovacic_CV_Feedback_ES {
         );
         wp_add_inline_script(
             'pdfjs',
-            'if(window["pdfjs-dist/build/pdf"]){window.pdfjsLib = window["pdfjs-dist/build/pdf"];window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}',
+            'window.pdfjsLib = window.pdfjsLib || window["pdfjs-dist/build/pdf"];if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}',
             'after'
         );
 
@@ -229,9 +229,9 @@ document.addEventListener('DOMContentLoaded', function(){
   if(!form) return;
 
   var fileInput = form.querySelector('input[type="file"][name="kcvf_file"]');
-  var hiddenPdfText = document.createElement('textarea');
+  var hiddenPdfText = document.createElement('input');
+  hiddenPdfText.type = 'hidden';
   hiddenPdfText.name = 'kcvf_pdf_text';
-  hiddenPdfText.style.display = 'none';
   form.appendChild(hiddenPdfText);
 
   var submitting = false;
