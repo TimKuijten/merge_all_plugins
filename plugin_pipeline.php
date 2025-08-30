@@ -797,7 +797,7 @@ cv_uploaded|Fecha de subida");
 
             <?php if (!$is_client_board): ?>
             <div id="kvt_selected_info" style="display:none;">
-              <button type="button" class="kvt-btn kvt-secondary" id="kvt_selected_toggle">Información de cliente y proceso</button>
+              <button type="button" class="kvt-btn" id="kvt_selected_toggle">Información de cliente y proceso</button>
               <div id="kvt_selected_details" style="display:none;">
                 <p id="kvt_selected_client"></p>
                 <p id="kvt_selected_process"></p>
@@ -1057,7 +1057,7 @@ cv_uploaded|Fecha de subida");
         .kvt-filters label{margin-right:12px;display:inline-flex;gap:6px;align-items:center;font-weight:600}
         .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-client-link{margin-left:12px;display:inline-flex;align-items:center;gap:6px;font-weight:600}
-        .kvt-logo{display:block;margin:0 auto 12px;max-width:400px}
+        .kvt-logo{display:block;margin:0 auto 12px;max-width:300px}
         .kvt-help{position:absolute;top:16px;right:16px;font-size:24px;color:#0A212E;cursor:pointer}
         .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
         .kvt-btn:hover{opacity:.95}
@@ -1967,7 +1967,7 @@ document.addEventListener('DOMContentLoaded', function(){
         const slug = CLIENT_LINKS[key];
         if(slug){
           const url = KVT_HOME + slug;
-          const boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">'+esc(slug)+'</a>';
+          const boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a>';
           if(clientLink) clientLink.innerHTML = boardDet;
         }
       }
@@ -2016,7 +2016,7 @@ document.addEventListener('DOMContentLoaded', function(){
         const slug = CLIENT_LINKS[key];
         if(slug){
           const url = KVT_HOME + slug;
-          boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">'+esc(slug)+'</a>';
+          boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a>';
         }
       }
       if(selBoardInfo) selBoardInfo.innerHTML = boardDet;
@@ -2030,8 +2030,45 @@ document.addEventListener('DOMContentLoaded', function(){
   infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
   selToggle && selToggle.addEventListener('click', ()=>{
     updateSelectedInfo();
-    const html = selDetails.innerHTML.trim();
-    infoBody.innerHTML = html ? html : '<p>No hay información disponible.</p>';
+    const cid = selClient && selClient.value ? selClient.value : '';
+    const pid = selProcess && selProcess.value ? selProcess.value : '';
+    let html = '';
+    if(cid && Array.isArray(window.KVT_CLIENT_MAP)){
+      const c = window.KVT_CLIENT_MAP.find(x=>String(x.id)===cid);
+      if(c){
+        html += '<p><strong>Cliente:</strong> '+esc(c.name||'');
+        if(c.contact_name || c.contact_email || c.contact_phone){
+          html += '<br><em>Contacto:</em> '+esc(c.contact_name||'');
+          if(c.contact_email) html += ', '+esc(c.contact_email);
+          if(c.contact_phone) html += ', '+esc(c.contact_phone);
+        }
+        if(c.description) html += '<br><em>Descripción:</em> '+esc(c.description);
+        const procNames = Array.isArray(window.KVT_PROCESS_MAP)?window.KVT_PROCESS_MAP.filter(p=>String(p.client_id)===cid).map(p=>p.name):[];
+        if(procNames.length) html += '<br><em>Procesos:</em> '+esc(procNames.join(', '));
+        html += ' <button type="button" class="kvt-edit-client-inline" data-id="'+cid+'">Editar</button></p>';
+      }
+    }
+    if(pid && Array.isArray(window.KVT_PROCESS_MAP)){
+      const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
+      if(p){
+        html += '<p><strong>Proceso:</strong> '+esc(p.name||'');
+        const cl = getClientById(p.client_id);
+        if(cl) html += '<br><em>Cliente:</em> '+esc(cl.name||'');
+        if(p.contact_name || p.contact_email){
+          html += '<br><em>Contacto:</em> '+esc(p.contact_name||'');
+          if(p.contact_email) html += ', '+esc(p.contact_email);
+        }
+        if(p.description) html += '<br><em>Descripción:</em> '+esc(p.description);
+        html += ' <button type="button" class="kvt-edit-process-inline" data-id="'+pid+'">Editar</button></p>';
+      }
+    }
+    const key = cid+'|'+pid;
+    const slug = CLIENT_LINKS[key];
+    if(slug){
+      const url = KVT_HOME + slug;
+      html += '<p><strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a></p>';
+    }
+    infoBody.innerHTML = html || '<p>No hay información disponible.</p>';
     infoModal.style.display='flex';
   });
   aiBtn && aiBtn.addEventListener('click', ()=>{
@@ -2537,7 +2574,18 @@ document.addEventListener('DOMContentLoaded', function(){
       }
       openEditPModal(data);
     });
-    selInfo && selInfo.addEventListener('click', e=>{ if(e.target.classList.contains('kvt-edit-client-inline')){ const d=getClientById(e.target.dataset.id); if(d) openEditClModal(d); } if(e.target.classList.contains('kvt-edit-process-inline')){ const d=getProcessById(e.target.dataset.id); if(d) openEditPModal(d); } });
+    const handleInlineEdit = e=>{
+      if(e.target.classList.contains('kvt-edit-client-inline')){
+        const d=getClientById(e.target.dataset.id);
+        if(d) openEditClModal(d);
+      }
+      if(e.target.classList.contains('kvt-edit-process-inline')){
+        const d=getProcessById(e.target.dataset.id);
+        if(d) openEditPModal(d);
+      }
+    };
+    selInfo && selInfo.addEventListener('click', handleInlineEdit);
+    infoBody && infoBody.addEventListener('click', handleInlineEdit);
 
     // Nuevo menu actions
     btnNew && btnNew.addEventListener('click', ()=>{ newMenu.style.display = newMenu.style.display==='flex' ? 'none' : 'flex'; });
