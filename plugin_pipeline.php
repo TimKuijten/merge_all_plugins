@@ -1181,7 +1181,7 @@ cv_uploaded|Fecha de subida");
         wp_add_inline_script('kvt-app', 'const KVT_STATUSES='.wp_json_encode($statuses).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_COLUMNS='.wp_json_encode($columns).';',  'before');
         wp_add_inline_script('kvt-app', 'const KVT_AJAX="'.esc_js(admin_url('admin-ajax.php')).'";', 'before');
-        wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/base/')).'";', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/view-board/')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($is_client_board?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
@@ -3201,7 +3201,7 @@ JS;
         if (!preg_match('/^[a-z0-9-]+-[a-z0-9-]+-\d{5}$/i', $slug)) return;
         $links = get_option('kvt_client_links', []);
         if (!isset($links[$slug])) return;
-        $target = home_url('/base/?kvt_board=' . $slug);
+        $target = home_url('/view-board/?kvt_board=' . $slug);
         wp_redirect($target);
         exit;
     }
