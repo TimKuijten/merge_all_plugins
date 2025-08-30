@@ -606,6 +606,43 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             if ($converted_docx) add_post_meta($post_id, '_kcvf_converted_docx', $converted_docx);
         }
 
+        // Registrar automáticamente en Pipeline si está activo
+        if ($stored_path && post_type_exists('kvt_candidate')) {
+            $upload_dir = wp_upload_dir();
+            $cv_url = isset($upload_dir['basedir'], $upload_dir['baseurl'])
+                ? str_replace($upload_dir['basedir'], $upload_dir['baseurl'], $stored_path)
+                : '';
+
+            $parts = preg_split('/\s+/', trim($name), 2);
+            $first = $parts[0] ?? '';
+            $last  = $parts[1] ?? '';
+
+            $candidate_id = wp_insert_post([
+                'post_type'   => 'kvt_candidate',
+                'post_status' => 'publish',
+                'post_title'  => trim($name ?: $email),
+            ]);
+
+            if ($candidate_id) {
+                update_post_meta($candidate_id, 'kvt_first_name', $first);
+                update_post_meta($candidate_id, 'first_name', $first);
+                update_post_meta($candidate_id, 'kvt_last_name', $last);
+                update_post_meta($candidate_id, 'last_name', $last);
+                update_post_meta($candidate_id, 'kvt_email', $email);
+                update_post_meta($candidate_id, 'email', $email);
+                if ($cv_url) {
+                    update_post_meta($candidate_id, 'kvt_cv_url', esc_url_raw($cv_url));
+                    update_post_meta($candidate_id, 'cv_url', esc_url_raw($cv_url));
+                }
+                $today = date_i18n('d-m-Y');
+                update_post_meta($candidate_id, 'kvt_cv_uploaded', $today);
+                update_post_meta($candidate_id, 'cv_uploaded', $today);
+                if ($file_text) {
+                    update_post_meta($candidate_id, 'kvt_cv_text', $file_text);
+                }
+            }
+        }
+
         $thankyou = $register_only
             ? '¡Gracias! Hemos recibido tu CV. Te mantendremos informado.'
             : get_option(self::OPT_THANKYOU_TEXT);
