@@ -2,7 +2,7 @@
 /**
  * Plugin Name: SMTP Helper
  * Description: Simple plugin to configure SMTP settings for WordPress.
- * Version: 1.0.0
+ * Version: 1.2.0
  * Author: ChatGPT
  */
 
@@ -45,8 +45,8 @@ function smtp_helper_render_settings_page() {
                 <tr>
                     <th scope="row"><label for="smtp_helper_encryption"><?php esc_html_e('Encryption', 'smtp-helper'); ?></label></th>
                     <td>
+                        <?php $enc = $options['encryption'] ?? ''; ?>
                         <select name="smtp_helper_options[encryption]" id="smtp_helper_encryption">
-                            <?php $enc = $options['encryption'] ?? ''; ?>
                             <option value="" <?php selected($enc, ''); ?>><?php esc_html_e('None', 'smtp-helper'); ?></option>
                             <option value="ssl" <?php selected($enc, 'ssl'); ?>>SSL</option>
                             <option value="tls" <?php selected($enc, 'tls'); ?>>TLS</option>
@@ -69,6 +69,10 @@ function smtp_helper_render_settings_page() {
                     <th scope="row"><label for="smtp_helper_from_name"><?php esc_html_e('From Name', 'smtp-helper'); ?></label></th>
                     <td><input name="smtp_helper_options[from_name]" id="smtp_helper_from_name" type="text" value="<?php echo esc_attr($options['from_name'] ?? ''); ?>" class="regular-text" /></td>
                 </tr>
+                <tr>
+                    <th scope="row"><label for="smtp_helper_signature"><?php esc_html_e('Signature (HTML)', 'smtp-helper'); ?></label></th>
+                    <td><textarea name="smtp_helper_options[signature]" id="smtp_helper_signature" rows="5" class="large-text code"><?php echo esc_textarea($options['signature'] ?? ''); ?></textarea></td>
+                </tr>
             </table>
             <?php submit_button(); ?>
         </form>
@@ -85,6 +89,7 @@ function smtp_helper_sanitize($input) {
     $output['password']   = sanitize_text_field($input['password'] ?? '');
     $output['from_email'] = sanitize_email($input['from_email'] ?? '');
     $output['from_name']  = sanitize_text_field($input['from_name'] ?? '');
+    $output['signature']  = wp_kses_post($input['signature'] ?? '');
     return $output;
 }
 
