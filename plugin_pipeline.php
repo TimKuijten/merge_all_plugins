@@ -748,10 +748,8 @@ cv_uploaded|Fecha de subida");
 
         ob_start(); ?>
         <div class="kvt-wrapper">
-            <?php if ($is_client_board): ?>
-              <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
-              <span class="dashicons dashicons-editor-help kvt-help" title="Ayuda"></span>
-            <?php endif; ?>
+            <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
+            <span class="dashicons dashicons-editor-help kvt-help" title="Haz clic para ver cómo funciona el tablero"></span>
             <div class="kvt-toolbar">
                 <div class="kvt-filters">
                     <label>Cliente
@@ -1055,14 +1053,9 @@ cv_uploaded|Fecha de subida");
           .kvt-input{width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-card .kvt-notes{margin-top:8px}
         .kvt-card .kvt-notes textarea{width:100%;min-height:80px;padding:8px;border:1px solid #e5e7eb;border-radius:8px}
-        .kvt-card .kvt-notes .row{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
-        .kvt-card .kvt-notes .row button{padding:8px 10px;border-radius:8px;border:1px solid #e5e7eb;background:#0A212E;color:#fff;cursor:pointer}
-        .kvt-card .kvt-notes .row button.kvt-danger{background:#b91c1c}
         .kvt-card .kvt-public-notes{margin-top:8px}
         .kvt-card .kvt-public-notes textarea{width:100%;min-height:80px;padding:8px;border:1px solid #e5e7eb;border-radius:8px}
-        .kvt-card .kvt-public-notes .row{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
-        .kvt-card .kvt-public-notes .row button{padding:8px 10px;border-radius:8px;border:1px solid #e5e7eb;background:#0A212E;color:#fff;cursor:pointer}
-        .kvt-card .kvt-public-notes .row button.kvt-danger{background:#b91c1c}
+        .kvt-card .kvt-save-profile{padding:8px 10px;border-radius:8px;border:1px solid #e5e7eb;background:#0A212E;color:#fff;cursor:pointer;margin-top:6px}
         .kvt-card .kvt-comment{margin-top:8px}
         .kvt-card .kvt-comment input{width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px}
         .kvt-card .kvt-comment textarea{width:100%;min-height:60px;padding:8px;border:1px solid #e5e7eb;border-radius:8px}
@@ -1151,7 +1144,7 @@ cv_uploaded|Fecha de subida");
         wp_add_inline_script('kvt-app', 'const KVT_STATUSES='.wp_json_encode($statuses).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_COLUMNS='.wp_json_encode($columns).';',  'before');
         wp_add_inline_script('kvt-app', 'const KVT_AJAX="'.esc_js(admin_url('admin-ajax.php')).'";', 'before');
-        wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/')).'";', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/base/')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($is_client_board?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
@@ -1191,13 +1184,11 @@ document.addEventListener('DOMContentLoaded', function(){
   const IS_ADMIN = typeof KVT_IS_ADMIN !== 'undefined' && KVT_IS_ADMIN;
   const CLIENT_LINKS = (typeof KVT_CLIENT_LINKS === 'object' && KVT_CLIENT_LINKS) ? KVT_CLIENT_LINKS : {};
 
-  if (CLIENT_VIEW) {
-    const helpBtn = el('.kvt-help');
-    if (helpBtn) {
-      helpBtn.addEventListener('click', () => {
-        alert("Este tablero muestra el progreso de los candidatos. Revisa los datos y etapas compartidas. Si está habilitado, puedes dejar comentarios con tu nombre que verá el reclutador. Las fechas de 'Próxima acción' en rojo indican tareas vencidas.");
-      });
-    }
+  const helpBtn = el('.kvt-help');
+  if (helpBtn) {
+    helpBtn.addEventListener('click', () => {
+      alert("Este tablero muestra el progreso de los candidatos. Haz clic en el nombre para ver su CV, arrastra las tarjetas para moverlos entre etapas y, si está habilitado, deja comentarios que verá el reclutador. Las fechas de 'Próxima acción' en rojo indican tareas vencidas.");
+    });
   }
 
   async function extractPdfWithPDFjs(file){
@@ -1329,7 +1320,6 @@ document.addEventListener('DOMContentLoaded', function(){
   function buildShareOptions(){
     if(shareFieldsWrap){
       const fieldsList = KVT_COLUMNS.filter(c=>c.key !== 'cv_uploaded');
-      if(!fieldsList.some(f=>f.key==='notes')) fieldsList.push({key:'notes',label:'Notas'});
       if(!fieldsList.some(f=>f.key==='public_notes')) fieldsList.push({key:'public_notes',label:'Notas públicas'});
       shareFieldsWrap.innerHTML = fieldsList.map(c=>{
         const chk = !ALLOWED_FIELDS.length || ALLOWED_FIELDS.includes(c.key) ? 'checked' : '';
@@ -1603,8 +1593,6 @@ document.addEventListener('DOMContentLoaded', function(){
 
     if (!CLIENT_VIEW) {
       // Enable handlers after elements are in the DOM
-      enableNotesHandlers(card, String(c.id));
-      enablePublicNotesHandlers(card, String(c.id));
       enableProfileEditHandlers(card, String(c.id));
       enableCvUploadHandlers(card, String(c.id));
     }
@@ -1645,55 +1633,17 @@ document.addEventListener('DOMContentLoaded', function(){
       '<div class="kvt-notes">'+
         '<label><strong>Notas</strong></label>'+
         '<textarea class="kvt-notes-text">'+esc(notesVal)+'</textarea>'+
-        '<div class="row">'+
-          '<button type="button" class="kvt-delete-notes kvt-danger">Borrar notas</button>'+
-          '<button type="button" class="kvt-save-profile">Guardar perfil</button>'+
-        '</div>'+
       '</div>';
     const pubNotesVal = m.public_notes || '';
     const publicNotes =
       '<div class="kvt-public-notes">'+
         '<label><strong>Notas públicas</strong></label>'+
         '<textarea class="kvt-public-notes-text">'+esc(pubNotesVal)+'</textarea>'+
-        '<div class="row">'+
-          '<button type="button" class="kvt-delete-public-notes kvt-danger">Borrar notas</button>'+
-        '</div>'+
       '</div>';
 
-    return '<dl>'+dl+'</dl>'+notes+publicNotes;
-  }
+    const saveBtn = '<button type="button" class="kvt-save-profile">Guardar perfil</button>';
 
-  function enableNotesHandlers(card, id){
-    const txt = card.querySelector('.kvt-notes-text');
-    const btnDel  = card.querySelector('.kvt-delete-notes');
-
-    btnDel && btnDel.addEventListener('click', ()=>{
-      if (!confirm('¿Seguro que deseas borrar todas las notas?')) return;
-      ajaxForm({action:'kvt_delete_notes', _ajax_nonce:KVT_NONCE, id:id})
-        .then(j=>{
-          if (!j.success) return alert('No se pudo borrar.');
-          if (txt) txt.value = '';
-          const sub = card.querySelector('.kvt-sub');
-          if (sub && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes'))) sub.textContent = '';
-          alert('Notas borradas.');
-        });
-    });
-  }
-
-  function enablePublicNotesHandlers(card, id){
-    const txt = card.querySelector('.kvt-public-notes-text');
-    const btnDel = card.querySelector('.kvt-delete-public-notes');
-    btnDel && btnDel.addEventListener('click', ()=>{
-      if (!confirm('¿Seguro que deseas borrar todas las notas?')) return;
-      ajaxForm({action:'kvt_delete_public_notes', _ajax_nonce:KVT_NONCE, id:id})
-        .then(j=>{
-          if (!j.success) return alert('No se pudo borrar.');
-          if (txt) txt.value='';
-          const sub = card.querySelector('.kvt-sub');
-          if (sub && CLIENT_VIEW && ALLOWED_FIELDS.includes('public_notes') && !ALLOWED_FIELDS.includes('notes')) sub.textContent='';
-          alert('Notas borradas.');
-        });
-    });
+    return '<dl>'+dl+'</dl>'+notes+publicNotes+saveBtn;
   }
 
   function enableProfileEditHandlers(card, id){
@@ -2159,8 +2109,6 @@ document.addEventListener('DOMContentLoaded', function(){
           items.forEach(it=>{
             const card = modalList.querySelector('.kvt-card-mini[data-id="'+it.id+'"]');
             if(card){
-              enableNotesHandlers(card, String(it.id));
-              enablePublicNotesHandlers(card, String(it.id));
               enableProfileEditHandlers(card, String(it.id));
               enableCvUploadHandlers(card, String(it.id));
             }
@@ -3215,7 +3163,7 @@ JS;
         if (!preg_match('/^[a-z0-9-]+-[a-z0-9-]+-\d{5}$/i', $slug)) return;
         $links = get_option('kvt_client_links', []);
         if (!isset($links[$slug])) return;
-        $target = home_url('/?kvt_board=' . $slug);
+        $target = home_url('/base/?kvt_board=' . $slug);
         wp_redirect($target);
         exit;
     }
