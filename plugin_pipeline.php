@@ -362,7 +362,11 @@ cv_uploaded|Fecha de subida");
             </tr>
             <tr><th><label>Subir CV (PDF/DOC/DOCX)</label></th>
                 <td>
-                    <input type="file" name="kvt_cv_file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                    <input type="file" id="kvt_cv_file" name="kvt_cv_file" style="display:none" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                    <button type="button" class="button" id="kvt_cv_file_btn">Seleccionar archivo</button>
+                    <span id="kvt_cv_file_label" style="margin-left:.5em;">
+                        <?php echo $cv_att ? esc_html(basename(get_attached_file($cv_att))) : 'Ningún archivo seleccionado'; ?>
+                    </span>
                     <?php if ($cv_url || $cv_att): ?>
                         <p style="margin:.4em 0 0;"><label><input type="checkbox" name="kvt_cv_remove" value="1"> Eliminar CV actual</label></p>
                     <?php endif; ?>
@@ -386,6 +390,19 @@ cv_uploaded|Fecha de subida");
                 <td><textarea name="kvt_notes" rows="6" class="large-text" placeholder="Notas internas"><?php echo esc_textarea($notes); ?></textarea></td>
             </tr>
         </table>
+        <script>
+        document.addEventListener('DOMContentLoaded', function(){
+            const btn   = document.getElementById('kvt_cv_file_btn');
+            const input = document.getElementById('kvt_cv_file');
+            const label = document.getElementById('kvt_cv_file_label');
+            if(btn && input){
+                btn.addEventListener('click', function(){ input.click(); });
+                input.addEventListener('change', function(){
+                    label.textContent = input.files[0] ? input.files[0].name : 'Ningún archivo seleccionado';
+                });
+            }
+        });
+        </script>
         <p class="description">Asigna un <strong>Proceso</strong> en la caja lateral. Se autovinculará el <strong>Cliente</strong> relacionado.</p>
         <?php
     }
