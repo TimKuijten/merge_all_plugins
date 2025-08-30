@@ -16,6 +16,7 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_STATUSES  = 'kvt_statuses';
     const OPT_COLUMNS   = 'kvt_columns';
     const OPT_OPENAI_KEY= 'kvt_openai_key';
+    const OPT_CLIENT_LINKS = 'kvt_client_links';
 
     public function __construct() {
         add_action('init',                       [$this, 'register_types']);
@@ -45,6 +46,7 @@ class Kovacic_Pipeline_Visualizer {
         // Frontend UI
         add_shortcode('kovacic_pipeline',        [$this, 'shortcode']);
         add_action('wp_enqueue_scripts',         [$this, 'enqueue_assets']);
+        add_action('template_redirect',          [$this, 'maybe_redirect_share_link']);
 
         // AJAX
         add_action('wp_ajax_kvt_get_candidates',       [$this, 'ajax_get_candidates']);
@@ -651,7 +653,10 @@ cv_uploaded|Fecha de subida");
 
     /* Shortcode */
     public function shortcode($atts = []) {
-        if (!is_user_logged_in() || !current_user_can('edit_posts')) {
+        $links = get_option(self::OPT_CLIENT_LINKS, []);
+        $slug  = isset($_GET['kvt_board']) ? sanitize_key($_GET['kvt_board']) : '';
+        $shared = $slug && is_array($links) && isset($links[$slug]);
+        if (!$shared && (!is_user_logged_in() || !current_user_can('edit_posts'))) {
             return '<div class="kvt-wrapper"><p>Debes iniciar sesión para ver el pipeline.</p></div>';
         }
         $clients   = get_terms(['taxonomy'=>self::TAX_CLIENT, 'hide_empty'=>false]);
@@ -898,6 +903,25 @@ cv_uploaded|Fecha de subida");
         return ob_get_clean();
     }
 
+    /**
+     * Renders the pipeline board for public share links.
+     */
+    public function maybe_redirect_share_link() {
+        if (empty($_GET['kvt_board'])) {
+            return;
+        }
+        $slug  = sanitize_key($_GET['kvt_board']);
+        $links = get_option(self::OPT_CLIENT_LINKS, []);
+        if (!is_array($links) || !isset($links[$slug])) {
+            return;
+        }
+
+        status_header(200);
+        nocache_headers();
+        include plugin_dir_path(__FILE__) . 'templates/kvt-board.php';
+        exit;
+    }
+
     /* Assets */
     public function enqueue_assets() {
         // Styles
@@ -978,7 +1002,11 @@ cv_uploaded|Fecha de subida");
         wp_enqueue_style('kvt-style');
         wp_add_inline_style('kvt-style', $css);
 
-        if (is_user_logged_in() && current_user_can('edit_posts')) {
+        $links = get_option(self::OPT_CLIENT_LINKS, []);
+        $slug  = isset($_GET['kvt_board']) ? sanitize_key($_GET['kvt_board']) : '';
+        $shared = $slug && is_array($links) && isset($links[$slug]);
+
+        if ((is_user_logged_in() && current_user_can('edit_posts')) || $shared) {
             // PDF.js and Tesseract.js for client-side text extraction
             wp_enqueue_script(
                 'pdfjs',
