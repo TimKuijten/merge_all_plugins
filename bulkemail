@@ -138,7 +138,6 @@ class KT_AIBulkMailer_ES {
             'ajax'  => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce(self::NONCE_KEY),
         ];
-        $smtp_accounts = function_exists('smtp_helper_get_accounts') ? smtp_helper_get_accounts() : [];
         wp_add_inline_script('kt-abm', 'const KT_ABM = '.wp_json_encode($payload).';');
 
         // Inline App JS
@@ -147,7 +146,6 @@ class KT_AIBulkMailer_ES {
 // ===============================
 // App JS (first_name + surname; EML ZIP; delete selected; NO importar base)
 // ===============================
-const KT_SMTP_ACCOUNTS = <?php echo wp_json_encode($smtp_accounts); ?>;
 
 // ---- Utilities ----
 function ktParseCSV(text){
@@ -242,18 +240,6 @@ function ktParseCSV(text){
     });
   }
   return out;
-}
-
-function ktUseAccount(idx){
-  idx = parseInt(idx,10);
-  const acc = KT_SMTP_ACCOUNTS[idx];
-  if(!acc) return;
-  const fe=document.getElementById('ktFromEmail');
-  const fn=document.getElementById('ktFromName');
-  const sig=document.getElementById('ktSignature');
-  if(fe) fe.value = acc.from_email || '';
-  if(fn) fn.value = acc.from_name || '';
-  if(sig) sig.value = acc.signature || '';
 }
 
 function ktAppendSignature(tpl){
@@ -614,8 +600,7 @@ async function ktSend(){
     subject_template,
     body_template,
     from_email: (document.getElementById('ktFromEmail').value||'').trim(),
-    from_name:  (document.getElementById('ktFromName').value||'').trim(),
-    account_index: document.getElementById('ktSmtpAccount') ? (document.getElementById('ktSmtpAccount').value||'') : ''
+    from_name:  (document.getElementById('ktFromName').value||'').trim()
   };
 
   const res = await fetch(KT_ABM.ajax, {
@@ -674,12 +659,6 @@ function ktDownloadEMLZip(){
   FILTERS = {roles:[],countries:[],cities:[],clients:[],statuses:[]};
   ktAfterLoad();
   ktImportCandidates();
-
-  const sel=document.getElementById('ktSmtpAccount');
-  if(sel){
-    sel.addEventListener('change', e=>ktUseAccount(e.target.value));
-    if(sel.value !== '') ktUseAccount(sel.value);
-  }
 })();
 </script>
 <?php
@@ -689,9 +668,10 @@ function ktDownloadEMLZip(){
     public function page() {
         if (!current_user_can('manage_options')) return;
         $o = get_option(self::OPTION_KEY, []);
-        $smtp_accounts = function_exists('smtp_helper_get_accounts') ? smtp_helper_get_accounts() : [];
-        $from_default = $smtp_accounts[0]['from_email'] ?? ($o['from_email'] ?? self::DEFAULT_FROM);
-        $from_name_default = $smtp_accounts[0]['from_name'] ?? ($o['from_name'] ?? get_bloginfo('name'));
+        $smtp_options = get_option('smtp_helper_options', []);
+        $from_default = $smtp_options['from_email'] ?? ($o['from_email'] ?? self::DEFAULT_FROM);
+        $from_name_default = $smtp_options['from_name'] ?? ($o['from_name'] ?? get_bloginfo('name'));
+        $signature_default = $smtp_options['signature'] ?? '';
         ?>
         <div class="wrap">
             <h1 class="kt-title">Correo con IA</h1>
@@ -725,23 +705,12 @@ function ktDownloadEMLZip(){
                 <label style="margin-top:8px">Cuerpo (se permite HTML)</label>
                 <textarea id="ktBody" class="kt-textarea" placeholder="Hola {{first_name}}, ..."></textarea>
                 <label style="margin-top:8px">Firma (HTML)</label>
-                <textarea id="ktSignature" class="kt-textarea" placeholder="Tu firma..."></textarea>
+                <textarea id="ktSignature" class="kt-textarea" placeholder="Tu firma..."><?php echo esc_textarea($signature_default); ?></textarea>
                 <div class="kt-row" style="margin-top:8px">
                     <button class="kt-btn" onclick="ktPreview()">Vista previa</button>
                 </div>
 
                 <div class="kt-row" style="margin-top:8px; gap:12px;">
-                    <div>
-                        <label>Cuenta SMTP</label>
-                        <select id="ktSmtpAccount" class="kt-input">
-                            <?php foreach ($smtp_accounts as $i => $acc) {
-                                $label = esc_html($acc['name'] ?? ('Account ' . ($i + 1)));
-                                $selected = $i === 0 ? ' selected' : '';
-                                echo '<option value="' . esc_attr($i) . '"' . $selected . '>' . $label . '</option>';
-                            } ?>
-                            <option value=""><?php esc_html_e('Personalizado', 'kt-abm'); ?></option>
-                        </select>
-                    </div>
                     <div>
                         <label>Correo del remitente</label>
                         <input id="ktFromEmail" class="kt-input" type="email" value="<?php echo esc_attr($from_default); ?>" />
@@ -972,9 +941,6 @@ function ktDownloadEMLZip(){
         $recipients   = (array)($payload['recipients'] ?? []);
         $from_email   = sanitize_email($payload['from_email'] ?? '');
         $from_name    = sanitize_text_field($payload['from_name'] ?? '');
-        $account_index = isset($payload['account_index']) ? intval($payload['account_index']) : 0;
-        $smtp_index_cb = function() use ($account_index) { return $account_index; };
-        add_filter('smtp_helper_selected_account_index', $smtp_index_cb);
 
         $o = get_option(self::OPTION_KEY, []);
         if (!$from_email) $from_email = sanitize_email($o['from_email'] ?? self::DEFAULT_FROM);
@@ -1034,7 +1000,6 @@ function ktDownloadEMLZip(){
         if ($from_cb)      remove_filter('wp_mail_from', $from_cb, 99);
         if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
         remove_action('wp_mail_failed', $failed_hook);
-        remove_filter('smtp_helper_selected_account_index', $smtp_index_cb);
 
         if ($last_error) $errors[] = ['email'=>'(general)', 'error'=>$last_error];
 
