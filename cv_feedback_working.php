@@ -28,6 +28,7 @@ class Kovacic_CV_Feedback_ES {
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_notices', [$this, 'admin_notices_tools']);
         add_shortcode('kovacic_cv_submit', [$this, 'shortcode']);
+        add_shortcode('kovacic_cv_register', [$this, 'shortcode_register']);
         add_action('wp_enqueue_scripts', [$this, 'assets']);
         add_action('add_meta_boxes', [$this, 'metabox']);
         add_action('save_post', [$this, 'save_meta']);
@@ -173,15 +174,15 @@ class Kovacic_CV_Feedback_ES {
     public function assets() {
         // Estilos UI
         $css = "
-        .kcvf-wrapper{max-width:720px;margin:0 auto;background:#00563B;border-radius:12px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.06)}
-        .kcvf-wrapper h2{font-size:28px;line-height:1.2;margin:0 0 14px;color:#fff}
+        .kcvf-wrapper{max-width:720px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.06)}
+        .kcvf-wrapper h2{font-size:28px;line-height:1.2;margin:0 0 14px;color:#0A212E}
         .kcvf-field{margin-bottom:16px}
-        .kcvf-field label{display:block;font-weight:600;margin-bottom:6px;color:#fff}
+        .kcvf-field label{display:block;font-weight:600;margin-bottom:6px}
         .kcvf-input, .kcvf-select, .kcvf-textarea{width:100%;padding:12px;border:1px solid #e5e7eb;border-radius:10px;font-size:15px}
         .kcvf-select{height:44px}
-        .kcvf-consent{display:flex;gap:10px;align-items:flex-start;color:#fff}
+        .kcvf-consent{display:flex;gap:10px;align-items:flex-start}
         .kcvf-consent input{margin-top:3px}
-        .kcvf-btn{background:#003d2e;color:#fff;border:none;padding:14px 18px;border-radius:12px;cursor:pointer;font-weight:600}
+        .kcvf-btn{background:#0A212E;color:#fff;border:none;padding:14px 18px;border-radius:12px;cursor:pointer;font-weight:600}
         .kcvf-btn:hover{opacity:.95}
         .kcvf-photos{display:flex;gap:12px;margin-bottom:16px}
         .kcvf-photos img{width:100%;border-radius:10px;object-fit:cover}
@@ -227,9 +228,9 @@ document.addEventListener('DOMContentLoaded', function(){
   if(!form) return;
 
   var fileInput = form.querySelector('input[type="file"][name="kcvf_file"]');
-  var hiddenPdfText = document.createElement('textarea');
+  var hiddenPdfText = document.createElement('input');
+  hiddenPdfText.type = 'hidden';
   hiddenPdfText.name = 'kcvf_pdf_text';
-  hiddenPdfText.style.display = 'none';
   form.appendChild(hiddenPdfText);
 
   var submitting = false;
@@ -283,41 +284,48 @@ document.addEventListener('DOMContentLoaded', function(){
     return ocrText.trim();
   }
 
+  async function extractPdfText(file){
+    let txt = await extractPdfWithPDFjs(file);
+    if (!txt) txt = await ocrPdfWithTesseract(file);
+    return txt;
+  }
+
+  if (fileInput){
+    fileInput.addEventListener('change', async function(){
+      hiddenPdfText.value = '';
+      var f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      var isPdf = (f.type === 'application/pdf') || (/\.pdf$/i.test(f.name));
+      if (isPdf) {
+        hiddenPdfText.value = await extractPdfText(f);
+      }
+    });
+  }
+
   form.addEventListener('submit', function(e){
     if (submitting) return;
+    e.preventDefault();
     var file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
-    if (!file) return;
+    var isPdf = file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name));
+    (async function(){
+      if (isPdf && !hiddenPdfText.value) {
+        hiddenPdfText.value = await extractPdfText(file);
+      }
 
-    if (file.type === 'application/pdf') {
-      e.preventDefault();
-      (async function(){
-        // 1) Intento PDF.js
-        if (!hiddenPdfText.value) {
-          const pdfText = await extractPdfWithPDFjs(file);
-          if (pdfText && pdfText.length > 0) hiddenPdfText.value = pdfText;
-        }
-        // 2) OCR si sigue vacío (escaneado)
-        if (!hiddenPdfText.value) {
-          const ocrText = await ocrPdfWithTesseract(file);
-          if (ocrText && ocrText.length > 0) hiddenPdfText.value = ocrText;
-        }
-
-        // Continuar (con reCAPTCHA si está)
-        var tokenField = form.querySelector('input[name="kcvf_recaptcha_token"]');
-        if (window.grecaptcha && typeof grecaptcha.execute === 'function') {
-          grecaptcha.ready(function(){
-            grecaptcha.execute('%SITE_KEY%', {action: 'cv_submit'}).then(function(token){
-              if (tokenField) tokenField.value = token;
-              submitting = true;
-              form.submit();
-            });
+      var tokenField = form.querySelector('input[name="kcvf_recaptcha_token"]');
+      if (window.grecaptcha && typeof grecaptcha.execute === 'function') {
+        grecaptcha.ready(function(){
+          grecaptcha.execute('%SITE_KEY%', {action: 'cv_submit'}).then(function(token){
+            if (tokenField) tokenField.value = token;
+            submitting = true;
+            form.submit();
           });
-        } else {
-          submitting = true;
-          form.submit();
-        }
-      })();
-    }
+        });
+      } else {
+        submitting = true;
+        form.submit();
+      }
+    })();
   });
 });
 JS;
@@ -335,10 +343,27 @@ JS;
     }
 
     public function shortcode() {
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['kcvf_es_nonce'])) {
-            return $this->handle_submission();
+        if (
+            $_SERVER['REQUEST_METHOD'] === 'POST'
+            && isset($_POST['kcvf_es_nonce'])
+            && isset($_POST['kcvf_mode'])
+            && $_POST['kcvf_mode'] === 'submit'
+        ) {
+            return $this->handle_submission(false);
         }
         return $this->render_form();
+    }
+
+    public function shortcode_register() {
+        if (
+            $_SERVER['REQUEST_METHOD'] === 'POST'
+            && isset($_POST['kcvf_es_nonce'])
+            && isset($_POST['kcvf_mode'])
+            && $_POST['kcvf_mode'] === 'register'
+        ) {
+            return $this->handle_submission(true);
+        }
+        return $this->render_form([], [], true);
     }
 
     /** Normaliza fences/comillas raras del modelo */
@@ -356,23 +381,31 @@ JS;
         return preg_replace('/<\/?strong>/', '', (string)$html);
     }
 
-    private function render_form($errors = [], $old = []) {
+    private function render_form($errors = [], $old = [], $register_only = false) {
         ob_start();
         $gdpr_text = get_option(self::OPT_GDPR_TEXT);
         $recaptcha_on = get_option(self::OPT_RECAPTCHA_ENABLE) === '1';
+        $title = $register_only ? 'Registra tu CV' : 'Envía tu CV para feedback';
+        $btn   = $register_only ? 'Subir CV' : 'Enviar y obtener feedback';
         ?>
         <div class="kcvf-wrapper">
             <div class="kcvf-photos">
                 <img src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=800&q=80" alt="Profesionales ejecutivos">
                 <img src="https://images.unsplash.com/photo-1573166364524-70a19e99d104?auto=format&fit=crop&w=800&q=80" alt="Reunión ejecutiva">
             </div>
-            <h2>Envía tu CV para feedback</h2>
+            <h2><?php echo esc_html($title); ?></h2>
             <?php if (!empty($errors)): ?>
                 <div class="kcvf-error"><strong>Por favor corrige:</strong><br><?php echo implode('<br>', array_map('esc_html', $errors)); ?></div>
             <?php endif; ?>
 
             <form method="post" enctype="multipart/form-data" class="kcvf-form">
                 <?php wp_nonce_field('kcvf_es_submit', 'kcvf_es_nonce'); ?>
+                <input type="hidden" name="kcvf_mode" value="<?php echo $register_only ? 'register' : 'submit'; ?>">
+
+                <div class="kcvf-field">
+                    <label for="kcvf_name">Nombre completo</label>
+                    <input class="kcvf-input" type="text" name="kcvf_name" id="kcvf_name" value="<?php echo isset($old['name']) ? esc_attr($old['name']) : ''; ?>" required placeholder="Nombre Apellidos">
+                </div>
 
                 <div class="kcvf-field">
                     <label for="kcvf_email">Correo electrónico</label>
@@ -424,25 +457,34 @@ JS;
                     <input type="hidden" name="kcvf_recaptcha_token" value="">
                 <?php endif; ?>
 
-                <button class="kcvf-btn" type="submit">Enviar y obtener feedback</button>
+                <button class="kcvf-btn" type="submit"><?php echo esc_html($btn); ?></button>
             </form>
         </div>
         <?php
         return ob_get_clean();
     }
 
-    private function handle_submission() {
+    private function handle_submission($register_only = false) {
         if (!wp_verify_nonce($_POST['kcvf_es_nonce'], 'kcvf_es_submit')) {
-            return $this->render_form(['Token de formulario inválido. Recarga la página e inténtalo de nuevo.']);
+            return $this->render_form(['Token de formulario inválido. Recarga la página e inténtalo de nuevo.'], [], $register_only);
         }
 
         $errors = [];
+        $name   = isset($_POST['kcvf_name']) ? sanitize_text_field($_POST['kcvf_name']) : '';
         $email  = isset($_POST['kcvf_email']) ? sanitize_email($_POST['kcvf_email']) : '';
         $role   = isset($_POST['kcvf_role']) ? sanitize_text_field($_POST['kcvf_role']) : '';
         $sector = isset($_POST['kcvf_sector']) ? sanitize_text_field($_POST['kcvf_sector']) : '';
         $notes  = isset($_POST['kcvf_notes']) ? sanitize_textarea_field($_POST['kcvf_notes']) : '';
         $consent = !empty($_POST['kcvf_consent']);
 
+        $first = $last = '';
+        if ($name) {
+            $parts = preg_split('/\s+/', trim($name));
+            $first = array_shift($parts);
+            $last  = trim(implode(' ', $parts));
+        }
+
+        if (!$name) $errors[] = 'Introduce tu nombre.';
         if (!$email || !is_email($email)) $errors[] = 'Introduce un correo válido.';
         if (!$consent) $errors[] = 'Debes aceptar el consentimiento.';
         if (empty($_FILES['kcvf_file']['name'])) $errors[] = 'Adjunta tu CV en PDF o DOCX.';
@@ -554,7 +596,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
         }
 
         if (!empty($errors)) {
-            return $this->render_form($errors, ['email' => $email, 'role' => $role]);
+            return $this->render_form($errors, ['name' => $name, 'email' => $email, 'role' => $role], $register_only);
         }
 
         // Guardar envío
@@ -567,6 +609,9 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
 
         if ($post_id && $stored_path) {
             add_post_meta($post_id, '_kcvf_file', $stored_path);
+            add_post_meta($post_id, '_kcvf_name', $name);
+            add_post_meta($post_id, '_kcvf_first_name', $first);
+            add_post_meta($post_id, '_kcvf_last_name', $last);
             add_post_meta($post_id, '_kcvf_email', $email);
             add_post_meta($post_id, '_kcvf_role', $role);
             add_post_meta($post_id, '_kcvf_sector', $sector);
@@ -576,8 +621,10 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             if ($converted_docx) add_post_meta($post_id, '_kcvf_converted_docx', $converted_docx);
         }
 
-        $thankyou = get_option(self::OPT_THANKYOU_TEXT);
-        $instant = get_option(self::OPT_AUTO_FEEDBACK) === '1';
+        $thankyou = $register_only
+            ? '¡Gracias! Hemos recibido tu CV. Te mantendremos informado.'
+            : get_option(self::OPT_THANKYOU_TEXT);
+        $instant = !$register_only && get_option(self::OPT_AUTO_FEEDBACK) === '1';
         $feedback_block = '';
 
         if ($instant) {
