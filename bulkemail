@@ -146,7 +146,7 @@ class KT_AIBulkMailer_ES {
 // ===============================
 // Persistence + De-dup + App JS (first_name + surname; EML ZIP; delete selected; NO importar base)
 // ===============================
-const STORAGE_KEY = 'kt_abm_state_v9';
+const STORAGE_KEY = 'kt_abm_state_v10';
 
 // ---- Utilities ----
 function ktParseCSV(text){
@@ -250,7 +250,7 @@ function ktRender(tpl, data){ return tpl.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/
 // ---- App State ----
 let KT_CONTACTS=[], KT_VIEW=[], KT_SELECTED=new Set();
 let KT_PAGE=1, KT_PER_PAGE=20;
-let FILTERS = { roles: [], countries: [], cities: [] };
+let FILTERS = { roles: [], countries: [], cities: [], clients: [], statuses: [] };
 
 // ---- Persistence ----
 function loadSaved(){
@@ -268,6 +268,8 @@ function loadSaved(){
     FILTERS.roles     = Array.isArray(st.rolesSel)     ? st.rolesSel : [];
     FILTERS.countries = Array.isArray(st.countriesSel) ? st.countriesSel : [];
     FILTERS.cities    = Array.isArray(st.citiesSel)    ? st.citiesSel : [];
+    FILTERS.clients   = Array.isArray(st.clientsSel)   ? st.clientsSel : [];
+    FILTERS.statuses  = Array.isArray(st.statusesSel)  ? st.statusesSel : [];
   }catch(e){}
 }
 
@@ -284,6 +286,8 @@ function saveState(){
       rolesSel: FILTERS.roles,
       countriesSel: FILTERS.countries,
       citiesSel: FILTERS.cities,
+      clientsSel: FILTERS.clients,
+      statusesSel: FILTERS.statuses,
       savedAt: Date.now()
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -490,8 +494,12 @@ function ktAfterLoad(){
   const roles     = ktUniq(KT_CONTACTS.map(x=>x.role));
   const countries = ktUniq(KT_CONTACTS.map(x=>x.country));
   const cities    = ktUniq(KT_CONTACTS.map(x=>x.city));
+  const clients   = ktUniq(KT_CONTACTS.map(x=>x.client));
+  const statuses  = ktUniq(KT_CONTACTS.map(x=>x.status));
 
   ktDD.build('ddRole', roles);
+  ktDD.build('ddClient', clients);
+  ktDD.build('ddStatus', statuses);
   ktDD.build('ddCountry', countries);
   ktDD.build('ddCity', cities);
 
@@ -550,6 +558,8 @@ function ktApply(){
   const rolesSel     = (FILTERS.roles||[]).map(v => v.toLowerCase());
   const countriesSel = (FILTERS.countries||[]).map(v => v.toLowerCase());
   const citiesSel    = (FILTERS.cities||[]).map(v => v.toLowerCase());
+  const clientsSel   = (FILTERS.clients||[]).map(v => v.toLowerCase());
+  const statusesSel  = (FILTERS.statuses||[]).map(v => v.toLowerCase());
 
   KT_VIEW = KT_CONTACTS.filter(c => {
     const fullName = (c.first_name + ' ' + c.surname).trim();
@@ -559,7 +569,9 @@ function ktApply(){
     const inRole     = !rolesSel.length     || rolesSel.includes((c.role||'').toLowerCase());
     const inCountry  = !countriesSel.length || countriesSel.includes((c.country||'').toLowerCase());
     const inCity     = !citiesSel.length    || citiesSel.includes((c.city||'').toLowerCase());
-    return hit && inRole && inCountry && inCity;
+    const inClient   = !clientsSel.length   || clientsSel.includes((c.client||'').toLowerCase());
+    const inStatus   = !statusesSel.length  || statusesSel.includes((c.status||'').toLowerCase());
+    return hit && inRole && inCountry && inCity && inClient && inStatus;
   });
   ktRenderTable();
   saveState();
@@ -676,7 +688,7 @@ function ktDownloadEMLZip(){
   loadSaved();
   KT_CONTACTS = [];
   KT_SELECTED.clear();
-  FILTERS = {roles:[],countries:[],cities:[]};
+  FILTERS = {roles:[],countries:[],cities:[],clients:[],statuses:[]};
   ktAfterLoad();
   ktImportCandidates();
 
@@ -752,7 +764,7 @@ function ktDownloadEMLZip(){
             <div class="kt-grid kt-cols-3">
                 <div class="kt-card" style="grid-column: span 2;">
                     <div class="kt-row" style="margin-bottom:10px;align-items:center;flex-wrap:wrap;gap:10px">
-                        <input id="ktQ" class="kt-input" type="text" placeholder="Buscar por nombre, email, país, ciudad o proceso" oninput="ktApply()" style="flex:1;max-width:300px" />
+                        <input id="ktQ" class="kt-input" type="text" placeholder="Buscar por nombre, email, país, ciudad, cliente, proceso o estado" oninput="ktApply()" style="flex:1;max-width:300px" />
                         <span class="kt-tag" id="ktCount">0 contactos</span>
                     </div>
                     <div class="kt-row" style="margin-bottom:10px;flex-wrap:wrap;gap:10px">
@@ -768,6 +780,40 @@ function ktDownloadEMLZip(){
                                     <div class="kt-dd-actions">
                                         <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddRole')">Seleccionar todo</button>
                                         <button type="button" class="kt-mini" onclick="ktDD.clear('ddRole')">Limpiar</button>
+                                    </div>
+                                    <div class="kt-dd-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label>Cliente</label>
+                            <div id="ddClient" class="kt-dd" data-key="clients">
+                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddClient')">
+                                    <span class="summary" id="ddClientSummary">Todos</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                                </button>
+                                <div class="kt-dd-menu">
+                                    <input class="kt-dd-search" placeholder="Buscar cliente..." oninput="ktDD.filter('ddClient', this.value)">
+                                    <div class="kt-dd-actions">
+                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddClient')">Seleccionar todo</button>
+                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddClient')">Limpiar</button>
+                                    </div>
+                                    <div class="kt-dd-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label>Estado</label>
+                            <div id="ddStatus" class="kt-dd" data-key="statuses">
+                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddStatus')">
+                                    <span class="summary" id="ddStatusSummary">Todos</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                                </button>
+                                <div class="kt-dd-menu">
+                                    <input class="kt-dd-search" placeholder="Buscar estado..." oninput="ktDD.filter('ddStatus', this.value)">
+                                    <div class="kt-dd-actions">
+                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddStatus')">Seleccionar todo</button>
+                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddStatus')">Limpiar</button>
                                     </div>
                                     <div class="kt-dd-list"></div>
                                 </div>
