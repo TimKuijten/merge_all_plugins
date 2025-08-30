@@ -2,7 +2,7 @@
 /*
 Plugin Name: Kovacic CV Feedback (ES) + reCAPTCHA v3
 Description: Envío de CV con feedback por IA (PDF/DOCX). Si el PDF no es legible en el servidor, el navegador extrae el texto con PDF.js y, si es escaneado, hace OCR con Tesseract.js; luego envía el texto oculto y el servidor genera un DOCX temporal desde ese texto (flujo fiable).
-Version: 1.6.1
+Version: 1.6.0
 Author: Tim Kuijten - Kovacic Executive Talent Research
 */
 
@@ -194,29 +194,28 @@ class Kovacic_CV_Feedback_ES {
         wp_add_inline_style('kcvf-es-inline', $css);
 
         // PDF.js y Tesseract.js para extracción/OCR en el cliente
-        // Aseguramos la carga de PDF.js y Tesseract.js
-        wp_register_script(
+        wp_enqueue_script(
             'pdfjs',
             'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
             [],
             '3.11.174',
             true
         );
-        wp_enqueue_script('pdfjs');
         wp_add_inline_script(
             'pdfjs',
-            'window.pdfjsLib = window["pdfjs-dist/build/pdf"] || window.pdfjsLib;if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}',
+            'window.pdfjsLib = window["pdfjs-dist/build/pdf"] || window.pdfjsLib;' .
+            'if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc=' .
+            '"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}',
             'after'
         );
 
-        wp_register_script(
+        wp_enqueue_script(
             'tesseract',
             'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
             [],
             '5.0.0',
             true
         );
-        wp_enqueue_script('tesseract');
 
         // Script reCAPTCHA v3 si procede
         $recaptcha_on = get_option(self::OPT_RECAPTCHA_ENABLE) === '1';
@@ -228,97 +227,100 @@ class Kovacic_CV_Feedback_ES {
         // JS del formulario: PDF.js → texto; si vacío → Tesseract.js OCR; luego reCAPTCHA si está activo
         $inline = <<<JS
 document.addEventListener('DOMContentLoaded', function(){
-  var form = document.querySelector('form.kcvf-form');
-  if(!form) return;
+  document.querySelectorAll('form.kcvf-form').forEach(function(form){
+    var fileInput = form.querySelector('input[type="file"][name="kcvf_file"]');
+    var hiddenPdfText = document.createElement('textarea');
+    hiddenPdfText.name = 'kcvf_pdf_text';
+    hiddenPdfText.style.display = 'none';
+    form.appendChild(hiddenPdfText);
 
-  var fileInput = form.querySelector('input[type="file"][name="kcvf_file"]');
-  var cvTextField = document.createElement('input');
-  cvTextField.type = 'hidden';
-  cvTextField.name = 'cv_text';
-  form.appendChild(cvTextField);
+    var submitting = false;
 
-  var submitting = false;
+    async function extractPdfWithPDFjs(file){
+      if (!window.pdfjsLib) return '';
+      try {
+        const buf = await file.arrayBuffer();
+        const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+        let full = '';
+        for (let p=1; p<=pdf.numPages; p++){
+          const page = await pdf.getPage(p);
+          const content = await page.getTextContent();
+          const strings = content.items.map(it => it.str);
+          full += strings.join(' ') + '\\n\\n';
+        }
+        return full.trim();
+      } catch(e){ return ''; }
+    }
 
-  async function extractPdfWithPDFjs(file){
-    if (!window.pdfjsLib) return '';
-    try {
+    async function ocrPdfWithTesseract(file){
+      if (!window.Tesseract || !window.pdfjsLib) return '';
       const buf = await file.arrayBuffer();
       const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
-      let full = '';
+
+      // offscreen canvas
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      let ocrText = '';
       for (let p=1; p<=pdf.numPages; p++){
         const page = await pdf.getPage(p);
-        const content = await page.getTextContent();
-        const strings = content.items.map(it=>it.str);
-        full += strings.join(' ') + '\\n\\n';
-      }
-      return full.trim();
-    } catch(e){ return ''; }
-  }
+        const viewport = page.getViewport({ scale: 2.0 });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: ctx, viewport }).promise;
 
-  async function ocrPdfWithTesseract(file){
-    if (!window.Tesseract || !window.pdfjsLib) return '';
-    const buf = await file.arrayBuffer();
-    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    let ocrText = '';
-    for (let p=1; p<=pdf.numPages; p++){
-      const page = await pdf.getPage(p);
-      const viewport = page.getViewport({ scale: 2.0 });
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      await page.render({ canvasContext: ctx, viewport }).promise;
-      const dataURL = canvas.toDataURL('image/png');
-      try {
-        const { data:{ text } } = await Tesseract.recognize(dataURL, 'spa+eng', { logger: ()=>{} });
-        if (text) ocrText += text + '\\n\\n';
-      } catch(e){}
-      ctx.clearRect(0,0,canvas.width,canvas.height);
+        const dataURL = canvas.toDataURL('image/png');
+        try {
+          const { data: { text } } = await Tesseract.recognize(
+            dataURL,
+            'spa+eng',
+            { logger: ()=>{} }
+          );
+          if (text) ocrText += text + '\\n\\n';
+        } catch(e) {
+          // continuar aunque una página falle
+        }
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+      }
+      return ocrText.trim();
     }
-    return ocrText.trim();
-  }
 
-  async function extractPdfText(file){
-    let txt = await extractPdfWithPDFjs(file);
-    if (!txt) txt = await ocrPdfWithTesseract(file);
-    return txt;
-  }
+    form.addEventListener('submit', function(e){
+      if (submitting) return;
+      var file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+      if (!file) return;
 
-  if (fileInput){
-    fileInput.addEventListener('change', async function(){
-      cvTextField.value = '';
-      var f = fileInput.files && fileInput.files[0];
-      if (!f) return;
-      var isPdf = (f.type === 'application/pdf') || (/\.pdf$/i.test(f.name));
-      if (isPdf) {
-        cvTextField.value = await extractPdfText(f);
-      }
-    });
-  }
+      if (file.type === 'application/pdf') {
+        e.preventDefault();
+        (async function(){
+          // 1) Intento PDF.js
+          if (!hiddenPdfText.value) {
+            const pdfText = await extractPdfWithPDFjs(file);
+            if (pdfText && pdfText.length > 0) hiddenPdfText.value = pdfText;
+          }
+          // 2) OCR si sigue vacío (escaneado)
+          if (!hiddenPdfText.value) {
+            const ocrText = await ocrPdfWithTesseract(file);
+            if (ocrText && ocrText.length > 0) hiddenPdfText.value = ocrText;
+          }
 
-  form.addEventListener('submit', function(e){
-    if (submitting) return;
-    e.preventDefault();
-    var file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
-    var isPdf = file && ((file.type === 'application/pdf') || (/\.pdf$/i.test(file.name)));
-    (async function(){
-      if (isPdf && !cvTextField.value) {
-        cvTextField.value = await extractPdfText(file);
-      }
-      var tokenField = form.querySelector('input[name="kcvf_recaptcha_token"]');
-      if (window.grecaptcha && typeof grecaptcha.execute === 'function') {
-        grecaptcha.ready(function(){
-          grecaptcha.execute('%SITE_KEY%', {action:'cv_submit'}).then(function(token){
-            if (tokenField) tokenField.value = token;
+          // Continuar (con reCAPTCHA si está)
+          var tokenField = form.querySelector('input[name="kcvf_recaptcha_token"]');
+          if (window.grecaptcha && typeof grecaptcha.execute === 'function') {
+            grecaptcha.ready(function(){
+              grecaptcha.execute('%SITE_KEY%', {action: 'cv_submit'}).then(function(token){
+                if (tokenField) tokenField.value = token;
+                submitting = true;
+                form.submit();
+              });
+            });
+          } else {
             submitting = true;
             form.submit();
-          });
-        });
-      } else {
-        submitting = true;
-        form.submit();
+          }
+        })();
       }
-    })();
+    });
   });
 });
 JS;
@@ -331,8 +333,8 @@ JS;
         }
 
         wp_register_script('kcvf-es-form', '', ['pdfjs','tesseract'], null, true);
+        wp_add_inline_script('kcvf-es-form', $inline, 'after');
         wp_enqueue_script('kcvf-es-form');
-        wp_add_inline_script('kcvf-es-form', $inline);
     }
 
     public function shortcode() {
@@ -393,7 +395,7 @@ JS;
 
                 <div class="kcvf-field">
                     <label for="kcvf_name">Nombre completo</label>
-                    <input class="kcvf-input" type="text" name="kcvf_name" id="kcvf_name" value="<?php echo isset($old['name']) ? esc_attr($old['name']) : ''; ?>" required placeholder="Nombre Apellidos">
+                    <input class="kcvf-input" type="text" name="kcvf_name" id="kcvf_name" value="<?php echo isset($old['name']) ? esc_attr($old['name']) : ''; ?>" required placeholder="Tu nombre completo">
                 </div>
 
                 <div class="kcvf-field">
@@ -403,7 +405,7 @@ JS;
 
                 <div class="kcvf-field">
                     <label for="kcvf_role">Rol / Área objetivo</label>
-                    <input class="kcvf-input" type="text" name="kcvf_role" id="kcvf_role" placeholder="p. ej., Country Manager, Administrativo, CFO..." value="<?php echo isset($old['role']) ? esc_attr($old['role']) : ''; ?>">
+                    <input class="kcvf-input" type="text" name="kcvf_role" id="kcvf_role" placeholder="p. ej., Country Manager, Head of Controlling, CFO..." value="<?php echo isset($old['role']) ? esc_attr($old['role']) : ''; ?>">
                 </div>
 
                 <div class="kcvf-field">
@@ -427,6 +429,7 @@ JS;
            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
            required>
     <p style="font-size:13px;color:#666;margin-top:6px;">
+        Nota: si tu CV está en PDF escaneado, el sistema puede tardar unos minutos en procesarlo.
     </p>
 </div>
 
@@ -446,6 +449,9 @@ JS;
                 <?php endif; ?>
 
                 <button class="kcvf-btn" type="submit"><?php echo esc_html($btn); ?></button>
+                <?php if (!$register_only): ?>
+                    <p style="font-size:13px;color:#666;margin-top:6px;">Nota: la generación de feedback puede tardar hasta un minuto.</p>
+                <?php endif; ?>
             </form>
         </div>
         <?php
@@ -464,13 +470,6 @@ JS;
         $sector = isset($_POST['kcvf_sector']) ? sanitize_text_field($_POST['kcvf_sector']) : '';
         $notes  = isset($_POST['kcvf_notes']) ? sanitize_textarea_field($_POST['kcvf_notes']) : '';
         $consent = !empty($_POST['kcvf_consent']);
-
-        $first = $last = '';
-        if ($name) {
-            $parts = preg_split('/\s+/', trim($name));
-            $first = array_shift($parts);
-            $last  = trim(implode(' ', $parts));
-        }
 
         if (!$name) $errors[] = 'Introduce tu nombre.';
         if (!$email || !is_email($email)) $errors[] = 'Introduce un correo válido.';
@@ -512,7 +511,6 @@ JS;
         $char_count = 0;
         $excerpt_400 = '';
         $converted_docx = '';
-        $candidate_id = 0;
 
         if (empty($errors) && !empty($_FILES['kcvf_file']['name'])) {
             $file = $_FILES['kcvf_file'];
@@ -524,15 +522,10 @@ JS;
                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
                 ];
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                $mime  = finfo_file($finfo, $file['tmp_name']);
+                $mime = finfo_file($finfo, $file['tmp_name']);
                 finfo_close($finfo);
-                $ext = $allowed[$mime] ?? '';
-                if (!$ext) {
-                    $name_ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
-                    if (in_array($name_ext, ['pdf','docx'], true)) $ext = $name_ext;
-                }
 
-                if (!$ext) {
+                if (!isset($allowed[$mime])) {
                     $errors[] = 'Tipo de archivo no permitido. Usa PDF o DOCX.';
                 } elseif ($file['size'] > 5 * 1024 * 1024) {
                     $errors[] = 'Archivo demasiado grande (máximo 5 MB).';
@@ -540,7 +533,8 @@ JS;
                     $upload_dir = wp_upload_dir();
                     $cv_dir = trailingslashit($upload_dir['basedir']) . 'cv-uploads';
                     if (!file_exists($cv_dir)) wp_mkdir_p($cv_dir);
-                      $filename = 'cv_' . time() . '_' . wp_generate_password(6, false) . '.' . $ext;
+                    $ext = $allowed[$mime];
+                    $filename = 'cv_' . time() . '_' . wp_generate_password(6, false) . '.' . $ext;
                     $dest = trailingslashit($cv_dir) . $filename;
                     if (!move_uploaded_file($file['tmp_name'], $dest)) {
                         $errors[] = 'No se pudo guardar el archivo en el servidor.';
@@ -554,9 +548,9 @@ JS;
 
                         if ($ext === 'pdf') {
                             // 0) ¿Vino texto extraído/OCR por el cliente?
-                            $client_text = isset($_POST['cv_text']) ? sanitize_textarea_field(wp_unslash($_POST['cv_text'])) : '';
+                            $client_text = isset($_POST['kcvf_pdf_text']) ? (string) $_POST['kcvf_pdf_text'] : '';
                             if ($client_text !== '') {
-                                $file_text = $client_text;
+                                $file_text = trim($client_text);
                                 $extract_method = 'client-pdfjs/tesseract';
                             } else {
                                 // 1) Intento servidor (si existen binarios)
@@ -596,15 +590,13 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
         $post_id = wp_insert_post([
             'post_type' => 'cv_submission',
             'post_status' => 'publish',
-            'post_title' => $email . ' — ' . current_time('mysql'),
+            'post_title' => ($name ? $name . ' — ' : '') . $email . ' — ' . current_time('mysql'),
             'post_content' => wp_kses_post($notes),
         ]);
 
         if ($post_id && $stored_path) {
             add_post_meta($post_id, '_kcvf_file', $stored_path);
             add_post_meta($post_id, '_kcvf_name', $name);
-            add_post_meta($post_id, '_kcvf_first_name', $first);
-            add_post_meta($post_id, '_kcvf_last_name', $last);
             add_post_meta($post_id, '_kcvf_email', $email);
             add_post_meta($post_id, '_kcvf_role', $role);
             add_post_meta($post_id, '_kcvf_sector', $sector);
@@ -612,57 +604,6 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             add_post_meta($post_id, '_kcvf_char_count', $char_count);
             add_post_meta($post_id, '_kcvf_text_excerpt', $excerpt_400);
             if ($converted_docx) add_post_meta($post_id, '_kcvf_converted_docx', $converted_docx);
-        }
-
-        // Sincronizar con la base del pipeline
-        if ($stored_path && post_type_exists('kvt_candidate')) {
-            $candidate_id = wp_insert_post([
-                'post_type'   => 'kvt_candidate',
-                'post_status' => 'publish',
-                'post_title'  => $name ?: ($email ?: 'Candidate'),
-            ]);
-            if ($candidate_id && !is_wp_error($candidate_id)) {
-                // Datos básicos
-                update_post_meta($candidate_id, 'kvt_first_name', $first);
-                update_post_meta($candidate_id, 'first_name', $first);
-                update_post_meta($candidate_id, 'kvt_last_name', $last);
-                update_post_meta($candidate_id, 'last_name', $last);
-                update_post_meta($candidate_id, 'kvt_email', $email);
-                update_post_meta($candidate_id, 'email', $email);
-
-                // Adjuntar CV al candidato
-                if (!function_exists('media_handle_sideload')) {
-                    require_once ABSPATH . 'wp-admin/includes/image.php';
-                    require_once ABSPATH . 'wp-admin/includes/file.php';
-                    require_once ABSPATH . 'wp-admin/includes/media.php';
-                }
-                $tmp = wp_tempnam($stored_path);
-                if ($tmp && @copy($stored_path, $tmp)) {
-                    $file_array = [
-                        'name'     => basename($stored_path),
-                        'tmp_name' => $tmp,
-                    ];
-                    $attach_id = media_handle_sideload($file_array, $candidate_id);
-                    if (!is_wp_error($attach_id)) {
-                        $url   = wp_get_attachment_url($attach_id);
-                        $today = date_i18n('d-m-Y');
-                        update_post_meta($candidate_id, 'kvt_cv_attachment_id', $attach_id);
-                        update_post_meta($candidate_id, 'kvt_cv_url', esc_url_raw($url));
-                        update_post_meta($candidate_id, 'cv_url', esc_url_raw($url));
-                        update_post_meta($candidate_id, 'kvt_cv_uploaded', $today);
-                        update_post_meta($candidate_id, 'cv_uploaded', $today);
-                    }
-                }
-
-                if ($file_text) {
-                    update_post_meta($candidate_id, 'kvt_cv_text', $file_text);
-                    if ($converted_docx && file_exists($converted_docx)) {
-                        $upload = wp_upload_dir();
-                        $docx_url = str_replace($upload['basedir'], $upload['baseurl'], $converted_docx);
-                        update_post_meta($candidate_id, 'kvt_cv_text_url', esc_url_raw($docx_url));
-                    }
-                }
-            }
         }
 
         $thankyou = $register_only
@@ -673,12 +614,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
 
         if ($instant) {
             $api_key = trim((string)get_option(self::OPT_API_KEY));
-            $cv_source = $file_text;
-            if ($candidate_id) {
-                $cached = get_post_meta($candidate_id, 'kvt_cv_text', true);
-                if ($cached) $cv_source = $cached;
-            }
-            $cv_excerpt = mb_substr($cv_source, 0, 18000);
+            $cv_excerpt = mb_substr($file_text, 0, 18000);
             $feedback = $api_key ? $this->generate_ai_feedback($api_key, $cv_excerpt, $role, $sector) : 'Feedback por IA no configurado. Añade tu API key en Ajustes.';
             if ($post_id) add_post_meta($post_id, '_kcvf_feedback', $feedback);
 
@@ -697,7 +633,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             // Email al candidato (HTML)
             if (is_email($email)) {
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
-                $body = '<p>Hola,</p><p>Gracias por compartir tu CV. Aquí tienes tu feedback:</p>'
+                $body = '<p>Hola' . ($name ? ', ' . esc_html($name) : '') . '</p><p>Gracias por compartir tu CV. Aquí tienes tu feedback:</p>'
                       . $safe_feedback
                       . '<p>— Kovacic Executive Talent Research</p>';
                 wp_mail($email, 'Tu feedback de CV', $body, $headers);
@@ -706,7 +642,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             // Aviso interno (texto)
             $notify = get_option(self::OPT_NOTIFY_EMAIL);
             if ($notify && is_email($notify)) {
-                $body_admin = "Nuevo envío de CV: {$email}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\nConvertido DOCX: " . ($converted_docx ?: '—') . "\n\n--- FEEDBACK (texto plano) ---\n" . wp_strip_all_tags($safe_feedback);
+                $body_admin = "Nuevo envío de CV: {$email}\nNombre: {$name}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\nConvertido DOCX: " . ($converted_docx ?: '—') . "\n\n--- FEEDBACK (texto plano) ---\n" . wp_strip_all_tags($safe_feedback);
                 wp_mail($notify, 'Nuevo envío de CV + Feedback', $body_admin);
             }
 
@@ -716,7 +652,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
                             . '<div class="kcvf-feedback">' . $safe_feedback . '</div>';
 
             if ( current_user_can('manage_options') ) {
-                $preview = esc_html( mb_substr( (string)$cv_source, 0, 400 ) );
+                $preview = esc_html( mb_substr( (string)$file_text, 0, 400 ) );
                 $feedback_block .= '<div class="kcvf-debug"><strong>DEBUG (solo admin):</strong>'
                                  . '<br>Método de extracción: ' . esc_html($extract_method)
                                  . '<br>Caracteres extraídos: ' . intval($char_count)
@@ -725,10 +661,11 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             }
 
         } else {
+            // Solo aviso interno y/o confirmación de registro
             $notify = get_option(self::OPT_NOTIFY_EMAIL);
             if ($notify && is_email($notify)) {
                 $subject = $register_only ? 'Nuevo registro de CV' : 'Nuevo envío de CV';
-                $body_admin = "Nuevo envío de CV: {$email}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo:{$stored_path}\n";
+                $body_admin = "Nuevo envío de CV: {$email}\nNombre: {$name}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\n";
                 if (!$register_only) {
                     $body_admin .= "(El feedback instantáneo está desactivado.)";
                 }
@@ -736,7 +673,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             }
             if ($register_only && is_email($email)) {
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
-                $body = '<p>Hola,</p><p>Gracias por compartir tu CV. Te contactaremos para futuras oportunidades.</p><p>— Kovacic Executive Talent Research</p>';
+                $body = '<p>Hola' . ($name ? ', ' . esc_html($name) : '') . '</p><p>Gracias por compartir tu CV. Te contactaremos para futuras oportunidades.</p><p>— Kovacic Executive Talent Research</p>';
                 wp_mail($email, 'CV recibido', $body, $headers);
             }
             $feedback_block = '<div class="kcvf-alert"><strong>' . esc_html($thankyou) . '</strong></div>';
@@ -1010,6 +947,7 @@ DEVUELVE (en HTML):
     }
 
     public function metabox_render($post) {
+        $name = get_post_meta($post->ID, '_kcvf_name', true);
         $email = get_post_meta($post->ID, '_kcvf_email', true);
         $role = get_post_meta($post->ID, '_kcvf_role', true);
         $sector = get_post_meta($post->ID, '_kcvf_sector', true);
@@ -1034,6 +972,7 @@ DEVUELVE (en HTML):
 
         wp_nonce_field('kcvf_es_meta_save', 'kcvf_es_meta_nonce');
         ?>
+        <p><strong>Nombre:</strong><br><?php echo esc_html($name); ?></p>
         <p><strong>Email:</strong><br><?php echo esc_html($email); ?></p>
         <p><strong>Rol:</strong><br><?php echo esc_html($role); ?></p>
         <p><strong>Sector:</strong><br><?php echo esc_html($sector); ?></p>
