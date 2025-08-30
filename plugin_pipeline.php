@@ -745,20 +745,19 @@ cv_uploaded|Fecha de subida");
                             <?php endforeach; ?>
                         </select>
                     </label>
-                    <button class="kvt-btn" id="kvt_refresh">Actualizar</button>
                 </div>
                 <div class="kvt-actions">
                     <button class="kvt-btn" id="kvt_add_profile">Base</button>
-                    <button class="kvt-btn kvt-secondary" id="kvt_toggle_table">Tabla</button>
+                    <button class="kvt-btn" id="kvt_toggle_table">Tabla</button>
                     <form id="kvt_export_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank" style="display:inline;">
                         <input type="hidden" name="action" value="kvt_export">
                         <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
                         <input type="hidden" name="filter_client"  id="kvt_export_client"  value="">
                         <input type="hidden" name="filter_process" id="kvt_export_process" value="">
                         <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
-                        <button class="kvt-btn" type="button" id="kvt_export_xls">Export Excel</button>
+                        <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                     </form>
-                    <a class="kvt-btn" id="kvt_mandar_correos" href="https://kovacictalent.com/wp-admin/admin.php?page=kt-abm" target="_blank" rel="noopener">Mandar correos</a>
+                    <button class="kvt-btn" type="button" id="kvt_mandar_correos">Mandar correos</button>
                 </div>
             </div>
 
@@ -839,7 +838,7 @@ cv_uploaded|Fecha de subida");
                     <input type="hidden" name="filter_client" value="">
                     <input type="hidden" name="filter_process" value="">
                     <input type="hidden" name="format" id="kvt_export_all_format" value="xls">
-                    <button type="button" class="kvt-btn" id="kvt_export_all_xls">Export Excel</button>
+                    <button type="button" class="kvt-btn" id="kvt_export_all_xls">Exportar Excel</button>
                   </form>
                 </div>
                 <div id="kvt_modal_list" class="kvt-modal-list"></div>
@@ -977,7 +976,9 @@ cv_uploaded|Fecha de subida");
         .kvt-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:10px;box-shadow:0 3px 10px rgba(0,0,0,.04);cursor:grab;overflow-wrap:anywhere;word-break:break-word}
         .kvt-card.dragging{opacity:.6}
         .kvt-card.kvt-overdue{border-color:#dc2626}
-        .kvt-card .kvt-followup{font-size:12px;color:#dc2626;margin:0}
+        .kvt-card .kvt-followup{font-size:12px;color:#000;margin:0;display:flex;align-items:center}
+        .kvt-card.kvt-overdue .kvt-followup{color:#dc2626}
+        .kvt-card .kvt-followup .dashicons{margin-right:4px;line-height:1;font-size:16px}
         .kvt-card .kvt-title{font-weight:700;margin:0 0 4px}
         .kvt-card .kvt-sub{font-size:12px;color:#64748b;margin:0}
         .kvt-card .kvt-tags, .kvt-card-mini .kvt-tags{margin:4px 0;display:flex;gap:4px;flex-wrap:wrap}
@@ -1122,15 +1123,15 @@ document.addEventListener('DOMContentLoaded', function(){
 
   const selClient  = el('#kvt_client');
   const selProcess = el('#kvt_process');
-  const btnRefresh = el('#kvt_refresh');
   const btnToggle  = el('#kvt_toggle_table');
-    const btnXLS     = el('#kvt_export_xls');
-    const btnAdd     = el('#kvt_add_profile');
-    const btnNew     = el('#kvt_new_btn');
-    const newMenu    = el('#kvt_new_menu');
-    const btnAllXLS  = el('#kvt_export_all_xls');
-    const exportAllForm   = el('#kvt_export_all_form');
-    const exportAllFormat = el('#kvt_export_all_format');
+  const btnXLS     = el('#kvt_export_xls');
+  const btnAdd     = el('#kvt_add_profile');
+  const btnNew     = el('#kvt_new_btn');
+  const newMenu    = el('#kvt_new_menu');
+  const btnAllXLS  = el('#kvt_export_all_xls');
+  const exportAllForm   = el('#kvt_export_all_form');
+  const exportAllFormat = el('#kvt_export_all_format');
+  const btnMail    = el('#kvt_mandar_correos');
   const selInfo    = el('#kvt_selected_info');
   const selToggle  = el('#kvt_selected_toggle');
   const selDetails = el('#kvt_selected_details');
@@ -1287,12 +1288,15 @@ document.addEventListener('DOMContentLoaded', function(){
       if (c.meta.next_action){
         follow = document.createElement('p');
         follow.className = 'kvt-followup';
-        follow.textContent = 'Próxima acción: ' + c.meta.next_action + (c.meta.next_action_note ? ' — ' + c.meta.next_action_note : '');
+        const ico = document.createElement('span');
+        ico.className = 'dashicons dashicons-clock';
+        follow.appendChild(ico);
+        follow.appendChild(document.createTextNode(' Próxima acción: ' + c.meta.next_action + (c.meta.next_action_note ? ' — ' + c.meta.next_action_note : '')));
         const parts = c.meta.next_action.split('-');
         if(parts.length===3){
           const dt = new Date(parts[2], parts[1]-1, parts[0]);
           const today = new Date(); today.setHours(0,0,0,0);
-          if(dt < today) card.classList.add('kvt-overdue');
+          if(dt <= today) card.classList.add('kvt-overdue');
         }
       }
 
@@ -1444,12 +1448,19 @@ document.addEventListener('DOMContentLoaded', function(){
           if (payload.next_action){
             const txt = 'Próxima acción: ' + payload.next_action + (payload.next_action_note ? ' — ' + payload.next_action_note : '');
             if (follow){
-              follow.textContent = txt;
+              follow.innerHTML = '';
+              const ico = document.createElement('span');
+              ico.className = 'dashicons dashicons-clock';
+              follow.appendChild(ico);
+              follow.appendChild(document.createTextNode(' ' + txt));
             } else {
               const tagsWrap = card.querySelector('.kvt-tags');
               const f = document.createElement('p');
               f.className = 'kvt-followup';
-              f.textContent = txt;
+              const ico = document.createElement('span');
+              ico.className = 'dashicons dashicons-clock';
+              f.appendChild(ico);
+              f.appendChild(document.createTextNode(' ' + txt));
               if (tagsWrap) tagsWrap.after(f); else card.prepend(f);
             }
             const parts = payload.next_action.split('-');
@@ -1457,7 +1468,7 @@ document.addEventListener('DOMContentLoaded', function(){
             if(parts.length===3){
               const dt = new Date(parts[2], parts[1]-1, parts[0]);
               const today = new Date(); today.setHours(0,0,0,0);
-              if(dt < today) card.classList.add('kvt-overdue');
+              if(dt <= today) card.classList.add('kvt-overdue');
             }
           } else if (follow){
             follow.remove();
@@ -1663,9 +1674,11 @@ document.addEventListener('DOMContentLoaded', function(){
       if(j.success){ renderData(j.data); } else { alert('Error cargando candidatos'); }
     });
   }
-  btnRefresh && btnRefresh.addEventListener('click', ()=>{ refresh(); updateSelectedInfo(); });
   selClient && selClient.addEventListener('change', ()=>{ filterProcessOptions(); refresh(); updateSelectedInfo(); });
   selProcess && selProcess.addEventListener('change', ()=>{ refresh(); updateSelectedInfo(); });
+  btnMail && btnMail.addEventListener('click', ()=>{
+    window.open('https://kovacictalent.com/wp-admin/admin.php?page=kt-abm','_blank','noopener');
+  });
 
   updateSelectedInfo();
 
