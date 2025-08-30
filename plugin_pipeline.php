@@ -830,7 +830,7 @@ cv_uploaded|Fecha de subida");
               <button type="button" class="kvt-modal-close" id="kvt_help_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
             </div>
             <div class="kvt-modal-body">
-              <p>Este tablero muestra el progreso de los candidatos. Haz clic en el nombre para ver su CV, arrastra las tarjetas para moverlos entre etapas y, si está habilitado, deja comentarios que verá el reclutador. Las fechas de 'Próxima acción' en rojo indican tareas vencidas.</p>
+              <p>Guía de uso – Vista del Cliente\n\nSiga en tiempo real el proceso de selección. Columnas:\n• Long list: candidatos identificados inicialmente.\n• Short list: preseleccionados tras un primer filtro.\n• Contactados: profesionales ya contactados.\n• Entrevistados: candidatos que han pasado entrevista.\n• En oferta: finalistas en fase de oferta.\n\nAcciones por candidato:\n• Icono del documento: abre y visualiza el CV.\n• Ver perfil: muestra información detallada del candidato.\n• Comentar: deje su feedback; será visible únicamente para el equipo de Kovacic Executive Talent Research.</p>
             </div>
           </div>
         </div>
