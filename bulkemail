@@ -243,6 +243,7 @@ function ktRender(tpl, data){ return tpl.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/
 
 // ---- App State ----
 let KT_CONTACTS=[], KT_VIEW=[], KT_SELECTED=new Set();
+let KT_PAGE=1, KT_PER_PAGE=20;
 let FILTERS = { roles: [], countries: [], cities: [] };
 
 // ---- Persistence ----
@@ -422,11 +423,22 @@ function ktSelectAll(on){
   ktRenderTable();
   saveState();
 }
+function ktPrevPage(){
+  if(KT_PAGE>1){ KT_PAGE--; ktRenderTable(); saveState(); }
+}
+function ktNextPage(){
+  const total=Math.ceil(KT_VIEW.length/KT_PER_PAGE);
+  if(KT_PAGE<total){ KT_PAGE++; ktRenderTable(); saveState(); }
+}
 function ktRenderTable(){
   const tb=document.getElementById('ktTbody'); if(!tb) return;
+  const totalPages = Math.max(1, Math.ceil(KT_VIEW.length / KT_PER_PAGE));
+  if(KT_PAGE>totalPages) KT_PAGE = totalPages;
+  const start = (KT_PAGE-1)*KT_PER_PAGE;
+  const page = KT_VIEW.slice(start, start + KT_PER_PAGE);
   let html='';
-  KT_VIEW.forEach((c,i)=>{
-    const k=rowKeyFrom(c,i);
+  page.forEach((c,i)=>{
+    const k=rowKeyFrom(c,start+i);
     const checked = KT_SELECTED.has(k) ? 'checked' : '';
     html += `<tr>
       <td><input type="checkbox" data-key="${k}" ${checked} onchange="ktRowToggle(this)"></td>
@@ -440,6 +452,8 @@ function ktRenderTable(){
   });
   tb.innerHTML = html;
   document.getElementById('ktSel').innerText = `${KT_SELECTED.size} seleccionados`;
+  const pi=document.getElementById('ktPageInfo');
+  if(pi) pi.innerText = `Página ${KT_PAGE} de ${totalPages}`;
 }
 
 // ---- Delete selected ----
@@ -464,6 +478,7 @@ function ktDeleteSelected(){
 
 // ---- Flows ----
 function ktAfterLoad(){
+  KT_PAGE = 1;
   document.getElementById('ktCount').innerText = `${KT_CONTACTS.length} contactos`;
 
   const roles     = ktUniq(KT_CONTACTS.map(x=>x.role));
@@ -524,6 +539,7 @@ async function ktImportCandidates(){
 }
 
 function ktApply(){
+  KT_PAGE = 1;
   const q=(document.getElementById('ktQ').value||'').trim().toLowerCase();
 
   const rolesSel     = (FILTERS.roles||[]).map(v => v.toLowerCase());
@@ -702,21 +718,16 @@ function ktDownloadEMLZip(){
 
                 <div class="kt-card">
                     <h2 style="margin-top:0;">Filtros</h2>
-                    <div class="kt-grid kt-cols-4">
+                    <div class="kt-grid kt-cols-3">
                         <div>
-                            <label>Nombre</label>
-                            <input id="ktQ" class="kt-input" type="text" placeholder="Buscar por nombre, email, país, ciudad o rol" oninput="ktApply()" />
-                        </div>
-
-                        <div>
-                            <label>Rol</label>
+                            <label>Proceso</label>
                             <div id="ddRole" class="kt-dd" data-key="roles">
                                 <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddRole')">
                                     <span class="summary" id="ddRoleSummary">Todos</span>
                                     <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
                                 </button>
                                 <div class="kt-dd-menu">
-                                    <input class="kt-dd-search" placeholder="Buscar rol..." oninput="ktDD.filter('ddRole', this.value)">
+                                    <input class="kt-dd-search" placeholder="Buscar proceso..." oninput="ktDD.filter('ddRole', this.value)">
                                     <div class="kt-dd-actions">
                                         <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddRole')">Seleccionar todo</button>
                                         <button type="button" class="kt-mini" onclick="ktDD.clear('ddRole')">Limpiar</button>
@@ -762,17 +773,11 @@ function ktDownloadEMLZip(){
                             </div>
                         </div>
                     </div>
-
-                    <div class="kt-row" style="margin-top:10px">
-                        <button class="kt-btn" onclick="ktSelectAll(true)">Seleccionar todo</button>
-                        <button class="kt-btn" onclick="ktSelectAll(false)">Limpiar</button>
-                        <span class="kt-muted" id="ktSel">0 seleccionados</span>
-                    </div>
                 </div>
 
                 <div class="kt-card">
                     <h2 style="margin-top:0;">Prompt de IA</h2>
-                    <textarea id="ktPrompt" class="kt-textarea" placeholder="Escribe un correo de acercamiento para {{role}} en {{city}} (120–150 palabras) con un CTA claro. Usa {{first_name}} en el saludo."></textarea>
+                    <textarea id="ktPrompt" class="kt-textarea" placeholder="Escribe un correo de acercamiento para el proceso {{role}} en {{city}} (120–150 palabras) con un CTA claro. Usa {{first_name}} en el saludo."></textarea>
                     <p class="kt-muted" style="margin-top:6px">
                         El correo generado siempre debe usar estos placeholders:
                         <strong>Nombre</strong> = <code>{{first_name}}</code>,
@@ -783,7 +788,7 @@ function ktDownloadEMLZip(){
                         <strong>El remitente</strong> = <code>{{sender}}</code>.
                     </p>
                     <p class="kt-muted" style="margin-top:6px">
-                        <strong>Aviso:</strong> Los placeholders se rellenan con la información del candidato. Si estás promocionando un nuevo puesto, no uses <code>{{role}}</code> para el nombre del puesto en el texto, escribe el nombre real del rol (por ejemplo, “Director/a Comercial”) para evitar que se reemplace por el <em>rol vinculado</em> al candidato.
+                        <strong>Aviso:</strong> Los placeholders se rellenan con la información del candidato. Si estás promocionando un nuevo puesto, no uses <code>{{role}}</code> para el nombre del puesto en el texto, escribe el nombre real del proceso (por ejemplo, “Director/a Comercial”) para evitar que se reemplace por el <em>proceso vinculado</em> al candidato.
                     </p>
                     <div class="kt-row" style="margin-top:10px">
                         <button class="kt-btn" onclick="ktGenerate()">Generar</button>
@@ -816,21 +821,31 @@ function ktDownloadEMLZip(){
                         <button class="kt-btn kt-primary" onclick="ktSend()">Enviar correos</button>
                     </div>
                 </div>
-                <p class="kt-muted" style="margin-top:6px">Variables: <code>{{first_name}}</code>, <code>{{surname}}</code>, <code>{{country}}</code>, <code>{{city}}</code>, <code>{{role}}</code>, <code>{{sender}}</code></p>
+                <p class="kt-muted" style="margin-top:6px">Variables: <code>{{first_name}}</code>, <code>{{surname}}</code>, <code>{{country}}</code>, <code>{{city}}</code>, <code>{{role}}</code> (proceso), <code>{{sender}}</code></p>
                 <p class="kt-muted" style="margin-top:6px"><strong>Nota:</strong> El envío directo no está operativo en este momento. Utiliza <em>Descargar borradores (.zip)</em> para generar los borradores y revisarlos en tu cliente de correo.</p>
             </div>
 
             <div class="kt-grid kt-cols-3">
                 <div class="kt-card" style="grid-column: span 2;">
+                    <div class="kt-row" style="margin-bottom:10px">
+                        <input id="ktQ" class="kt-input" type="text" placeholder="Buscar por nombre, email, país, ciudad o proceso" oninput="ktApply()" style="flex:1;max-width:300px" />
+                        <button class="kt-btn" style="margin-left:8px" onclick="ktSelectAll(true)">Seleccionar todo</button>
+                        <button class="kt-btn" style="margin-left:8px" onclick="ktSelectAll(false)">Limpiar</button>
+                        <span class="kt-muted" id="ktSel" style="margin-left:8px">0 seleccionados</span>
+                    </div>
                     <table class="kt-table">
                         <thead>
                             <tr>
-                                <th></th><th>Email</th><th>Nombre</th><th>Apellido</th><th>País</th><th>Ciudad</th><th>Rol</th>
+                                <th></th><th>Email</th><th>Nombre</th><th>Apellido</th><th>País</th><th>Ciudad</th><th>Proceso</th>
                             </tr>
                         </thead>
                         <tbody id="ktTbody"></tbody>
                     </table>
-                    <!-- Delete button BELOW the list -->
+                    <div class="kt-row" style="margin-top:10px">
+                        <button class="kt-btn" onclick="ktPrevPage()">Anterior</button>
+                        <button class="kt-btn" style="margin-left:8px" onclick="ktNextPage()">Siguiente</button>
+                        <span class="kt-muted" id="ktPageInfo" style="margin-left:8px"></span>
+                    </div>
                     <div class="kt-row" style="margin-top:10px">
                         <button class="kt-btn" onclick="ktDeleteSelected()">Eliminar seleccionados</button>
                     </div>
@@ -867,8 +882,8 @@ function ktDownloadEMLZip(){
         $model   = $o['openai_model']   ?? 'gpt-4o-mini';
 
         $fallback = [
-            'subject'   => '{{first_name}}, nota rápida para un/a {{role}} en {{city}}',
-            'body_html' => 'Hola {{first_name}},<br><br>Te escribo desde Kovacic Talent. Por tu experiencia como <strong>{{role}}</strong> en {{city}}, {{country}}, creo que esto puede interesarte.<br><br>'.esc_html($prompt).'<br><br>Si te encaja, responde a este correo y te cuento más.<br><br>Saludos,<br>{{sender}}'
+            'subject'   => '{{first_name}}, nota rápida para el proceso {{role}} en {{city}}',
+            'body_html' => 'Hola {{first_name}},<br><br>Te escribo desde Kovacic Talent. Por tu experiencia en el proceso <strong>{{role}}</strong> en {{city}}, {{country}}, creo que esto puede interesarte.<br><br>'.esc_html($prompt).'<br><br>Si te encaja, responde a este correo y te cuento más.<br><br>Saludos,<br>{{sender}}'
         ];
 
         if (!$api_key) {
