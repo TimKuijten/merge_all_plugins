@@ -282,7 +282,6 @@ cv_uploaded|Fecha de subida");
         add_meta_box('kvt_process_box', 'Proceso',  [$this,'render_process_dropdown'], self::CPT, 'side', 'default');
     }
     public function render_client_dropdown($post) {
-        wp_nonce_field('kvt_save_candidate', 'kvt_nonce');
         $terms = get_terms(['taxonomy'=>self::TAX_CLIENT,'hide_empty'=>false]);
         $assigned = wp_get_object_terms($post->ID, self::TAX_CLIENT, ['fields'=>'ids']);
         $current  = isset($assigned[0]) ? (int)$assigned[0] : 0;
@@ -332,6 +331,7 @@ cv_uploaded|Fecha de subida");
     }
     public function metabox_candidate($post) {
         wp_nonce_field('kvt_save_candidate', 'kvt_nonce');
+        wp_nonce_field('kvt_nonce', 'kvt_nonce_ajax');
         $first   = $this->meta_get_compat($post->ID, 'kvt_first_name',  ['first_name']);
         $last    = $this->meta_get_compat($post->ID, 'kvt_last_name',   ['last_name']);
         $email   = $this->meta_get_compat($post->ID, 'kvt_email',       ['email']);
@@ -399,7 +399,7 @@ cv_uploaded|Fecha de subida");
             const upload = document.getElementById('kvt_cv_upload_btn');
             const urlFld = document.querySelector('input[name="kvt_cv_url"]');
             const dateFld= document.querySelector('input[name="kvt_cv_uploaded"]');
-            const nonce  = document.getElementById('kvt_nonce');
+            const nonce  = document.getElementById('kvt_nonce_ajax');
             const pid    = <?php echo $post->ID; ?>;
             if(btn && input){
                 btn.addEventListener('click', function(){ input.click(); });
