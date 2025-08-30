@@ -18,6 +18,7 @@ class KT_AIBulkMailer_ES {
         add_action('admin_menu',               [$this, 'menu']);
         add_action('admin_init',               [$this, 'register_settings']);
         add_action('admin_enqueue_scripts',    [$this, 'enqueue']);
+        add_action('wp_ajax_kt_abm_import_candidates', [$this, 'ajax_import_candidates']);
         add_action('wp_ajax_kt_abm_generate',  [$this, 'ajax_generate']);
         add_action('wp_ajax_kt_abm_send',      [$this, 'ajax_send']);
         add_action('wp_ajax_kt_abm_eml_zip',   [$this, 'ajax_eml_zip']); // EML ZIP
@@ -502,6 +503,26 @@ function ktLoadCSV(){
   }
 }
 
+async function ktImportCandidates(){
+  const res = await fetch(KT_ABM.ajax, {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({action:'kt_abm_import_candidates', _ajax_nonce:KT_ABM.nonce})
+  });
+  let payload;
+  try { payload = await res.json(); }
+  catch(e){ console.error('kt_abm_import_candidates JSON parse error', e); alert('Respuesta inválida del servidor (import).'); return; }
+  if(!payload.success){
+    const msg = payload.data && payload.data.error ? payload.data.error : 'Error desconocido al importar';
+    alert('Error: ' + msg);
+    return;
+  }
+  const arr = Array.isArray(payload.data) ? payload.data : [];
+  const {added, skipped} = mergeContacts(arr);
+  ktAfterLoad();
+  alert(`Loaded: ${arr.length}\nAdded: ${added}\nSkipped (duplicates): ${skipped}`);
+}
+
 function ktApply(){
   const q=(document.getElementById('ktQ').value||'').trim().toLowerCase();
 
@@ -667,13 +688,14 @@ function ktDownloadEMLZip(){
 
             <div class="kt-grid kt-cols-3">
                 <div class="kt-card">
-                    <h2 style="margin-top:0;">CSV</h2>
+                    <h2 style="margin-top:0;">Cargar Datos</h2>
                     <p class="kt-muted">Cabeceras: <code>email, first_name, surname, country, city, role</code> (o pega filas sin cabecera en ese orden).</p>
                     <input id="ktCsvFile" type="file" accept=".csv" />
                     <p class="kt-muted">O pega el CSV</p>
                     <textarea id="ktCsvPaste" class="kt-textarea" placeholder="email,first_name,surname,country,city,role&#10;timkuijten@kovacictalent.com,Tim,Kuijten,Países Bajos,Heeze,CEO"></textarea>
                     <div class="kt-row" style="margin-top:10px">
                         <button class="kt-btn" onclick="ktLoadCSV()">Cargar datos</button>
+                        <button class="kt-btn" style="margin-left:8px" onclick="ktImportCandidates()">Importar Base de Candidatos</button>
                         <span class="kt-tag" id="ktCount">0 contactos</span>
                     </div>
                 </div>
@@ -1053,6 +1075,55 @@ function ktDownloadEMLZip(){
         readfile($zip_path);
         @unlink($zip_path);
         exit;
+    }
+
+    // ---------- AJAX: Import Candidate Base ----------
+    public function ajax_import_candidates() {
+        check_ajax_referer(self::NONCE_KEY);
+        if (!current_user_can('manage_options')) wp_send_json_error(['error' => 'No autorizado'], 403);
+
+        $q = new WP_Query([
+            'post_type'      => 'kvt_candidate',
+            'post_status'    => 'any',
+            'posts_per_page' => -1,
+            'no_found_rows'  => true,
+        ]);
+
+        $rows = [];
+        foreach ($q->posts as $p) {
+            $email = sanitize_email(get_post_meta($p->ID, 'kvt_email', true));
+            if (!$email) $email = sanitize_email(get_post_meta($p->ID, 'email', true));
+            if (!$email) continue;
+
+            $first = sanitize_text_field(get_post_meta($p->ID, 'kvt_first_name', true));
+            if ($first === '') $first = sanitize_text_field(get_post_meta($p->ID, 'first_name', true));
+
+            $last = sanitize_text_field(get_post_meta($p->ID, 'kvt_last_name', true));
+            if ($last === '') $last = sanitize_text_field(get_post_meta($p->ID, 'last_name', true));
+
+            $country = sanitize_text_field(get_post_meta($p->ID, 'kvt_country', true));
+            if ($country === '') $country = sanitize_text_field(get_post_meta($p->ID, 'country', true));
+
+            $city = sanitize_text_field(get_post_meta($p->ID, 'kvt_city', true));
+            if ($city === '') $city = sanitize_text_field(get_post_meta($p->ID, 'city', true));
+
+            $role = '';
+            $terms = get_the_terms($p, 'kvt_process');
+            if ($terms && !is_wp_error($terms)) {
+                $role = sanitize_text_field($terms[0]->name);
+            }
+
+            $rows[] = [
+                'email'      => $email,
+                'first_name' => $first,
+                'surname'    => $last,
+                'country'    => $country,
+                'city'       => $city,
+                'role'       => $role,
+            ];
+        }
+
+        wp_send_json_success($rows);
     }
 
     // ------- Helpers for EML build -------
