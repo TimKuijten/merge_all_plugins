@@ -85,6 +85,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_unassign_candidate',[$this, 'ajax_unassign_candidate']);
         add_action('wp_ajax_kvt_ai_search',            [$this, 'ajax_ai_search']);
         add_action('wp_ajax_nopriv_kvt_ai_search',     [$this, 'ajax_ai_search']);
+        add_action('wp_ajax_kvt_generate_share_link',  [$this, 'ajax_generate_share_link']);
+        add_action('wp_ajax_nopriv_kvt_generate_share_link',[$this,'ajax_generate_share_link']);
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
@@ -93,6 +95,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp',                            [$this, 'schedule_followup_cron']);
         add_action('kvt_daily_followup',            [$this, 'cron_check_followups']);
         add_action('admin_notices',                 [$this, 'followup_admin_notice']);
+        add_action('template_redirect',             [$this, 'maybe_redirect_share_link']);
 
         add_action('plugins_loaded',                 [$this, 'ensure_defaults']);
     }
@@ -790,6 +793,27 @@ cv_uploaded|Fecha de subida");
           </div>
         </div>
 
+        <!-- Share Board Modal -->
+        <div class="kvt-modal" id="kvt_share_modal" style="display:none;">
+          <div class="kvt-modal-content">
+            <div class="kvt-modal-header">
+              <h3>Configurar vista cliente</h3>
+              <button type="button" class="kvt-modal-close" id="kvt_share_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
+            </div>
+            <div class="kvt-modal-body">
+              <div class="kvt-share-block">
+                <label><input type="checkbox" id="kvt_share_fields_all" checked> Todos los campos</label>
+                <div id="kvt_share_fields"></div>
+              </div>
+              <div class="kvt-share-block" style="margin-top:10px;">
+                <label><input type="checkbox" id="kvt_share_steps_all" checked> Todos los estados</label>
+                <div id="kvt_share_steps"></div>
+              </div>
+              <button type="button" class="kvt-btn" id="kvt_share_generate" style="margin-top:15px;">Generar enlace</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Modal Base -->
         <div class="kvt-modal" id="kvt_modal" style="display:none;">
           <div class="kvt-modal-content" role="dialog" aria-modal="true" aria-labelledby="kvt_modal_title">
@@ -1037,7 +1061,15 @@ cv_uploaded|Fecha de subida");
         wp_enqueue_style('kvt-style');
         wp_add_inline_style('kvt-style', $css);
 
-        $is_client_board = isset($_GET['kvt_client_board']);
+        $slug = isset($_GET['kvt_board']) ? sanitize_text_field($_GET['kvt_board']) : '';
+        $link_cfg = [];
+        if ($slug) {
+            $stored = get_option('kvt_client_links', []);
+            if (isset($stored[$slug])) {
+                $link_cfg = $stored[$slug];
+            }
+        }
+        $is_client_board = !empty($link_cfg);
         if ((is_user_logged_in() && current_user_can('edit_posts')) || $is_client_board) {
             // PDF.js and Tesseract.js for client-side text extraction
             wp_enqueue_script(
@@ -1063,18 +1095,24 @@ cv_uploaded|Fecha de subida");
 
             // Inline constants BEFORE app
             $statuses = $this->get_statuses();
-            if ($is_client_board && isset($_GET['steps'])) {
-                $sel_steps = array_map('sanitize_text_field', explode(',', $_GET['steps']));
+            if ($is_client_board && !empty($link_cfg['steps'])) {
+                $sel_steps = array_map('sanitize_text_field', (array) $link_cfg['steps']);
                 $statuses  = array_values(array_intersect($statuses, $sel_steps));
             }
             $columns  = $this->get_columns();
-            $fields   = $is_client_board && isset($_GET['fields']) ? array_map('sanitize_text_field', explode(',', $_GET['fields'])) : [];
+            $fields   = $is_client_board ? array_map('sanitize_text_field', (array) ($link_cfg['fields'] ?? [])) : [];
             wp_add_inline_script('kvt-app', 'const KVT_STATUSES='.wp_json_encode($statuses).';', 'before');
             wp_add_inline_script('kvt-app', 'const KVT_COLUMNS='.wp_json_encode($columns).';',  'before');
             wp_add_inline_script('kvt-app', 'const KVT_AJAX="'.esc_js(admin_url('admin-ajax.php')).'";', 'before');
             wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
             wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($is_client_board?'true':'false').';', 'before');
             wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
+            if ($is_client_board) {
+                $cid = isset($link_cfg['client']) ? (int) $link_cfg['client'] : 0;
+                $pid = isset($link_cfg['process']) ? (int) $link_cfg['process'] : 0;
+                wp_add_inline_script('kvt-app', 'const KVT_CLIENT_ID='.$cid.';', 'before');
+                wp_add_inline_script('kvt-app', 'const KVT_PROCESS_ID='.$pid.';', 'before');
+            }
 
             // App JS
             $js = <<<'JS'
@@ -1086,6 +1124,8 @@ document.addEventListener('DOMContentLoaded', function(){
   const urlParams = new URLSearchParams(location.search);
   const CLIENT_VIEW = typeof KVT_CLIENT_VIEW !== 'undefined' && KVT_CLIENT_VIEW;
   const ALLOWED_FIELDS = Array.isArray(KVT_ALLOWED_FIELDS) ? KVT_ALLOWED_FIELDS : [];
+  const CLIENT_ID = typeof KVT_CLIENT_ID !== 'undefined' ? String(KVT_CLIENT_ID) : '';
+  const PROCESS_ID = typeof KVT_PROCESS_ID !== 'undefined' ? String(KVT_PROCESS_ID) : '';
 
   async function extractPdfWithPDFjs(file){
     if (!window.pdfjsLib) return '';
@@ -1145,6 +1185,13 @@ document.addEventListener('DOMContentLoaded', function(){
   const exportAllFormat = el('#kvt_export_all_format');
   const btnMail    = el('#kvt_mandar_correos');
   const btnShare   = el('#kvt_share_board');
+  const shareModal = el('#kvt_share_modal');
+  const shareClose = el('#kvt_share_close');
+  const shareFieldsWrap = el('#kvt_share_fields');
+  const shareStepsWrap  = el('#kvt_share_steps');
+  const shareFieldsAll  = el('#kvt_share_fields_all');
+  const shareStepsAll   = el('#kvt_share_steps_all');
+  const shareGenerate   = el('#kvt_share_generate');
   const selInfo    = el('#kvt_selected_info');
   const selToggle  = el('#kvt_selected_toggle');
   const selDetails = el('#kvt_selected_details');
@@ -1175,8 +1222,8 @@ document.addEventListener('DOMContentLoaded', function(){
   const aiResults = el('#kvt_ai_results', modal);
 
   if (CLIENT_VIEW) {
-    if (selClient) { selClient.value = urlParams.get('client') || ''; selClient.disabled = true; }
-    if (selProcess) { selProcess.value = urlParams.get('process') || ''; selProcess.disabled = true; }
+    if (selClient) { selClient.value = CLIENT_ID; selClient.disabled = true; }
+    if (selProcess) { selProcess.value = PROCESS_ID; selProcess.disabled = true; }
     const actions = el('.kvt-actions');
     if (actions) actions.style.display = 'none';
   }
@@ -1190,6 +1237,17 @@ document.addEventListener('DOMContentLoaded', function(){
     if(!Array.isArray(window.KVT_PROCESS_MAP)) return null;
     id = parseInt(id,10);
     return window.KVT_PROCESS_MAP.find(p=>p.id===id) || null;
+  }
+
+  function buildShareOptions(){
+    if(shareFieldsWrap && !shareFieldsWrap.childElementCount){
+      shareFieldsWrap.innerHTML = KVT_COLUMNS.map(c=>'<label><input type="checkbox" value="'+escAttr(c.key)+'" checked> '+esc(c.label)+'</label>').join('<br>');
+    }
+    if(shareStepsWrap && !shareStepsWrap.childElementCount){
+      shareStepsWrap.innerHTML = KVT_STATUSES.map(s=>'<label><input type="checkbox" value="'+escAttr(s)+'" checked> '+esc(s)+'</label>').join('<br>');
+    }
+    if(shareFieldsAll) shareFieldsAll.checked = true;
+    if(shareStepsAll) shareStepsAll.checked = true;
   }
 
   let currentPage = 1;
@@ -1729,14 +1787,44 @@ document.addEventListener('DOMContentLoaded', function(){
       alert('Selecciona un cliente y un proceso.');
       return;
     }
-    const fieldDefaults = KVT_COLUMNS.map(c=>c.key).join(',');
-    const fields = prompt('Campos visibles (meta keys separados por comas)', fieldDefaults);
-    if (fields===null) return;
-    const stepDefaults = KVT_STATUSES.join(',');
-    const steps = prompt('Estados visibles (separados por comas)', stepDefaults);
-    if (steps===null) return;
-    const url = location.origin + location.pathname + '?kvt_client_board=1&client=' + encodeURIComponent(selClient.value) + '&process=' + encodeURIComponent(selProcess.value) + '&fields=' + encodeURIComponent(fields) + '&steps=' + encodeURIComponent(steps);
-    prompt('Enlace para compartir', url);
+    buildShareOptions();
+    if(shareModal) shareModal.style.display='flex';
+  });
+  shareClose && shareClose.addEventListener('click', ()=>{ shareModal.style.display='none'; });
+  shareModal && shareModal.addEventListener('click', e=>{ if(e.target===shareModal) shareModal.style.display='none'; });
+  shareFieldsAll && shareFieldsAll.addEventListener('change', ()=>{
+    els('input[type="checkbox"]', shareFieldsWrap).forEach(cb=>cb.checked = shareFieldsAll.checked);
+  });
+  shareStepsAll && shareStepsAll.addEventListener('change', ()=>{
+    els('input[type="checkbox"]', shareStepsWrap).forEach(cb=>cb.checked = shareStepsAll.checked);
+  });
+  shareFieldsWrap && shareFieldsWrap.addEventListener('change', ()=>{
+    shareFieldsAll.checked = els('input[type="checkbox"]', shareFieldsWrap).every(cb=>cb.checked);
+  });
+  shareStepsWrap && shareStepsWrap.addEventListener('change', ()=>{
+    shareStepsAll.checked = els('input[type="checkbox"]', shareStepsWrap).every(cb=>cb.checked);
+  });
+  shareGenerate && shareGenerate.addEventListener('click', ()=>{
+    const fields = els('input[type="checkbox"]', shareFieldsWrap).filter(cb=>cb.checked).map(cb=>cb.value);
+    const steps  = els('input[type="checkbox"]', shareStepsWrap).filter(cb=>cb.checked).map(cb=>cb.value);
+    const params = new URLSearchParams();
+    params.set('action','kvt_generate_share_link');
+    params.set('_ajax_nonce', KVT_NONCE);
+    params.set('client', selClient.value);
+    params.set('process', selProcess.value);
+    params.set('page', location.pathname);
+    fields.forEach(f=>params.append('fields[]', f));
+    steps.forEach(s=>params.append('steps[]', s));
+    fetch(KVT_AJAX,{method:'POST',body:params}).then(r=>r.json()).then(j=>{
+      if(j.success && j.data && j.data.slug){
+        const base = location.pathname.replace(/\/$/, '');
+        const url = location.origin + base + '/' + j.data.slug;
+        prompt('Enlace para compartir', url);
+        shareModal.style.display='none';
+      } else {
+        alert('Error generando enlace');
+      }
+    });
   });
 
   updateSelectedInfo();
@@ -2761,6 +2849,54 @@ JS;
         $items = array_values(array_filter($items, function($it){ return $it['score'] >= 7; }));
 
         wp_send_json_success(['items' => $items]);
+    }
+
+    public function ajax_generate_share_link() {
+        check_ajax_referer('kvt_nonce');
+
+        $client  = isset($_POST['client'])  ? intval($_POST['client'])  : 0;
+        $process = isset($_POST['process']) ? intval($_POST['process']) : 0;
+        $page    = isset($_POST['page'])    ? sanitize_text_field(wp_unslash($_POST['page'])) : '';
+        $fields  = isset($_POST['fields'])  ? array_map('sanitize_text_field', (array) $_POST['fields']) : [];
+        $steps   = isset($_POST['steps'])   ? array_map('sanitize_text_field', (array) $_POST['steps']) : [];
+
+        if (!$client || !$process) {
+            wp_send_json_error(['msg' => 'missing'], 400);
+        }
+
+        $client_term  = get_term($client, self::TAX_CLIENT);
+        $process_term = get_term($process, self::TAX_PROCESS);
+        $cslug = $client_term ? sanitize_title($client_term->name) : 'cliente';
+        $pslug = $process_term ? sanitize_title($process_term->name) : 'proceso';
+        $rand  = wp_rand(10000, 99999);
+        $slug  = $cslug . '-' . $pslug . '-' . $rand;
+
+        $links = get_option('kvt_client_links', []);
+        $links[$slug] = [
+            'client'  => $client,
+            'process' => $process,
+            'fields'  => $fields,
+            'steps'   => $steps,
+            'page'    => $page,
+        ];
+        update_option('kvt_client_links', $links, false);
+
+        wp_send_json_success(['slug' => $slug]);
+    }
+
+    public function maybe_redirect_share_link() {
+        if (isset($_GET['kvt_board'])) return;
+        $req  = trim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/');
+        if ($req === '') return;
+        $parts = explode('/', $req);
+        $slug  = end($parts);
+        if (!preg_match('/^[a-z0-9-]+-[a-z0-9-]+-\d{5}$/i', $slug)) return;
+        $links = get_option('kvt_client_links', []);
+        if (!isset($links[$slug])) return;
+        $base = rtrim($links[$slug]['page'] ?? '', '/');
+        $target = home_url($base . '/?kvt_board=' . $slug);
+        wp_redirect($target);
+        exit;
     }
 
     private function get_candidate_cv_text($post_id) {
