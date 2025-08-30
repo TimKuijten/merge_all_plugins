@@ -646,10 +646,10 @@ cv_uploaded|Fecha de subida");
                         <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
                         <input type="hidden" name="filter_client"  id="kvt_export_client"  value="">
                         <input type="hidden" name="filter_process" id="kvt_export_process" value="">
-                        <input type="hidden" name="format"         id="kvt_export_format"   value="csv">
-                        <button class="kvt-btn" type="button" id="kvt_export_csv">Export CSV</button>
+                        <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
                         <button class="kvt-btn" type="button" id="kvt_export_xls">Export Excel</button>
                     </form>
+                    <a class="kvt-btn" id="kvt_mandar_correos" href="https://kovacictalent.com/wp-admin/admin.php?page=kt-abm">Mandar correos</a>
                 </div>
             </div>
 
@@ -729,8 +729,7 @@ cv_uploaded|Fecha de subida");
                     <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
                     <input type="hidden" name="filter_client" value="">
                     <input type="hidden" name="filter_process" value="">
-                    <input type="hidden" name="format" id="kvt_export_all_format" value="csv">
-                    <button type="button" class="kvt-btn" id="kvt_export_all_csv">Export CSV</button>
+                    <input type="hidden" name="format" id="kvt_export_all_format" value="xls">
                     <button type="button" class="kvt-btn" id="kvt_export_all_xls">Export Excel</button>
                   </form>
                 </div>
@@ -1014,12 +1013,10 @@ document.addEventListener('DOMContentLoaded', function(){
   const selProcess = el('#kvt_process');
   const btnRefresh = el('#kvt_refresh');
   const btnToggle  = el('#kvt_toggle_table');
-    const btnCSV     = el('#kvt_export_csv');
     const btnXLS     = el('#kvt_export_xls');
     const btnAdd     = el('#kvt_add_profile');
     const btnNew     = el('#kvt_new_btn');
     const newMenu    = el('#kvt_new_menu');
-    const btnAllCSV  = el('#kvt_export_all_csv');
     const btnAllXLS  = el('#kvt_export_all_xls');
     const exportAllForm   = el('#kvt_export_all_form');
     const exportAllFormat = el('#kvt_export_all_format');
@@ -1453,14 +1450,14 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   const exportForm = el('#kvt_export_form');
-  btnCSV && btnCSV.addEventListener('click', ()=>{ el('#kvt_export_format').value='csv'; syncExportHidden(); exportForm.submit(); });
   btnXLS && btnXLS.addEventListener('click', ()=>{ el('#kvt_export_format').value='xls'; syncExportHidden(); exportForm.submit(); });
-  btnAllCSV && btnAllCSV.addEventListener('click', ()=>{ exportAllFormat.value='csv'; exportAllForm && exportAllForm.submit(); });
   btnAllXLS && btnAllXLS.addEventListener('click', ()=>{ exportAllFormat.value='xls'; exportAllForm && exportAllForm.submit(); });
   infoClose && infoClose.addEventListener('click', ()=>{ infoModal.style.display='none'; });
   infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
   selToggle && selToggle.addEventListener('click', ()=>{
-    infoBody.innerHTML = selDetails.innerHTML;
+    updateSelectedInfo();
+    const html = selDetails.innerHTML.trim();
+    infoBody.innerHTML = html ? html : '<p>No hay información disponible.</p>';
     infoModal.style.display='flex';
   });
   aiBtn && aiBtn.addEventListener('click', ()=>{
