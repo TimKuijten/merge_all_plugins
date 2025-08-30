@@ -727,7 +727,10 @@ cv_uploaded|Fecha de subida");
 
     /* Shortcode */
     public function shortcode($atts = []) {
-        if (!is_user_logged_in() || !current_user_can('edit_posts')) {
+        $slug   = isset($_GET['kvt_board']) ? sanitize_text_field($_GET['kvt_board']) : '';
+        $links  = get_option('kvt_client_links', []);
+        $is_client_board = $slug && isset($links[$slug]);
+        if (!$is_client_board && (!is_user_logged_in() || !current_user_can('edit_posts'))) {
             return '<div class="kvt-wrapper"><p>Debes iniciar sesión para ver el pipeline.</p></div>';
         }
         $clients   = get_terms(['taxonomy'=>self::TAX_CLIENT, 'hide_empty'=>false]);
@@ -748,7 +751,9 @@ cv_uploaded|Fecha de subida");
 
         ob_start(); ?>
         <div class="kvt-wrapper">
+            <?php if ($is_client_board): ?>
             <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
+            <?php endif; ?>
             <span class="dashicons dashicons-editor-help kvt-help" title="Haz clic para ver cómo funciona el tablero"></span>
             <div class="kvt-toolbar">
                 <div class="kvt-filters">
@@ -817,6 +822,19 @@ cv_uploaded|Fecha de subida");
           </div>
         </div>
 
+        <!-- Help Modal -->
+        <div class="kvt-modal" id="kvt_help_modal" style="display:none;">
+          <div class="kvt-modal-content">
+            <div class="kvt-modal-header">
+              <h3>Cómo funciona</h3>
+              <button type="button" class="kvt-modal-close" id="kvt_help_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
+            </div>
+            <div class="kvt-modal-body">
+              <p>Este tablero muestra el progreso de los candidatos. Haz clic en el nombre para ver su CV, arrastra las tarjetas para moverlos entre etapas y, si está habilitado, deja comentarios que verá el reclutador. Las fechas de 'Próxima acción' en rojo indican tareas vencidas.</p>
+            </div>
+          </div>
+        </div>
+
         <!-- Share Board Modal -->
         <div class="kvt-modal" id="kvt_share_modal" style="display:none;">
           <div class="kvt-modal-content">
@@ -837,7 +855,8 @@ cv_uploaded|Fecha de subida");
                   <div id="kvt_share_steps"></div>
                 </div>
               </div>
-              <label style="display:block;margin-top:10px;"><input type="checkbox" id="kvt_share_comments"> Permitir comentarios del cliente</label>
+              <p class="kvt-share-title">Otros ajustes</p>
+              <label style="display:block;margin-top:5px;"><input type="checkbox" id="kvt_share_comments"> Permitir comentarios del cliente</label>
               <button type="button" class="kvt-btn" id="kvt_share_generate" style="margin-top:15px;">Generar enlace</button>
             </div>
           </div>
@@ -1016,7 +1035,7 @@ cv_uploaded|Fecha de subida");
         .kvt-filters label{margin-right:12px;display:inline-flex;gap:6px;align-items:center;font-weight:600}
         .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-client-link{margin-left:12px;display:inline-flex;align-items:center;gap:6px;font-weight:600}
-        .kvt-logo{display:block;margin:0 auto 12px;max-width:200px}
+        .kvt-logo{display:block;margin:0 auto 12px;max-width:400px}
         .kvt-help{position:absolute;top:16px;right:16px;font-size:24px;color:#0A212E;cursor:pointer}
         .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
         .kvt-btn:hover{opacity:.95}
@@ -1185,10 +1204,11 @@ document.addEventListener('DOMContentLoaded', function(){
   const CLIENT_LINKS = (typeof KVT_CLIENT_LINKS === 'object' && KVT_CLIENT_LINKS) ? KVT_CLIENT_LINKS : {};
 
   const helpBtn = el('.kvt-help');
-  if (helpBtn) {
-    helpBtn.addEventListener('click', () => {
-      alert("Este tablero muestra el progreso de los candidatos. Haz clic en el nombre para ver su CV, arrastra las tarjetas para moverlos entre etapas y, si está habilitado, deja comentarios que verá el reclutador. Las fechas de 'Próxima acción' en rojo indican tareas vencidas.");
-    });
+  const helpModal = el('#kvt_help_modal');
+  const helpClose = el('#kvt_help_close');
+  if (helpBtn && helpModal) {
+    helpBtn.addEventListener('click', () => { helpModal.style.display = 'flex'; });
+    if (helpClose) helpClose.addEventListener('click', () => { helpModal.style.display = 'none'; });
   }
 
   async function extractPdfWithPDFjs(file){
