@@ -17,10 +17,15 @@ class KT_AIBulkMailer_ES {
     public function __construct() {
         add_action('admin_menu',               [$this, 'menu']);
         add_action('admin_init',               [$this, 'register_settings']);
-        add_action('admin_enqueue_scripts',    [$this, 'enqueue']);
-        add_action('wp_ajax_kt_abm_generate',  [$this, 'ajax_generate']);
-        add_action('wp_ajax_kt_abm_send',      [$this, 'ajax_send']);
-        add_action('wp_ajax_kt_abm_eml_zip',   [$this, 'ajax_eml_zip']); // EML ZIP
+        add_action('admin_enqueue_scripts',    [$this, 'enqueue_admin']);
+        add_action('wp_enqueue_scripts',       [$this, 'enqueue_frontend']);
+        add_action('wp_ajax_kt_abm_generate',      [$this, 'ajax_generate']);
+        add_action('wp_ajax_nopriv_kt_abm_generate', [$this, 'ajax_generate']);
+        add_action('wp_ajax_kt_abm_send',          [$this, 'ajax_send']);
+        add_action('wp_ajax_nopriv_kt_abm_send',   [$this, 'ajax_send']);
+        add_action('wp_ajax_kt_abm_eml_zip',       [$this, 'ajax_eml_zip']); // EML ZIP
+        add_action('wp_ajax_nopriv_kt_abm_eml_zip',[$this, 'ajax_eml_zip']); // nopriv EML ZIP
+        add_shortcode('kt_bulk_mailer',       [$this, 'render_frontend']);
     }
 
     public function menu() {
@@ -81,8 +86,22 @@ class KT_AIBulkMailer_ES {
         }, self::OPTION_KEY, 'kt_abm_main');
     }
 
-    public function enqueue($hook) {
-        if ($hook !== 'toplevel_page_kt-abm') return;
+    public function enqueue_admin($hook) {
+        if ($hook === 'toplevel_page_kt-abm') {
+            $this->enqueue_assets();
+        }
+    }
+
+    public function enqueue_frontend() {
+        if (is_singular()) {
+            global $post;
+            if (has_shortcode($post->post_content, 'kt_bulk_mailer')) {
+                $this->enqueue_assets();
+            }
+        }
+    }
+
+    private function enqueue_assets() {
 
         // Styles (ALL buttons #0A212E with white text)
         $css = "
@@ -655,6 +674,15 @@ function ktDownloadEMLZip(){
 </script>
 <?php
         wp_add_inline_script('kt-abm', ob_get_clean());
+    }
+
+    public function render_frontend() {
+        if (!current_user_can('manage_options')) {
+            return '';
+        }
+        ob_start();
+        $this->page();
+        return ob_get_clean();
     }
 
     public function page() {
