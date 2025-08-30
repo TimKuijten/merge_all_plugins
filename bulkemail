@@ -188,7 +188,9 @@ function ktParseCSV(text){
     'surname','last_name','lastname','apellido','apellidos','last',
     'country','pais',
     'city','ciudad',
-    'role','rol','cargo','proceso'
+    'client','cliente',
+    'role','rol','cargo','proceso',
+    'status','estado'
   ];
   const headerLooksValid = headerNorm.some(h => known.includes(h));
 
@@ -197,7 +199,7 @@ function ktParseCSV(text){
     header = headerNorm;
     dataRows = rows.slice(1);
   } else {
-    header = ['email','first_name','surname','country','city','role'];
+    header = ['email','first_name','surname','country','city','client','role','status'];
     dataRows = rows;
   }
 
@@ -215,7 +217,9 @@ function ktParseCSV(text){
     surname:    idxOf(['surname','last_name','lastname','apellido','apellidos','last']),
     country:    idxOf(['country','pais']),
     city:       idxOf(['city','ciudad']),
-    role:       idxOf(['role','rol','cargo','proceso'])
+    client:     idxOf(['client','cliente']),
+    role:       idxOf(['role','rol','cargo','proceso']),
+    status:     idxOf(['status','estado'])
   };
 
   const out=[];
@@ -231,7 +235,9 @@ function ktParseCSV(text){
       surname: get('surname'),
       country: get('country'),
       city: get('city'),
-      role: get('role')
+      client: get('client'),
+      role: get('role'),
+      status: get('status')
     });
   }
   return out;
@@ -304,7 +310,9 @@ function mergeContacts(newOnes){
         surname: n.surname || cur.surname || '',
         country: n.country || cur.country || '',
         city: n.city || cur.city || '',
-        role: n.role || cur.role || ''
+        client: n.client || cur.client || '',
+        role: n.role || cur.role || '',
+        status: n.status || cur.status || ''
       };
       map.set(k, merged);
       skipped++;
@@ -443,7 +451,9 @@ function ktRenderTable(){
       <td>${ktEscape(c.surname)}</td>
       <td>${ktEscape(c.country)}</td>
       <td>${ktEscape(c.city)}</td>
+      <td>${ktEscape(c.client)}</td>
       <td>${ktEscape(c.role)}</td>
+      <td>${ktEscape(c.status)}</td>
     </tr>`;
   });
   tb.innerHTML = html;
@@ -543,7 +553,7 @@ function ktApply(){
 
   KT_VIEW = KT_CONTACTS.filter(c => {
     const fullName = (c.first_name + ' ' + c.surname).trim();
-    const hit = !q || [c.email, fullName, c.country, c.city, c.role]
+    const hit = !q || [c.email, fullName, c.country, c.city, c.client, c.role, c.status]
                    .some(v => (v||'').toLowerCase().includes(q));
 
     const inRole     = !rolesSel.length     || rolesSel.includes((c.role||'').toLowerCase());
@@ -697,7 +707,9 @@ function ktDownloadEMLZip(){
                     <strong>Apellido</strong> = <code>{{surname}}</code>,
                     <strong>País</strong> = <code>{{country}}</code>,
                     <strong>Ciudad</strong> = <code>{{city}}</code>,
+                    <strong>Cliente</strong> = <code>{{client}}</code>,
                     <strong>Proceso</strong> = <code>{{role}}</code>,
+                    <strong>Estado</strong> = <code>{{status}}</code>,
                     <strong>El remitente</strong> = <code>{{sender}}</code>.
                 </p>
                 <p class="kt-muted" style="margin-top:6px">
@@ -804,7 +816,7 @@ function ktDownloadEMLZip(){
                     <table class="kt-table">
                         <thead>
                             <tr>
-                                <th></th><th>Email</th><th>Nombre</th><th>Apellido</th><th>País</th><th>Ciudad</th><th>Proceso</th>
+                                <th></th><th>Email</th><th>Nombre</th><th>Apellido</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th>
                             </tr>
                         </thead>
                         <tbody id="ktTbody"></tbody>
@@ -860,7 +872,7 @@ function ktDownloadEMLZip(){
 
         $sys = "Eres un redactor de emails de Kovacic Executive Talent Research. Devuelve un JSON con las claves 'subject' y 'body_html'. ".
                "Debes usar SIEMPRE estos placeholders cuando corresponda y NO inventar otros: ".
-               "Nombre = {{first_name}}, Apellido = {{surname}}, País = {{country}}, Ciudad = {{city}}, Proceso = {{role}}, El remitente = {{sender}}. ".
+               "Nombre = {{first_name}}, Apellido = {{surname}}, País = {{country}}, Ciudad = {{city}}, Cliente = {{client}}, Proceso = {{role}}, Estado = {{status}}, El remitente = {{sender}}. ".
                "El cuerpo debe ser HTML y usar saltos de línea <br> (NO uses etiquetas <p>). Y Nunca uses '—'.";
 
         $req = [
@@ -1090,11 +1102,19 @@ function ktDownloadEMLZip(){
             $city = sanitize_text_field(get_post_meta($p->ID, 'kvt_city', true));
             if ($city === '') $city = sanitize_text_field(get_post_meta($p->ID, 'city', true));
 
+            $client = '';
+            $terms = get_the_terms($p, 'kvt_client');
+            if ($terms && !is_wp_error($terms)) {
+                $client = sanitize_text_field($terms[0]->name);
+            }
+
             $role = '';
             $terms = get_the_terms($p, 'kvt_process');
             if ($terms && !is_wp_error($terms)) {
                 $role = sanitize_text_field($terms[0]->name);
             }
+
+            $status = sanitize_text_field(get_post_meta($p->ID, 'kvt_status', true));
 
             $rows[] = [
                 'email'      => $email,
@@ -1102,7 +1122,9 @@ function ktDownloadEMLZip(){
                 'surname'    => $last,
                 'country'    => $country,
                 'city'       => $city,
+                'client'     => $client,
                 'role'       => $role,
+                'status'     => $status,
             ];
         }
 
