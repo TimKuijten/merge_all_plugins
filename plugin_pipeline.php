@@ -734,6 +734,7 @@ cv_uploaded|Fecha de subida");
         <div class="kvt-wrapper">
             <?php if ($is_client_board): ?>
               <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
+              <span class="dashicons dashicons-editor-help kvt-help" title="Ayuda"></span>
             <?php endif; ?>
             <div class="kvt-toolbar">
                 <div class="kvt-filters">
@@ -996,12 +997,13 @@ cv_uploaded|Fecha de subida");
         // Styles
         wp_enqueue_style('dashicons');
         $css = "
-        .kvt-wrapper{max-width:1200px;margin:0 auto;padding:16px;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.06)}
+        .kvt-wrapper{max-width:1200px;margin:0 auto;padding:16px;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.06);position:relative}
         .kvt-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
         .kvt-filters label{margin-right:12px;display:inline-flex;gap:6px;align-items:center;font-weight:600}
         .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-client-link{margin-left:12px;display:inline-flex;align-items:center;gap:6px;font-weight:600}
         .kvt-logo{display:block;margin:0 auto 12px;max-width:200px}
+        .kvt-help{position:absolute;top:16px;right:16px;font-size:24px;color:#0A212E;cursor:pointer}
         .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
         .kvt-btn:hover{opacity:.95}
           .kvt-secondary{background:#475569}
@@ -1075,7 +1077,6 @@ cv_uploaded|Fecha de subida");
           .kvt-share-grid{display:flex;gap:20px}
             .kvt-share-grid>div{flex:1}
             .kvt-share-title{font-weight:600;margin-bottom:6px}
-          .kvt-comment-alert{background:#dc2626;color:#fff;border-radius:50%;padding:0 4px;margin-left:4px;font-size:12px;font-weight:bold}
           .kvt-config-client{background:none;border:none;cursor:pointer;margin-left:8px}
           .kvt-config-client .dashicons{vertical-align:middle}
         ";
@@ -1162,6 +1163,15 @@ document.addEventListener('DOMContentLoaded', function(){
   const CLIENT_SLUG = typeof KVT_CLIENT_SLUG !== 'undefined' ? KVT_CLIENT_SLUG : '';
   const IS_ADMIN = typeof KVT_IS_ADMIN !== 'undefined' && KVT_IS_ADMIN;
   const CLIENT_LINKS = (typeof KVT_CLIENT_LINKS === 'object' && KVT_CLIENT_LINKS) ? KVT_CLIENT_LINKS : {};
+
+  if (CLIENT_VIEW) {
+    const helpBtn = el('.kvt-help');
+    if (helpBtn) {
+      helpBtn.addEventListener('click', () => {
+        alert("Este tablero muestra el progreso de los candidatos. Revisa los datos y etapas compartidas. Si está habilitado, puedes dejar comentarios con tu nombre que verá el reclutador. Las fechas de 'Próxima acción' en rojo indican tareas vencidas.");
+      });
+    }
+  }
 
   async function extractPdfWithPDFjs(file){
     if (!window.pdfjsLib) return '';
@@ -1408,13 +1418,6 @@ document.addEventListener('DOMContentLoaded', function(){
         cv.setAttribute('title','Ver CV');
         head.appendChild(cv);
       }
-      if(!CLIENT_VIEW && Array.isArray(c.meta.client_comments) && c.meta.client_comments.length){
-        const warn = document.createElement('span');
-        warn.className = 'kvt-comment-alert';
-        warn.textContent = '!';
-        warn.title = c.meta.client_comments.map(cc=> (cc.name?cc.name+': ':'')+cc.comment).join('\n');
-        head.appendChild(warn);
-      }
 
       const sub = document.createElement('p'); sub.className = 'kvt-sub';
       if (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) {
@@ -1452,7 +1455,7 @@ document.addEventListener('DOMContentLoaded', function(){
           if(dt <= today) card.classList.add('kvt-overdue');
         }
       }
-      if (myComment){
+      if (myComment && CLIENT_VIEW){
         commentLine = document.createElement('p');
         commentLine.className = 'kvt-followup';
         const ico2 = document.createElement('span');
