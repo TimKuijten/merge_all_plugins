@@ -37,6 +37,7 @@ class Kovacic_Pipeline_Visualizer {
         // Candidate admin UI
         add_action('add_meta_boxes',             [$this, 'add_meta_boxes']);
         add_action('save_post_' . self::CPT,     [$this, 'save_candidate_meta']);
+        add_action('post_edit_form_tag',         [$this, 'form_enctype']);
 
         // Replace default taxonomy boxes
         add_action('admin_menu',                 [$this, 'replace_tax_metaboxes']);
@@ -268,6 +269,12 @@ cv_uploaded|Fecha de subida");
     }
 
     /* Candidate admin */
+    public function form_enctype() {
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if ($screen && $screen->post_type === self::CPT) {
+            echo ' enctype="multipart/form-data"';
+        }
+    }
     public function replace_tax_metaboxes() {
         remove_meta_box(self::TAX_CLIENT.'div', self::CPT, 'side');
         remove_meta_box(self::TAX_PROCESS.'div', self::CPT, 'side');
@@ -275,7 +282,6 @@ cv_uploaded|Fecha de subida");
         add_meta_box('kvt_process_box', 'Proceso',  [$this,'render_process_dropdown'], self::CPT, 'side', 'default');
     }
     public function render_client_dropdown($post) {
-        wp_nonce_field('kvt_save_candidate', 'kvt_nonce');
         $terms = get_terms(['taxonomy'=>self::TAX_CLIENT,'hide_empty'=>false]);
         $assigned = wp_get_object_terms($post->ID, self::TAX_CLIENT, ['fields'=>'ids']);
         $current  = isset($assigned[0]) ? (int)$assigned[0] : 0;
@@ -325,6 +331,7 @@ cv_uploaded|Fecha de subida");
     }
     public function metabox_candidate($post) {
         wp_nonce_field('kvt_save_candidate', 'kvt_nonce');
+        wp_nonce_field('kvt_nonce', 'kvt_nonce_ajax');
         $first   = $this->meta_get_compat($post->ID, 'kvt_first_name',  ['first_name']);
         $last    = $this->meta_get_compat($post->ID, 'kvt_last_name',   ['last_name']);
         $email   = $this->meta_get_compat($post->ID, 'kvt_email',       ['email']);
@@ -355,7 +362,12 @@ cv_uploaded|Fecha de subida");
             </tr>
             <tr><th><label>Subir CV (PDF/DOC/DOCX)</label></th>
                 <td>
-                    <input type="file" name="kvt_cv_file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                    <input type="file" id="kvt_cv_file" name="kvt_cv_file" style="display:none" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                    <button type="button" class="button" id="kvt_cv_file_btn">Seleccionar archivo</button>
+                    <button type="button" class="button" id="kvt_cv_upload_btn" disabled>Subir</button>
+                    <span id="kvt_cv_file_label" style="margin-left:.5em;">
+                        <?php echo $cv_att ? esc_html(basename(get_attached_file($cv_att))) : 'Ningún archivo seleccionado'; ?>
+                    </span>
                     <?php if ($cv_url || $cv_att): ?>
                         <p style="margin:.4em 0 0;"><label><input type="checkbox" name="kvt_cv_remove" value="1"> Eliminar CV actual</label></p>
                     <?php endif; ?>
@@ -379,6 +391,48 @@ cv_uploaded|Fecha de subida");
                 <td><textarea name="kvt_notes" rows="6" class="large-text" placeholder="Notas internas"><?php echo esc_textarea($notes); ?></textarea></td>
             </tr>
         </table>
+        <script>
+        document.addEventListener('DOMContentLoaded', function(){
+            const btn    = document.getElementById('kvt_cv_file_btn');
+            const input  = document.getElementById('kvt_cv_file');
+            const label  = document.getElementById('kvt_cv_file_label');
+            const upload = document.getElementById('kvt_cv_upload_btn');
+            const urlFld = document.querySelector('input[name="kvt_cv_url"]');
+            const dateFld= document.querySelector('input[name="kvt_cv_uploaded"]');
+            const nonce  = document.getElementById('kvt_nonce_ajax');
+            const pid    = <?php echo $post->ID; ?>;
+            if(btn && input){
+                btn.addEventListener('click', function(){ input.click(); });
+                input.addEventListener('change', function(){
+                    label.textContent = input.files[0] ? input.files[0].name : 'Ningún archivo seleccionado';
+                    if(upload) upload.disabled = !input.files.length;
+                });
+            }
+            if(upload && input){
+                upload.addEventListener('click', function(){
+                    if(!input.files.length) return;
+                    upload.disabled = true;
+                    const fd = new FormData();
+                    fd.append('action','kvt_upload_cv');
+                    if(nonce) fd.append('_ajax_nonce', nonce.value);
+                    fd.append('id', pid);
+                    fd.append('file', input.files[0]);
+                    fetch(window.ajaxurl || '', {method:'POST', body: fd})
+                        .then(r=>r.json())
+                        .then(j=>{
+                            upload.disabled = false;
+                            if(!j.success){ alert(j.data && j.data.msg ? j.data.msg : 'Error al subir CV'); return; }
+                            if(urlFld) urlFld.value = j.data.url || '';
+                            if(dateFld && !dateFld.value) dateFld.value = j.data.date || '';
+                            label.textContent = 'Ningún archivo seleccionado';
+                            input.value = '';
+                            alert('CV subido y guardado.');
+                        })
+                        .catch(()=>{ upload.disabled = false; alert('Error de red.'); });
+                });
+            }
+        });
+        </script>
         <p class="description">Asigna un <strong>Proceso</strong> en la caja lateral. Se autovinculará el <strong>Cliente</strong> relacionado.</p>
         <?php
     }
@@ -646,10 +700,10 @@ cv_uploaded|Fecha de subida");
                         <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
                         <input type="hidden" name="filter_client"  id="kvt_export_client"  value="">
                         <input type="hidden" name="filter_process" id="kvt_export_process" value="">
-                        <input type="hidden" name="format"         id="kvt_export_format"   value="csv">
-                        <button class="kvt-btn" type="button" id="kvt_export_csv">Export CSV</button>
+                        <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
                         <button class="kvt-btn" type="button" id="kvt_export_xls">Export Excel</button>
                     </form>
+                    <a class="kvt-btn" id="kvt_mandar_correos" href="https://kovacictalent.com/wp-admin/admin.php?page=kt-abm" target="_blank" rel="noopener">Mandar correos</a>
                 </div>
             </div>
 
@@ -729,8 +783,7 @@ cv_uploaded|Fecha de subida");
                     <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
                     <input type="hidden" name="filter_client" value="">
                     <input type="hidden" name="filter_process" value="">
-                    <input type="hidden" name="format" id="kvt_export_all_format" value="csv">
-                    <button type="button" class="kvt-btn" id="kvt_export_all_csv">Export CSV</button>
+                    <input type="hidden" name="format" id="kvt_export_all_format" value="xls">
                     <button type="button" class="kvt-btn" id="kvt_export_all_xls">Export Excel</button>
                   </form>
                 </div>
@@ -854,7 +907,7 @@ cv_uploaded|Fecha de subida");
         .kvt-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
         .kvt-filters label{margin-right:12px;display:inline-flex;gap:6px;align-items:center;font-weight:600}
         .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
-        .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600}
+        .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
         .kvt-btn:hover{opacity:.95}
           .kvt-secondary{background:#475569}
           .kvt-new{position:relative;display:inline-block}
@@ -1014,12 +1067,10 @@ document.addEventListener('DOMContentLoaded', function(){
   const selProcess = el('#kvt_process');
   const btnRefresh = el('#kvt_refresh');
   const btnToggle  = el('#kvt_toggle_table');
-    const btnCSV     = el('#kvt_export_csv');
     const btnXLS     = el('#kvt_export_xls');
     const btnAdd     = el('#kvt_add_profile');
     const btnNew     = el('#kvt_new_btn');
     const newMenu    = el('#kvt_new_menu');
-    const btnAllCSV  = el('#kvt_export_all_csv');
     const btnAllXLS  = el('#kvt_export_all_xls');
     const exportAllForm   = el('#kvt_export_all_form');
     const exportAllFormat = el('#kvt_export_all_format');
@@ -1453,14 +1504,14 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   const exportForm = el('#kvt_export_form');
-  btnCSV && btnCSV.addEventListener('click', ()=>{ el('#kvt_export_format').value='csv'; syncExportHidden(); exportForm.submit(); });
   btnXLS && btnXLS.addEventListener('click', ()=>{ el('#kvt_export_format').value='xls'; syncExportHidden(); exportForm.submit(); });
-  btnAllCSV && btnAllCSV.addEventListener('click', ()=>{ exportAllFormat.value='csv'; exportAllForm && exportAllForm.submit(); });
   btnAllXLS && btnAllXLS.addEventListener('click', ()=>{ exportAllFormat.value='xls'; exportAllForm && exportAllForm.submit(); });
   infoClose && infoClose.addEventListener('click', ()=>{ infoModal.style.display='none'; });
   infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
   selToggle && selToggle.addEventListener('click', ()=>{
-    infoBody.innerHTML = selDetails.innerHTML;
+    updateSelectedInfo();
+    const html = selDetails.innerHTML.trim();
+    infoBody.innerHTML = html ? html : '<p>No hay información disponible.</p>';
     infoModal.style.display='flex';
   });
   aiBtn && aiBtn.addEventListener('click', ()=>{
@@ -2649,7 +2700,7 @@ JS;
         $req = [
             'model' => 'gpt-4o-mini',
             'messages' => [
-                ['role' => 'system', 'content' => 'Eres un asistente de reclutamiento. Devuelve JSON con "score" (0-10) y "summary" (breve explicación en español) indicando por qué el candidato encaja.'],
+                ['role' => 'system', 'content' => 'Eres un asistente de reclutamiento. Devuelve JSON con "score" (0-10) y "summary" (breve explicación en español) indicando por qué el candidato encaja. Si la descripción menciona una ubicación del trabajo, es importante que el candidato esté en el mismo país, a menos que se indique lo contrario.'],
                 ['role' => 'user', 'content' => "Descripción del trabajo:\n$desc\nCV del candidato:\n$cv_text"],
             ],
             'max_tokens' => 150,
