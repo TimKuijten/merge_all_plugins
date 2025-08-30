@@ -147,6 +147,7 @@ class KT_AIBulkMailer_ES {
 // Persistence + De-dup + App JS (first_name + surname; EML ZIP; delete selected; NO importar base)
 // ===============================
 const STORAGE_KEY = 'kt_abm_state_v10';
+const KT_SMTP_ACCOUNTS = <?php echo wp_json_encode($smtp_accounts); ?>;
 
 // ---- Utilities ----
 function ktParseCSV(text){
@@ -243,6 +244,16 @@ function ktParseCSV(text){
   return out;
 }
 
+function ktUseAccount(idx){
+  idx = parseInt(idx,10);
+  const acc = KT_SMTP_ACCOUNTS[idx];
+  if(!acc) return;
+  const fe=document.getElementById('ktFromEmail');
+  const fn=document.getElementById('ktFromName');
+  if(fe) fe.value = acc.from_email || '';
+  if(fn) fn.value = acc.from_name || '';
+}
+
 function ktUniq(arr){ return [...new Set(arr.filter(Boolean).map(x=>x.trim()))].sort((a,b)=>a.localeCompare(b)); }
 function ktEscape(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function ktRender(tpl, data){ return tpl.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,(m,k)=> (data[k] ?? m)); }
@@ -265,6 +276,8 @@ function loadSaved(){
     setVal('ktFromEmail', st.fromEmail);
     setVal('ktFromName', st.fromName);
     setVal('ktQ', st.keyword);
+    setVal('ktSmtpAccount', st.smtpAccount);
+    if(typeof st.smtpAccount !== 'undefined' && st.smtpAccount !== '') ktUseAccount(st.smtpAccount);
     FILTERS.roles     = Array.isArray(st.rolesSel)     ? st.rolesSel : [];
     FILTERS.countries = Array.isArray(st.countriesSel) ? st.countriesSel : [];
     FILTERS.cities    = Array.isArray(st.citiesSel)    ? st.citiesSel : [];
@@ -282,6 +295,7 @@ function saveState(){
       prompt: getVal('ktPrompt'),
       fromEmail: getVal('ktFromEmail'),
       fromName: getVal('ktFromName'),
+      smtpAccount: getVal('ktSmtpAccount'),
       keyword: getVal('ktQ'),
       rolesSel: FILTERS.roles,
       countriesSel: FILTERS.countries,
@@ -553,6 +567,7 @@ async function ktImportCandidates(){
 
 function ktApply(){
   KT_PAGE = 1;
+  KT_SELECTED.clear();
   const q=(document.getElementById('ktQ').value||'').trim().toLowerCase();
 
   const rolesSel     = (FILTERS.roles||[]).map(v => v.toLowerCase());
@@ -630,7 +645,8 @@ async function ktSend(){
     subject_template,
     body_template,
     from_email: (document.getElementById('ktFromEmail').value||'').trim(),
-    from_name:  (document.getElementById('ktFromName').value||'').trim()
+    from_name:  (document.getElementById('ktFromName').value||'').trim(),
+    account_index: document.getElementById('ktSmtpAccount') ? (document.getElementById('ktSmtpAccount').value||'') : ''
   };
 
   const res = await fetch(KT_ABM.ajax, {
@@ -696,6 +712,8 @@ function ktDownloadEMLZip(){
     const el=document.getElementById(id);
     if(el) el.addEventListener('input', saveState);
   });
+  const sel=document.getElementById('ktSmtpAccount');
+  if(sel) sel.addEventListener('change', e=>{ ktUseAccount(e.target.value); saveState(); });
 })();
 </script>
 <?php
@@ -706,6 +724,7 @@ function ktDownloadEMLZip(){
         if (!current_user_can('manage_options')) return;
         $o = get_option(self::OPTION_KEY, []);
         $from_default = $o['from_email'] ?? self::DEFAULT_FROM;
+        $smtp_accounts = function_exists('smtp_helper_get_accounts') ? smtp_helper_get_accounts() : [];
         ?>
         <div class="wrap">
             <h1 class="kt-title">Correo con IA</h1>
@@ -744,6 +763,18 @@ function ktDownloadEMLZip(){
                 </div>
 
                 <div class="kt-row" style="margin-top:8px; gap:12px;">
+                    <div>
+                        <label>Cuenta SMTP</label>
+                        <select id="ktSmtpAccount" class="kt-input">
+                            <option value="">Personalizado</option>
+                            <?php foreach ($smtp_accounts as $i => $acc) {
+                                $email = esc_html($acc['from_email'] ?? '');
+                                $name  = esc_html($acc['from_name'] ?? '');
+                                $label = $name ? $name . ' <' . $email . '>' : $email;
+                                echo '<option value="' . esc_attr($i) . '">' . esc_html($label) . '</option>';
+                            } ?>
+                        </select>
+                    </div>
                     <div>
                         <label>Correo del remitente</label>
                         <input id="ktFromEmail" class="kt-input" type="email" value="<?php echo esc_attr($from_default); ?>" />
@@ -970,11 +1001,14 @@ function ktDownloadEMLZip(){
         $payload = json_decode($payload_json, true);
         if (!$payload) wp_send_json_error(['error' => 'JSON inválido'], 400);
 
-        $subject_tpl = (string)($payload['subject_template'] ?? '');
-        $body_tpl    = (string)($payload['body_template'] ?? '');
-        $recipients  = (array)($payload['recipients'] ?? []);
-        $from_email  = sanitize_email($payload['from_email'] ?? '');
-        $from_name   = sanitize_text_field($payload['from_name'] ?? '');
+        $subject_tpl  = (string)($payload['subject_template'] ?? '');
+        $body_tpl     = (string)($payload['body_template'] ?? '');
+        $recipients   = (array)($payload['recipients'] ?? []);
+        $from_email   = sanitize_email($payload['from_email'] ?? '');
+        $from_name    = sanitize_text_field($payload['from_name'] ?? '');
+        $account_index = isset($payload['account_index']) ? intval($payload['account_index']) : 0;
+        $smtp_index_cb = function() use ($account_index) { return $account_index; };
+        add_filter('smtp_helper_selected_account_index', $smtp_index_cb);
 
         $o = get_option(self::OPTION_KEY, []);
         if (!$from_email) $from_email = sanitize_email($o['from_email'] ?? self::DEFAULT_FROM);
@@ -1034,6 +1068,7 @@ function ktDownloadEMLZip(){
         if ($from_cb)      remove_filter('wp_mail_from', $from_cb, 99);
         if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
         remove_action('wp_mail_failed', $failed_hook);
+        remove_filter('smtp_helper_selected_account_index', $smtp_index_cb);
 
         if ($last_error) $errors[] = ['email'=>'(general)', 'error'=>$last_error];
 
