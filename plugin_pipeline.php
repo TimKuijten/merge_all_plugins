@@ -93,6 +93,10 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_generate_share_link',[$this,'ajax_generate_share_link']);
         add_action('wp_ajax_kvt_client_comment',       [$this, 'ajax_client_comment']);
         add_action('wp_ajax_nopriv_kvt_client_comment',[$this, 'ajax_client_comment']);
+        add_action('wp_ajax_kvt_get_dashboard',        [$this, 'ajax_get_dashboard']);
+        add_action('wp_ajax_nopriv_kvt_get_dashboard', [$this, 'ajax_get_dashboard']);
+        add_action('wp_ajax_kvt_dismiss_comment',      [$this, 'ajax_dismiss_comment']);
+        add_action('wp_ajax_nopriv_kvt_dismiss_comment',[$this, 'ajax_dismiss_comment']);
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
@@ -1430,18 +1434,6 @@ document.addEventListener('DOMContentLoaded', function(){
     return item ? String(item.client_id) : '';
   }
 
-  function renderBoardSkeleton(){
-    board.innerHTML = '';
-    KVT_STATUSES.forEach(st=>{
-      const col = document.createElement('div');
-      col.className = 'kvt-col'; col.dataset.status = st;
-      const h = document.createElement('h3'); h.textContent = st;
-      const zone = document.createElement('div'); zone.className = 'kvt-dropzone'; zone.dataset.status = st;
-      col.appendChild(h); col.appendChild(zone);
-      board.appendChild(col);
-    });
-  }
-
   function ajaxForm(params){
     const body = new URLSearchParams(params);
     return fetch(KVT_AJAX, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body.toString() }).then(r=>r.json());
@@ -1828,6 +1820,97 @@ document.addEventListener('DOMContentLoaded', function(){
     return fetch(KVT_AJAX, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params.toString() }).then(r=>r.json());
   }
 
+  function fetchDashboard(){
+    const params = new URLSearchParams();
+    params.set('action','kvt_get_dashboard');
+    params.set('_ajax_nonce', KVT_NONCE);
+    return fetch(KVT_AJAX, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params.toString() }).then(r=>r.json());
+  }
+
+  function dismissComment(id, idx, card){
+    const params = new URLSearchParams();
+    params.set('action','kvt_dismiss_comment');
+    params.set('_ajax_nonce', KVT_NONCE);
+    params.set('id', id);
+    params.set('index', idx);
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json()).then(j=>{
+        if(j.success && card){
+          const zone = card.parentElement;
+          card.remove();
+          if(zone && !zone.children.length){
+            const col = zone.parentElement; if(col) col.remove();
+          }
+          if(!board.children.length){
+            const empty = document.createElement('div');
+            empty.className='kvt-empty';
+            empty.textContent='No hay notificaciones pendientes.';
+            board.appendChild(empty);
+          }
+        }
+      });
+  }
+
+  function renderDashboard(data){
+    board.innerHTML = '';
+
+    if (data.comments && data.comments.length) {
+      const col = document.createElement('div');
+      col.className = 'kvt-col';
+      const h = document.createElement('h3'); h.textContent = 'Comentarios de clientes';
+      const zone = document.createElement('div'); zone.className = 'kvt-dropzone';
+      data.comments.forEach(c=>{
+        const card = document.createElement('div'); card.className='kvt-card';
+        card.innerHTML = '<p class="kvt-title">'+esc(c.candidate)+'</p>'+
+                         '<p class="kvt-sub">'+esc(c.client+(c.process?' / '+c.process:''))+'</p>'+
+                         '<p>'+esc(c.comment)+' — '+esc(c.name)+'</p>';
+        const btn = document.createElement('button');
+        btn.type='button'; btn.className='kvt-delete dashicons dashicons-no-alt';
+        btn.addEventListener('click', ()=>dismissComment(c.candidate_id, c.index, card));
+        card.appendChild(btn);
+        zone.appendChild(card);
+      });
+      col.appendChild(h); col.appendChild(zone); board.appendChild(col);
+    }
+
+    if (data.upcoming && data.upcoming.length) {
+      const col = document.createElement('div');
+      col.className = 'kvt-col';
+      const h = document.createElement('h3'); h.textContent = 'Próximas acciones (7 días)';
+      const zone = document.createElement('div'); zone.className = 'kvt-dropzone';
+      data.upcoming.forEach(c=>{
+        const card = document.createElement('div'); card.className='kvt-card';
+        card.innerHTML = '<p class="kvt-title">'+esc(c.candidate)+'</p>'+
+                         '<p class="kvt-sub">'+esc(c.client+(c.process?' / '+c.process:''))+'</p>'+
+                         '<p class="kvt-followup"><span class="dashicons dashicons-clock"></span> '+esc(c.date)+(c.note?' — '+esc(c.note):'')+'</p>';
+        zone.appendChild(card);
+      });
+      col.appendChild(h); col.appendChild(zone); board.appendChild(col);
+    }
+
+    if (data.overdue && data.overdue.length) {
+      const col = document.createElement('div');
+      col.className = 'kvt-col';
+      const h = document.createElement('h3'); h.textContent = 'Acciones vencidas';
+      const zone = document.createElement('div'); zone.className = 'kvt-dropzone';
+      data.overdue.forEach(c=>{
+        const card = document.createElement('div'); card.className='kvt-card kvt-overdue';
+        card.innerHTML = '<p class="kvt-title">'+esc(c.candidate)+'</p>'+
+                         '<p class="kvt-sub">'+esc(c.client+(c.process?' / '+c.process:''))+'</p>'+
+                         '<p class="kvt-followup"><span class="dashicons dashicons-clock"></span> '+esc(c.date)+(c.note?' — '+esc(c.note):'')+'</p>';
+        zone.appendChild(card);
+      });
+      col.appendChild(h); col.appendChild(zone); board.appendChild(col);
+    }
+
+    if (!board.children.length) {
+      const empty = document.createElement('div');
+      empty.className = 'kvt-empty';
+      empty.textContent = 'No hay notificaciones pendientes.';
+      board.appendChild(empty);
+    }
+  }
+
   function renderData(data){
     board.innerHTML = '';
     KVT_STATUSES.forEach(st=>{
@@ -1992,8 +2075,13 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 
   function refresh(){
-    fetchCandidates().then(j=>{
-      if(j.success){ renderData(j.data); } else { alert('Error cargando candidatos'); }
+    const hasSel = (selClient && selClient.value) || (selProcess && selProcess.value);
+    (hasSel ? fetchCandidates() : fetchDashboard()).then(j=>{
+      if(j.success){
+        if(hasSel){ renderData(j.data); } else { renderDashboard(j.data); }
+      } else {
+        alert('Error cargando datos');
+      }
     });
   }
   selClient && selClient.addEventListener('change', ()=>{ filterProcessOptions(); refresh(); updateSelectedInfo(); });
@@ -2494,11 +2582,10 @@ document.addEventListener('DOMContentLoaded', function(){
     __origFilterProcessOptions();
   };
 
-
   // Init
-  renderBoardSkeleton();
   filterProcessOptions();
-  if (CLIENT_VIEW) { refresh(); updateSelectedInfo(); }
+  refresh();
+  updateSelectedInfo();
 });
 JS;
             wp_add_inline_script('kvt-app', $js, 'after');
@@ -2594,6 +2681,88 @@ JS;
             ];
         }
         wp_send_json_success($data);
+    }
+
+    public function ajax_get_dashboard() {
+        check_ajax_referer('kvt_nonce');
+
+        $posts = get_posts([
+            'post_type'   => self::CPT,
+            'post_status' => 'any',
+            'numberposts' => -1,
+        ]);
+
+        $comments = [];
+        $upcoming = [];
+        $overdue  = [];
+        $today    = strtotime('today');
+        $nextWeek = strtotime('+7 days', $today);
+
+        foreach ($posts as $p) {
+            $client  = $this->get_term_name($p->ID, self::TAX_CLIENT);
+            $process = $this->get_term_name($p->ID, self::TAX_PROCESS);
+            $title   = get_the_title($p);
+
+            $ccs = get_post_meta($p->ID, 'kvt_client_comments', true);
+            if (is_array($ccs)) {
+                foreach ($ccs as $idx => $cc) {
+                    if (!empty($cc['comment']) && empty($cc['dismissed'])) {
+                        $comments[] = [
+                            'candidate_id' => $p->ID,
+                            'candidate'    => $title,
+                            'client'       => $client,
+                            'process'      => $process,
+                            'name'         => isset($cc['name']) ? $cc['name'] : '',
+                            'comment'      => $cc['comment'],
+                            'index'        => $idx,
+                        ];
+                    }
+                }
+            }
+
+            $na = get_post_meta($p->ID, 'kvt_next_action', true);
+            if ($na) {
+                $ts = strtotime(str_replace('/', '-', $na));
+                if ($ts) {
+                    $item = [
+                        'candidate_id' => $p->ID,
+                        'candidate'    => $title,
+                        'client'       => $client,
+                        'process'      => $process,
+                        'date'         => $this->fmt_date_ddmmyyyy($na),
+                        'note'         => get_post_meta($p->ID, 'kvt_next_action_note', true),
+                    ];
+                    if ($ts < $today) {
+                        $overdue[] = $item;
+                    } elseif ($ts <= $nextWeek) {
+                        $upcoming[] = $item;
+                    }
+                }
+            }
+        }
+
+        wp_send_json_success([
+            'comments' => $comments,
+            'upcoming' => $upcoming,
+            'overdue'  => $overdue,
+        ]);
+    }
+
+    public function ajax_dismiss_comment() {
+        check_ajax_referer('kvt_nonce');
+
+        $id  = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        $idx = isset($_POST['index']) ? intval($_POST['index']) : -1;
+        if (!$id || $idx < 0) {
+            wp_send_json_error(['msg' => 'invalid'], 400);
+        }
+        $comments = get_post_meta($id, 'kvt_client_comments', true);
+        if (!is_array($comments) || !isset($comments[$idx])) {
+            wp_send_json_error(['msg' => 'missing'], 404);
+        }
+        $comments[$idx]['dismissed'] = 1;
+        update_post_meta($id, 'kvt_client_comments', $comments);
+        wp_send_json_success(['ok' => true]);
     }
 
     public function ajax_update_status() {
