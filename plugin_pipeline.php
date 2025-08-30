@@ -732,6 +732,9 @@ cv_uploaded|Fecha de subida");
 
         ob_start(); ?>
         <div class="kvt-wrapper">
+            <?php if ($is_client_board): ?>
+              <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
+            <?php endif; ?>
             <div class="kvt-toolbar">
                 <div class="kvt-filters">
                     <label>Cliente
@@ -750,6 +753,7 @@ cv_uploaded|Fecha de subida");
                             <?php endforeach; ?>
                         </select>
                     </label>
+                    <span id="kvt_client_link" class="kvt-client-link"></span>
                 </div>
                 <div class="kvt-actions">
                     <button class="kvt-btn" id="kvt_add_profile">Base</button>
@@ -767,6 +771,7 @@ cv_uploaded|Fecha de subida");
                 </div>
             </div>
 
+            <?php if (!$is_client_board): ?>
             <div id="kvt_selected_info" style="display:none;">
               <button type="button" class="kvt-btn kvt-secondary" id="kvt_selected_toggle">Información de cliente y proceso</button>
               <div id="kvt_selected_details" style="display:none;">
@@ -775,6 +780,7 @@ cv_uploaded|Fecha de subida");
                 <p id="kvt_selected_board"></p>
               </div>
             </div>
+            <?php endif; ?>
 
             <div id="kvt_board" class="kvt-board" aria-live="polite"></div>
 
@@ -806,17 +812,17 @@ cv_uploaded|Fecha de subida");
             <div class="kvt-modal-body">
               <div class="kvt-share-grid">
                 <div>
-                  <p class="kvt-share-title">Which candidate data do you want to be visible for the client?</p>
+                  <p class="kvt-share-title">¿Qué datos del candidato quieres que sean visibles para el cliente?</p>
                   <label><input type="checkbox" id="kvt_share_fields_all" checked> Todos los campos</label>
                   <div id="kvt_share_fields"></div>
                 </div>
                 <div>
-                  <p class="kvt-share-title">Which steps of the process do you want to be visible for the client?</p>
+                  <p class="kvt-share-title">¿Qué etapas del proceso quieres que sean visibles para el cliente?</p>
                   <label><input type="checkbox" id="kvt_share_steps_all" checked> Todos los estados</label>
                   <div id="kvt_share_steps"></div>
                 </div>
               </div>
-              <label style="display:block;margin-top:10px;"><input type="checkbox" id="kvt_share_comments"> Allow client comments</label>
+              <label style="display:block;margin-top:10px;"><input type="checkbox" id="kvt_share_comments"> Permitir comentarios del cliente</label>
               <button type="button" class="kvt-btn" id="kvt_share_generate" style="margin-top:15px;">Generar enlace</button>
             </div>
           </div>
@@ -994,6 +1000,8 @@ cv_uploaded|Fecha de subida");
         .kvt-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
         .kvt-filters label{margin-right:12px;display:inline-flex;gap:6px;align-items:center;font-weight:600}
         .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
+        .kvt-client-link{margin-left:12px;display:inline-flex;align-items:center;gap:6px;font-weight:600}
+        .kvt-logo{display:block;margin:0 auto 12px;max-width:200px}
         .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
         .kvt-btn:hover{opacity:.95}
           .kvt-secondary{background:#475569}
@@ -1227,6 +1235,7 @@ document.addEventListener('DOMContentLoaded', function(){
     const selClientInfo = el('#kvt_selected_client');
     const selProcessInfo = el('#kvt_selected_process');
     const selBoardInfo = el('#kvt_selected_board');
+    const clientLink   = el('#kvt_client_link');
   const infoModal = el('#kvt_info_modal');
   const infoClose = el('#kvt_info_close');
   const infoBody  = el('#kvt_info_body');
@@ -1256,6 +1265,8 @@ document.addEventListener('DOMContentLoaded', function(){
     if (selProcess) { selProcess.value = PROCESS_ID; selProcess.disabled = true; }
     const actions = el('.kvt-actions');
     if (actions) actions.style.display = 'none';
+    if (selInfo) selInfo.style.display = 'none';
+    if (clientLink) clientLink.style.display = 'none';
     if (IS_ADMIN) {
       const gear = document.createElement('button');
       gear.type = 'button';
@@ -1419,7 +1430,13 @@ document.addEventListener('DOMContentLoaded', function(){
           tagsWrap.appendChild(span);
         });
       }
+      const clientComments = Array.isArray(c.meta.client_comments) ? c.meta.client_comments : [];
+      let myComment = null;
+      if (clientComments.length) {
+        myComment = CLIENT_VIEW ? clientComments.find(cc => cc.slug === CLIENT_SLUG) : clientComments[clientComments.length-1];
+      }
       let follow;
+      let commentLine;
       if (c.meta.next_action && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('next_action'))){
         follow = document.createElement('p');
         follow.className = 'kvt-followup';
@@ -1435,6 +1452,15 @@ document.addEventListener('DOMContentLoaded', function(){
           if(dt <= today) card.classList.add('kvt-overdue');
         }
       }
+      if (myComment){
+        commentLine = document.createElement('p');
+        commentLine.className = 'kvt-followup';
+        const ico2 = document.createElement('span');
+        ico2.className = 'dashicons dashicons-warning';
+        commentLine.appendChild(ico2);
+        const cmTxt = ' Comentario: ' + ((!CLIENT_VIEW && myComment.name)? myComment.name + ': ' : '') + myComment.comment;
+        commentLine.appendChild(document.createTextNode(cmTxt));
+      }
 
     const expand = document.createElement('div'); expand.className='kvt-expand';
     const btn = document.createElement('button'); btn.type='button'; btn.textContent='Ver perfil';
@@ -1446,13 +1472,15 @@ document.addEventListener('DOMContentLoaded', function(){
     } else {
       expand.appendChild(btn);
       if (ALLOW_COMMENTS) {
-        const cBtn = document.createElement('button'); cBtn.type='button'; cBtn.textContent='Comentar';
+        const cBtn = document.createElement('button');
+        cBtn.type='button';
+        cBtn.textContent = myComment ? 'Editar comentario' : 'Comentar';
         expand.appendChild(cBtn);
         cBtn.addEventListener('click', ()=>{
-          const name = prompt('Tu nombre');
+          const name = prompt('Tu nombre', myComment ? myComment.name : '');
           if(!name) return;
-          const msg = prompt('Comentario');
-          if(!msg) return;
+          const msg = prompt('Comentario', myComment ? myComment.comment : '');
+          if(msg===null || msg==='') return;
           const p = new URLSearchParams();
           p.set('action','kvt_client_comment');
           p.set('_ajax_nonce', KVT_NONCE);
@@ -1461,7 +1489,33 @@ document.addEventListener('DOMContentLoaded', function(){
           p.set('name', name);
           p.set('comment', msg);
           fetch(KVT_AJAX,{method:'POST',body:p}).then(r=>r.json()).then(j=>{
-            alert(j.success ? 'Comentario enviado' : 'Error');
+            if(j.success){
+              myComment = {name, comment:msg, slug:CLIENT_SLUG};
+              if(Array.isArray(c.meta.client_comments)){
+                const idx = c.meta.client_comments.findIndex(cc=>cc.slug===CLIENT_SLUG);
+                if(idx>=0) c.meta.client_comments[idx]=myComment; else c.meta.client_comments.push(myComment);
+              } else {
+                c.meta.client_comments=[myComment];
+              }
+              const txt = ' Comentario: ' + ((!CLIENT_VIEW && name)? name + ': ' : '') + msg;
+              if(commentLine){
+                commentLine.innerHTML='';
+                const ic = document.createElement('span'); ic.className='dashicons dashicons-warning';
+                commentLine.appendChild(ic);
+                commentLine.appendChild(document.createTextNode(txt));
+              } else {
+                commentLine = document.createElement('p');
+                commentLine.className='kvt-followup';
+                const ic = document.createElement('span'); ic.className='dashicons dashicons-warning';
+                commentLine.appendChild(ic);
+                commentLine.appendChild(document.createTextNode(txt));
+                card.insertBefore(commentLine, sub);
+              }
+              cBtn.textContent='Editar comentario';
+              alert('Comentario guardado');
+            } else {
+              alert('Error');
+            }
           });
         });
       }
@@ -1498,7 +1552,7 @@ document.addEventListener('DOMContentLoaded', function(){
       });
     }
 
-      card.appendChild(head); card.appendChild(tagsWrap); if (follow) card.appendChild(follow); card.appendChild(sub);
+      card.appendChild(head); card.appendChild(tagsWrap); if (follow) card.appendChild(follow); if (commentLine) card.appendChild(commentLine); card.appendChild(sub);
     card.appendChild(expand); card.appendChild(panel);
 
     if (!CLIENT_VIEW) {
@@ -1752,10 +1806,23 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   function updateSelectedInfo(){
-    if(!selInfo) return;
     const cid = selClient && selClient.value ? selClient.value : '';
     const pid = selProcess && selProcess.value ? selProcess.value : '';
-    if(!cid && !pid){ selInfo.style.display='none'; return; }
+    if(clientLink) clientLink.innerHTML = '';
+    if(!selInfo){
+      if(cid && pid){
+        const key = cid+'|'+pid;
+        const slug = CLIENT_LINKS[key];
+        if(slug){
+          const base = location.origin + location.pathname.replace(/\/$/, '');
+          const url = base + '/' + slug;
+          const boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">'+esc(slug)+'</a>';
+          if(clientLink) clientLink.innerHTML = boardDet;
+        }
+      }
+      return;
+    }
+    if(!cid && !pid){ selInfo.style.display='none'; if(clientLink) clientLink.innerHTML=''; return; }
     selInfo.style.display='block';
     selToggle.style.display = 'inline-block';
     selDetails.style.display = 'none';
@@ -1799,10 +1866,11 @@ document.addEventListener('DOMContentLoaded', function(){
         if(slug){
           const base = location.origin + location.pathname.replace(/\/$/, '');
           const url = base + '/' + slug;
-          boardDet = '<strong>Client board:</strong> <a href="'+escAttr(url)+'" target="_blank">'+esc(slug)+'</a>';
+          boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">'+esc(slug)+'</a>';
         }
       }
       if(selBoardInfo) selBoardInfo.innerHTML = boardDet;
+      if(clientLink) clientLink.innerHTML = boardDet;
     }
 
   const exportForm = el('#kvt_export_form');
@@ -3008,14 +3076,27 @@ JS;
         }
         $existing = get_post_meta($id, 'kvt_client_comments', true);
         if (!is_array($existing)) $existing = [];
-        $existing[] = [
-            'name'    => $name,
-            'comment' => $comment,
-            'date'    => current_time('mysql'),
-            'slug'    => $slug,
-        ];
+        $found = false;
+        foreach ($existing as &$cc) {
+            if (isset($cc['slug']) && $cc['slug'] === $slug) {
+                $cc['name']    = $name;
+                $cc['comment'] = $comment;
+                $cc['date']    = current_time('mysql');
+                $found = true;
+                break;
+            }
+        }
+        unset($cc);
+        if (!$found) {
+            $existing[] = [
+                'name'    => $name,
+                'comment' => $comment,
+                'date'    => current_time('mysql'),
+                'slug'    => $slug,
+            ];
+        }
         update_post_meta($id, 'kvt_client_comments', $existing);
-        wp_send_json_success();
+        wp_send_json_success(['name'=>$name,'comment'=>$comment]);
     }
 
     public function maybe_redirect_share_link() {
