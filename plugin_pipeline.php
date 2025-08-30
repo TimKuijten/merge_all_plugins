@@ -3,7 +3,7 @@
 Plugin Name: Kovacic Pipeline Visualizer
 Description: Kanban de procesos con relación Cliente→Proceso y candidatos vinculados. Subida de CV (admin y UI), edición en tarjeta, notas, exportación CSV/XLS en orden fijo, y estados/columnas configurables.
 Version: 1.7.2
-Author: Kovacic Executive Talent Research
+Author: Tim Kuijten - Kovacic Executive Talent Research
 */
 
 if (!defined('ABSPATH')) exit;
@@ -421,6 +421,15 @@ cv_uploaded|Fecha de subida");
 
         // Upload new CV
         if (!empty($_FILES['kvt_cv_file']['name'])) {
+            // Remove previous cached text if exists
+            $old_txt = get_post_meta($post_id, 'kvt_cv_text_url', true);
+            if ($old_txt) {
+                $path = wp_parse_url($old_txt, PHP_URL_PATH);
+                if ($path) @unlink(ABSPATH . ltrim($path, '/'));
+            }
+            delete_post_meta($post_id, 'kvt_cv_text');
+            delete_post_meta($post_id, 'kvt_cv_text_url');
+
             if (!function_exists('media_handle_upload')) {
                 require_once ABSPATH . 'wp-admin/includes/image.php';
                 require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -761,6 +770,12 @@ cv_uploaded|Fecha de subida");
                 <input type="text" id="kvt_new_first" placeholder="Nombre">
                 <input type="text" id="kvt_new_last" placeholder="Apellidos">
                 <input type="email" id="kvt_new_email" placeholder="Email">
+                <input type="text" id="kvt_new_phone" placeholder="Teléfono">
+                <input type="text" id="kvt_new_country" placeholder="País">
+                <input type="text" id="kvt_new_city" placeholder="Ciudad">
+                <input type="text" id="kvt_new_tags" placeholder="Tags">
+                <input type="url" id="kvt_new_cv_url" placeholder="CV (URL)">
+                <input type="file" id="kvt_new_cv_file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
                 <select id="kvt_new_client">
                   <option value="">— Cliente —</option>
                   <?php foreach ($clients as $t): ?>
@@ -1528,6 +1543,7 @@ document.addEventListener('DOMContentLoaded', function(){
               '<div class="kvt-mini-actions">'+
                 (allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'')+
                 '<button type="button" class="kvt-btn kvt-secondary kvt-mini-view" data-id="'+it.id+'">Ver perfil</button>'+
+                '<button type="button" class="kvt-delete dashicons dashicons-trash kvt-mini-delete" title="Eliminar" data-id="'+it.id+'"></button>'+
               '</div>'+
               '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
             '</div>';
@@ -1566,6 +1582,23 @@ document.addEventListener('DOMContentLoaded', function(){
               const show = panel.style.display==='block';
               panel.style.display = show?'none':'block';
               b.textContent = show?'Ver perfil':'Ocultar';
+            });
+          });
+          els('.kvt-mini-delete', modalList).forEach(b=>{
+            b.addEventListener('click', ()=>{
+              if(!confirm('¿Enviar este candidato a la papelera?')) return;
+              const id = b.getAttribute('data-id');
+              const p = new URLSearchParams();
+              p.set('action','kvt_delete_candidate');
+              p.set('_ajax_nonce', KVT_NONCE);
+              p.set('id', id);
+              fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+                .then(r=>r.json()).then(j=>{
+                  if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo eliminar.');
+                  alert('Candidato eliminado.');
+                  listProfiles(currentPage);
+                  refresh();
+                });
             });
           });
           items.forEach(it=>{
@@ -1666,12 +1699,18 @@ document.addEventListener('DOMContentLoaded', function(){
   // Create candidate modal
     const cmodal = el('#kvt_create_modal');
   const cclose = el('#kvt_create_close');
-  const cfirst = el('#kvt_new_first');
-  const clast  = el('#kvt_new_last');
-  const cemail = el('#kvt_new_email');
-  const ccli   = el('#kvt_new_client');
-  const cproc  = el('#kvt_new_process');
-  const csubmit= el('#kvt_new_submit');
+  const cfirst   = el('#kvt_new_first');
+  const clast    = el('#kvt_new_last');
+  const cemail   = el('#kvt_new_email');
+  const cphone   = el('#kvt_new_phone');
+  const ccountry = el('#kvt_new_country');
+  const ccity    = el('#kvt_new_city');
+  const ctags    = el('#kvt_new_tags');
+  const ccvurl   = el('#kvt_new_cv_url');
+  const ccvfile  = el('#kvt_new_cv_file');
+  const ccli     = el('#kvt_new_client');
+  const cproc    = el('#kvt_new_process');
+  const csubmit  = el('#kvt_new_submit');
 
   function openCModal(){
     if (selClient && selClient.value) ccli.value = selClient.value;
@@ -1688,6 +1727,12 @@ document.addEventListener('DOMContentLoaded', function(){
       });
     }
     cfirst.value=''; clast.value=''; cemail.value='';
+    if (cphone)   cphone.value='';
+    if (ccountry) ccountry.value='';
+    if (ccity)    ccity.value='';
+    if (ctags)    ctags.value='';
+    if (ccvurl)   ccvurl.value='';
+    if (ccvfile)  ccvfile.value='';
     cmodal.style.display = 'flex';
   }
   function closeCModal(){ cmodal.style.display='none'; }
@@ -1706,12 +1751,28 @@ document.addEventListener('DOMContentLoaded', function(){
     params.set('first_name', cfirst.value||'');
     params.set('last_name',  clast.value||'');
     params.set('email',      cemail.value||'');
+    params.set('phone',      cphone && cphone.value ? cphone.value : '');
+    params.set('country',    ccountry && ccountry.value ? ccountry.value : '');
+    params.set('city',       ccity && ccity.value ? ccity.value : '');
+    params.set('tags',       ctags && ctags.value ? ctags.value : '');
+    params.set('cv_url',     ccvurl && ccvurl.value ? ccvurl.value : '');
     params.set('client_id',  ccli.value||'');
     params.set('process_id', cproc.value||'');
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
-      .then(r=>r.json()).then(j=>{
+      .then(r=>r.json()).then(async j=>{
         if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo crear el candidato.');
-        alert('Candidato creado (#'+j.data.id+').');
+        const newId = j.data.id;
+        if (ccvfile && ccvfile.files && ccvfile.files[0]) {
+          const fd = new FormData();
+          fd.append('action','kvt_upload_cv');
+          fd.append('_ajax_nonce', KVT_NONCE);
+          fd.append('id', newId);
+          fd.append('file', ccvfile.files[0]);
+          const upRes = await fetch(KVT_AJAX,{method:'POST',body:fd});
+          const upJ = await upRes.json();
+          if(!upJ.success) alert(upJ.data && upJ.data.msg ? upJ.data.msg : 'No se pudo subir el CV.');
+        }
+        alert('Candidato creado (#'+newId+').');
         closeCModal(); refresh();
       });
     });
@@ -2299,6 +2360,11 @@ JS;
         $first      = isset($_POST['first_name']) ? sanitize_text_field($_POST['first_name']) : '';
         $last       = isset($_POST['last_name'])  ? sanitize_text_field($_POST['last_name'])  : '';
         $email      = isset($_POST['email'])      ? sanitize_email($_POST['email'])           : '';
+        $phone      = isset($_POST['phone'])      ? sanitize_text_field($_POST['phone'])      : '';
+        $country    = isset($_POST['country'])    ? sanitize_text_field($_POST['country'])    : '';
+        $city       = isset($_POST['city'])       ? sanitize_text_field($_POST['city'])       : '';
+        $tags       = isset($_POST['tags'])       ? sanitize_text_field($_POST['tags'])       : '';
+        $cv_url     = isset($_POST['cv_url'])     ? esc_url_raw($_POST['cv_url'])             : '';
         $client_id  = isset($_POST['client_id'])  ? intval($_POST['client_id'])               : 0;
         $process_id = isset($_POST['process_id']) ? intval($_POST['process_id'])              : 0;
 
@@ -2318,6 +2384,11 @@ JS;
             'kvt_first_name' => $first,
             'kvt_last_name'  => $last,
             'kvt_email'      => $email,
+            'kvt_phone'      => $phone,
+            'kvt_country'    => $country,
+            'kvt_city'       => $city,
+            'kvt_tags'       => $tags,
+            'kvt_cv_url'     => $cv_url,
         ];
         foreach ($fields as $k => $v) {
             update_post_meta($new_id, $k, $v);
