@@ -1103,15 +1103,24 @@ function ktDownloadEMLZip(){
             if ($city === '') $city = sanitize_text_field(get_post_meta($p->ID, 'city', true));
 
             $client = '';
-            $terms = get_the_terms($p, 'kvt_client');
-            if ($terms && !is_wp_error($terms)) {
+            $terms = get_the_terms($p->ID, 'kvt_client');
+            if ($terms && !is_wp_error($terms) && !empty($terms)) {
                 $client = sanitize_text_field($terms[0]->name);
             }
 
             $role = '';
-            $terms = get_the_terms($p, 'kvt_process');
-            if ($terms && !is_wp_error($terms)) {
+            $terms = get_the_terms($p->ID, 'kvt_process');
+            if ($terms && !is_wp_error($terms) && !empty($terms)) {
                 $role = sanitize_text_field($terms[0]->name);
+                if ($client === '') {
+                    $linked = (int) get_term_meta($terms[0]->term_id, 'kvt_process_client', true);
+                    if ($linked) {
+                        $client_term = get_term($linked, 'kvt_client');
+                        if ($client_term && !is_wp_error($client_term)) {
+                            $client = sanitize_text_field($client_term->name);
+                        }
+                    }
+                }
             }
 
             $status = sanitize_text_field(get_post_meta($p->ID, 'kvt_status', true));
