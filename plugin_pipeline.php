@@ -1899,10 +1899,9 @@ document.addEventListener('DOMContentLoaded', function(){
       const c = window.KVT_CLIENT_MAP.find(x=>String(x.id)===cid);
       if(c){
         clientDet = '<strong>Cliente:</strong> '+esc(c.name||'');
-        if(c.contact_name || c.contact_email || c.contact_phone){
+        if(c.contact_name || c.contact_email){
           clientDet += '<br><em>Contacto:</em> '+esc(c.contact_name||'');
           if(c.contact_email) clientDet += ', '+esc(c.contact_email);
-          if(c.contact_phone) clientDet += ', '+esc(c.contact_phone);
         }
         if(c.description) clientDet += '<br><em>Descripción:</em> '+esc(c.description);
         const procNames = Array.isArray(window.KVT_PROCESS_MAP)?window.KVT_PROCESS_MAP.filter(p=>String(p.client_id)===cid).map(p=>p.name):[];
@@ -1947,8 +1946,12 @@ document.addEventListener('DOMContentLoaded', function(){
   infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
   selToggle && selToggle.addEventListener('click', ()=>{
     updateSelectedInfo();
-    const html = selDetails.innerHTML.trim();
-    infoBody.innerHTML = html ? html : '<p>No hay información disponible.</p>';
+    const clientHtml = selClientInfo.innerHTML.trim();
+    const processHtml = selProcessInfo.innerHTML.trim();
+    const parts = [];
+    if(clientHtml) parts.push('<p>'+clientHtml+'</p>');
+    if(processHtml) parts.push('<p>'+processHtml+'</p>');
+    infoBody.innerHTML = parts.join('') || '<p>No hay información disponible.</p>';
     infoModal.style.display='flex';
   });
   aiBtn && aiBtn.addEventListener('click', ()=>{
@@ -2913,12 +2916,16 @@ JS;
         foreach ($meta as $k => $v) {
             update_post_meta($new_id, $k, $v);
         }
-        if (!isset($meta['kvt_status'])) {
-            $statuses = $this->get_statuses();
-            if (!empty($statuses)) update_post_meta($new_id,'kvt_status',$statuses[0]);
-        }
         if ($client_id) wp_set_object_terms($new_id, [$client_id], self::TAX_CLIENT, false);
         if ($process_id) wp_set_object_terms($new_id, [$process_id], self::TAX_PROCESS, false);
+        if ($client_id && $process_id) {
+            if (!isset($meta['kvt_status'])) {
+                $statuses = $this->get_statuses();
+                if (!empty($statuses)) update_post_meta($new_id,'kvt_status',$statuses[0]);
+            }
+        } else {
+            update_post_meta($new_id,'kvt_status','');
+        }
 
         $title = get_the_title($new_id);
         if (!$title) {
@@ -2971,10 +2978,14 @@ JS;
             update_post_meta($new_id, $k, $v);
             update_post_meta($new_id, str_replace('kvt_','',$k), $v);
         }
-        $statuses = $this->get_statuses();
-        if (!empty($statuses)) update_post_meta($new_id,'kvt_status',$statuses[0]);
         if ($client_id) wp_set_object_terms($new_id, [$client_id], self::TAX_CLIENT, false);
         if ($process_id) wp_set_object_terms($new_id, [$process_id], self::TAX_PROCESS, false);
+        $statuses = $this->get_statuses();
+        if ($client_id && $process_id) {
+            if (!empty($statuses)) update_post_meta($new_id,'kvt_status',$statuses[0]);
+        } else {
+            update_post_meta($new_id,'kvt_status','');
+        }
 
       wp_send_json_success(['id'=>$new_id]);
       }
