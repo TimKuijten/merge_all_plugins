@@ -89,6 +89,11 @@ class Kovacic_Pipeline_Visualizer {
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
 
+        // Follow-up reminders
+        add_action('wp',                            [$this, 'schedule_followup_cron']);
+        add_action('kvt_daily_followup',            [$this, 'cron_check_followups']);
+        add_action('admin_notices',                 [$this, 'followup_admin_notice']);
+
         add_action('plugins_loaded',                 [$this, 'ensure_defaults']);
     }
 
@@ -343,6 +348,8 @@ cv_uploaded|Fecha de subida");
         $cv_date = $this->fmt_date_ddmmyyyy($cv_date_raw);
         $cv_att  = $this->meta_get_compat($post->ID, 'kvt_cv_attachment_id', ['cv_attachment_id']);
         $cv_txt  = get_post_meta($post->ID, 'kvt_cv_text_url', true);
+        $next_raw = $this->meta_get_compat($post->ID, 'kvt_next_action', ['next_action']);
+        $next_action = $this->fmt_date_ddmmyyyy($next_raw);
         $notes   = $this->meta_get_compat($post->ID, 'kvt_notes',       ['notes']);
         ?>
         <table class="form-table">
@@ -386,6 +393,7 @@ cv_uploaded|Fecha de subida");
             </tr>
 
             <tr><th><label>Fecha de subida</label></th><td><input type="text" name="kvt_cv_uploaded" value="<?php echo esc_attr($cv_date); ?>" class="regular-text" placeholder="DD-MM-YYYY"></td></tr>
+            <tr><th><label>Próxima acción</label></th><td><input type="text" name="kvt_next_action" value="<?php echo esc_attr($next_action); ?>" class="regular-text" placeholder="DD-MM-YYYY"></td></tr>
 
             <tr><th><label>Notas</label></th>
                 <td><textarea name="kvt_notes" rows="6" class="large-text" placeholder="Notas internas"><?php echo esc_textarea($notes); ?></textarea></td>
@@ -529,6 +537,7 @@ cv_uploaded|Fecha de subida");
             'kvt_city'       => ['city'],
             'kvt_cv_url'     => ['cv_url'],
             'kvt_cv_uploaded'=> ['cv_uploaded'],
+            'kvt_next_action'=> ['next_action'],
             'kvt_status'     => [],
             'kvt_notes'      => ['notes'],
         ];
@@ -538,7 +547,7 @@ cv_uploaded|Fecha de subida");
             if (isset($_POST[$k])) {
                 $val = ($k==='kvt_notes') ? wp_kses_post($_POST[$k])
                       : (($k==='kvt_email') ? sanitize_email($_POST[$k]) : sanitize_text_field($_POST[$k]));
-                if ($k === 'kvt_cv_uploaded') $val = $this->fmt_date_ddmmyyyy($val);
+                if ($k === 'kvt_cv_uploaded' || $k === 'kvt_next_action') $val = $this->fmt_date_ddmmyyyy($val);
                 update_post_meta($post_id, $k, $val);
                 foreach ($fallbacks as $fb) update_post_meta($post_id, $fb, $val);
             }
@@ -647,6 +656,40 @@ cv_uploaded|Fecha de subida");
         $vals = array_filter(array_map('trim', (array) $vals));
         sort($vals);
         return $vals;
+    }
+
+    public function schedule_followup_cron() {
+        if (!wp_next_scheduled('kvt_daily_followup')) {
+            wp_schedule_event(time(), 'daily', 'kvt_daily_followup');
+        }
+    }
+    public function cron_check_followups() {
+        $posts = get_posts([
+            'post_type'   => self::CPT,
+            'post_status' => 'any',
+            'numberposts' => -1,
+            'meta_query'  => [
+                ['key' => 'kvt_next_action', 'value' => '', 'compare' => '!='],
+            ],
+        ]);
+        $due = [];
+        $today = strtotime('today');
+        foreach ($posts as $p) {
+            $raw = get_post_meta($p->ID, 'kvt_next_action', true);
+            $ts  = strtotime(str_replace('/', '-', $raw));
+            if ($ts && $ts <= $today) {
+                $due[] = get_the_title($p);
+            }
+        }
+        update_option('kvt_followup_due', $due);
+    }
+    public function followup_admin_notice() {
+        if (!current_user_can('edit_posts')) return;
+        $due = get_option('kvt_followup_due', []);
+        if (!empty($due)) {
+            $list = esc_html(implode(', ', $due));
+            echo '<div class="notice notice-warning"><p>Seguimientos pendientes: ' . $list . '</p></div>';
+        }
     }
 
     /* Shortcode */
@@ -921,6 +964,8 @@ cv_uploaded|Fecha de subida");
         .kvt-dropzone{min-height:60px;display:flex;flex-direction:column;gap:8px}
         .kvt-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:10px;box-shadow:0 3px 10px rgba(0,0,0,.04);cursor:grab;overflow-wrap:anywhere;word-break:break-word}
         .kvt-card.dragging{opacity:.6}
+        .kvt-card.kvt-overdue{border-color:#dc2626}
+        .kvt-card .kvt-followup{font-size:12px;color:#dc2626;margin:0}
         .kvt-card .kvt-title{font-weight:700;margin:0 0 4px}
         .kvt-card .kvt-sub{font-size:12px;color:#64748b;margin:0}
         .kvt-card .kvt-tags, .kvt-card-mini .kvt-tags{margin:4px 0;display:flex;gap:4px;flex-wrap:wrap}
@@ -1226,6 +1271,18 @@ document.addEventListener('DOMContentLoaded', function(){
           tagsWrap.appendChild(span);
         });
       }
+      let follow;
+      if (c.meta.next_action){
+        follow = document.createElement('p');
+        follow.className = 'kvt-followup';
+        follow.textContent = c.meta.next_action;
+        const parts = c.meta.next_action.split('-');
+        if(parts.length===3){
+          const dt = new Date(parts[2], parts[1]-1, parts[0]);
+          const today = new Date(); today.setHours(0,0,0,0);
+          if(dt < today) card.classList.add('kvt-overdue');
+        }
+      }
 
     const expand = document.createElement('div'); expand.className='kvt-expand';
     const btn = document.createElement('button'); btn.type='button'; btn.textContent='Ver perfil';
@@ -1261,7 +1318,7 @@ document.addEventListener('DOMContentLoaded', function(){
         });
     });
 
-      card.appendChild(head); card.appendChild(tagsWrap); card.appendChild(sub);
+      card.appendChild(head); card.appendChild(tagsWrap); if (follow) card.appendChild(follow); card.appendChild(sub);
     card.appendChild(expand); card.appendChild(panel);
 
     // Enable handlers after elements are in the DOM
@@ -2083,6 +2140,7 @@ JS;
                 'city'        => $this->meta_get_compat($p->ID,'kvt_city',['city']),
                 'cv_url'      => $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']),
                 'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
+                'next_action' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_next_action',['next_action'])),
                 'notes'       => $notes_raw,
                 'notes_count' => $this->count_notes($notes_raw),
                 'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
@@ -2805,7 +2863,7 @@ JS;
         $q = new WP_Query($args);
 
         // Fixed order export
-        $headers = ['email','first_name','surname','country','city','proceso','cliente','phone','cv_url'];
+        $headers = ['email','first_name','surname','country','city','proceso','cliente','phone','cv_url','next_action'];
         $filename = 'pipeline_export_' . date('Ymd_His');
 
         if ($format === 'xls') {
@@ -2831,7 +2889,8 @@ JS;
             $client  = $this->get_term_name($p->ID, self::TAX_CLIENT);
             $phone   = $this->meta_get_compat($p->ID,'kvt_phone',['phone']);
             $cv      = $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']);
-            fputcsv($out, [$email,$fname,$lname,$country,$city,$proc,$client,$phone,$cv]);
+            $next    = $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_next_action',['next_action']));
+            fputcsv($out, [$email,$fname,$lname,$country,$city,$proc,$client,$phone,$cv,$next]);
         }
         fclose($out);
         exit;
