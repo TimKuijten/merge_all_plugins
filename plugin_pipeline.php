@@ -37,6 +37,7 @@ class Kovacic_Pipeline_Visualizer {
         // Candidate admin UI
         add_action('add_meta_boxes',             [$this, 'add_meta_boxes']);
         add_action('save_post_' . self::CPT,     [$this, 'save_candidate_meta']);
+        add_action('post_edit_form_tag',         [$this, 'form_enctype']);
 
         // Replace default taxonomy boxes
         add_action('admin_menu',                 [$this, 'replace_tax_metaboxes']);
@@ -268,6 +269,12 @@ cv_uploaded|Fecha de subida");
     }
 
     /* Candidate admin */
+    public function form_enctype() {
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if ($screen && $screen->post_type === self::CPT) {
+            echo ' enctype="multipart/form-data"';
+        }
+    }
     public function replace_tax_metaboxes() {
         remove_meta_box(self::TAX_CLIENT.'div', self::CPT, 'side');
         remove_meta_box(self::TAX_PROCESS.'div', self::CPT, 'side');
@@ -649,7 +656,7 @@ cv_uploaded|Fecha de subida");
                         <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
                         <button class="kvt-btn" type="button" id="kvt_export_xls">Export Excel</button>
                     </form>
-                    <a class="kvt-btn" id="kvt_mandar_correos" href="https://kovacictalent.com/wp-admin/admin.php?page=kt-abm">Mandar correos</a>
+                    <a class="kvt-btn" id="kvt_mandar_correos" href="https://kovacictalent.com/wp-admin/admin.php?page=kt-abm" target="_blank" rel="noopener">Mandar correos</a>
                 </div>
             </div>
 
@@ -853,7 +860,7 @@ cv_uploaded|Fecha de subida");
         .kvt-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
         .kvt-filters label{margin-right:12px;display:inline-flex;gap:6px;align-items:center;font-weight:600}
         .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
-        .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600}
+        .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
         .kvt-btn:hover{opacity:.95}
           .kvt-secondary{background:#475569}
           .kvt-new{position:relative;display:inline-block}
