@@ -138,16 +138,17 @@ class KT_AIBulkMailer_ES {
             'ajax'  => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce(self::NONCE_KEY),
         ];
+        $smtp_accounts = function_exists('smtp_helper_get_accounts') ? smtp_helper_get_accounts() : [];
         wp_add_inline_script('kt-abm', 'const KT_ABM = '.wp_json_encode($payload).';');
 
         // Inline App JS
         ob_start(); ?>
 <script>
 // ===============================
-// Persistence + De-dup + App JS (first_name + surname; EML ZIP; delete selected; NO importar base)
+// App JS (first_name + surname; EML ZIP; delete selected; NO importar base)
 // ===============================
-const STORAGE_KEY = 'kt_abm_state_v10';
 const KT_SMTP_ACCOUNTS = <?php echo wp_json_encode($smtp_accounts); ?>;
+const SIG_KEY = 'kt_abm_signature_v1';
 
 // ---- Utilities ----
 function ktParseCSV(text){
@@ -254,6 +255,32 @@ function ktUseAccount(idx){
   if(fn) fn.value = acc.from_name || '';
 }
 
+function ktAppendSignature(tpl){
+  const el=document.getElementById('ktSignature');
+  const sig=el ? el.value : '';
+  if(!sig) return tpl;
+  return tpl.includes('{{sender}}') ? tpl.replace('{{sender}}','{{sender}}<br>'+sig) : tpl + '<br>'+sig;
+}
+
+function loadSignature(){
+  try{
+    const sig = localStorage.getItem(SIG_KEY);
+    if(sig){
+      const el=document.getElementById('ktSignature');
+      if(el) el.value = sig;
+    }
+  }catch(e){}
+}
+
+function saveSignature(){
+  try{
+    const el=document.getElementById('ktSignature');
+    if(!el) return;
+    localStorage.setItem(SIG_KEY, el.value || '');
+    alert('Firma guardada');
+  }catch(e){}
+}
+
 function ktUniq(arr){ return [...new Set(arr.filter(Boolean).map(x=>x.trim()))].sort((a,b)=>a.localeCompare(b)); }
 function ktEscape(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function ktRender(tpl, data){ return tpl.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,(m,k)=> (data[k] ?? m)); }
@@ -263,50 +290,9 @@ let KT_CONTACTS=[], KT_VIEW=[], KT_SELECTED=new Set();
 let KT_PAGE=1, KT_PER_PAGE=20;
 let FILTERS = { roles: [], countries: [], cities: [], clients: [], statuses: [] };
 
-// ---- Persistence ----
-function loadSaved(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return;
-    const st = JSON.parse(raw);
-    const setVal = (id, val) => { const el=document.getElementById(id); if(el && typeof val === 'string') el.value = val; };
-    setVal('ktSubject', st.subject);
-    setVal('ktBody', st.body);
-    setVal('ktPrompt', st.prompt);
-    setVal('ktFromEmail', st.fromEmail);
-    setVal('ktFromName', st.fromName);
-    setVal('ktQ', st.keyword);
-    setVal('ktSmtpAccount', st.smtpAccount);
-    if(typeof st.smtpAccount !== 'undefined' && st.smtpAccount !== '') ktUseAccount(st.smtpAccount);
-    FILTERS.roles     = Array.isArray(st.rolesSel)     ? st.rolesSel : [];
-    FILTERS.countries = Array.isArray(st.countriesSel) ? st.countriesSel : [];
-    FILTERS.cities    = Array.isArray(st.citiesSel)    ? st.citiesSel : [];
-    FILTERS.clients   = Array.isArray(st.clientsSel)   ? st.clientsSel : [];
-    FILTERS.statuses  = Array.isArray(st.statusesSel)  ? st.statusesSel : [];
-  }catch(e){}
-}
-
-function saveState(){
-  try{
-    const getVal = (id) => (document.getElementById(id)?.value ?? '');
-    const state = {
-      subject: getVal('ktSubject'),
-      body: getVal('ktBody'),
-      prompt: getVal('ktPrompt'),
-      fromEmail: getVal('ktFromEmail'),
-      fromName: getVal('ktFromName'),
-      smtpAccount: getVal('ktSmtpAccount'),
-      keyword: getVal('ktQ'),
-      rolesSel: FILTERS.roles,
-      countriesSel: FILTERS.countries,
-      citiesSel: FILTERS.cities,
-      clientsSel: FILTERS.clients,
-      statusesSel: FILTERS.statuses,
-      savedAt: Date.now()
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }catch(e){}
-}
+// ---- Persistence (disabled) ----
+function loadSaved(){}
+function saveState(){}
 
 // De-dup by email
 function mergeContacts(newOnes){
@@ -626,7 +612,7 @@ function ktPreview(){
   const c=rows[0];
   const subj=ktRender(document.getElementById('ktSubject').value, c);
   const body=ktRender(
-    document.getElementById('ktBody').value,
+    ktAppendSignature(document.getElementById('ktBody').value),
     {...c, sender: document.getElementById('ktFromName').value || document.getElementById('ktFromEmail').value || 'Yo'}
   );
   document.getElementById('ktPreview').innerHTML = '<strong>Asunto:</strong> '+ktEscape(subj)+'<div class="kt-hr"></div>'+body;
@@ -636,7 +622,7 @@ async function ktSend(){
   const rows=ktSelectedRows();
   if(!rows.length){ alert('Selecciona al menos un contacto.'); return; }
   const subject_template=(document.getElementById('ktSubject').value||'').trim();
-  const body_template=(document.getElementById('ktBody').value||'').trim();
+  const body_template=ktAppendSignature((document.getElementById('ktBody').value||'').trim());
   if(!subject_template || !body_template){ alert('Completa asunto y cuerpo.'); return; }
   if(!confirm(`¿Enviar a ${rows.length} contactos ahora?`)) return;
 
@@ -665,7 +651,6 @@ async function ktSend(){
   document.getElementById('ktPreview').textContent =
     'Enviados: '+(data.sent||0)+' | Errores: '+((data.errors||[]).length)+
     ((data.errors||[]).length ? ('\n'+JSON.stringify(data.errors,null,2)) : '');
-  saveState();
 }
 
 // ---- Download EML drafts (ZIP) ----
@@ -673,7 +658,7 @@ function ktDownloadEMLZip(){
   const rows = ktSelectedRows();
   if(!rows.length){ alert('Selecciona al menos un contacto.'); return; }
   const subject_template=(document.getElementById('ktSubject').value||'').trim();
-  const body_template=(document.getElementById('ktBody').value||'').trim();
+  const body_template=ktAppendSignature((document.getElementById('ktBody').value||'').trim());
   if(!subject_template || !body_template){ alert('Completa asunto y cuerpo.'); return; }
 
   const payloadData = {
@@ -701,19 +686,20 @@ function ktDownloadEMLZip(){
 
 // ---- Bootstrapping ----
 (function init(){
-  loadSaved();
   KT_CONTACTS = [];
   KT_SELECTED.clear();
   FILTERS = {roles:[],countries:[],cities:[],clients:[],statuses:[]};
   ktAfterLoad();
   ktImportCandidates();
 
-  ['ktSubject','ktBody','ktPrompt','ktFromEmail','ktFromName','ktQ'].forEach(id => {
-    const el=document.getElementById(id);
-    if(el) el.addEventListener('input', saveState);
-  });
   const sel=document.getElementById('ktSmtpAccount');
-  if(sel) sel.addEventListener('change', e=>{ ktUseAccount(e.target.value); saveState(); });
+  if(sel){
+    sel.addEventListener('change', e=>ktUseAccount(e.target.value));
+    if(sel.value !== '') ktUseAccount(sel.value);
+  }
+  const sigBtn=document.getElementById('ktSaveSignature');
+  if(sigBtn) sigBtn.addEventListener('click', saveSignature);
+  loadSignature();
 })();
 </script>
 <?php
@@ -723,8 +709,9 @@ function ktDownloadEMLZip(){
     public function page() {
         if (!current_user_can('manage_options')) return;
         $o = get_option(self::OPTION_KEY, []);
-        $from_default = $o['from_email'] ?? self::DEFAULT_FROM;
         $smtp_accounts = function_exists('smtp_helper_get_accounts') ? smtp_helper_get_accounts() : [];
+        $from_default = $smtp_accounts[0]['from_email'] ?? ($o['from_email'] ?? self::DEFAULT_FROM);
+        $from_name_default = $smtp_accounts[0]['from_name'] ?? ($o['from_name'] ?? get_bloginfo('name'));
         ?>
         <div class="wrap">
             <h1 class="kt-title">Correo con IA</h1>
@@ -757,7 +744,9 @@ function ktDownloadEMLZip(){
                 <input id="ktSubject" class="kt-input" type="text" placeholder="{{first_name}}, nota rápida de Kovacic Executive Talent" />
                 <label style="margin-top:8px">Cuerpo (se permite HTML)</label>
                 <textarea id="ktBody" class="kt-textarea" placeholder="Hola {{first_name}}, ..."></textarea>
-
+                <label style="margin-top:8px">Firma (HTML)</label>
+                <textarea id="ktSignature" class="kt-textarea" placeholder="Tu firma..."></textarea>
+                <div class="kt-row" style="margin-top:8px"><button id="ktSaveSignature" type="button" class="kt-btn">Guardar firma</button></div>
                 <div class="kt-row" style="margin-top:8px">
                     <button class="kt-btn" onclick="ktPreview()">Vista previa</button>
                 </div>
@@ -766,13 +755,12 @@ function ktDownloadEMLZip(){
                     <div>
                         <label>Cuenta SMTP</label>
                         <select id="ktSmtpAccount" class="kt-input">
-                            <option value="">Personalizado</option>
                             <?php foreach ($smtp_accounts as $i => $acc) {
-                                $email = esc_html($acc['from_email'] ?? '');
-                                $name  = esc_html($acc['from_name'] ?? '');
-                                $label = $name ? $name . ' <' . $email . '>' : $email;
-                                echo '<option value="' . esc_attr($i) . '">' . esc_html($label) . '</option>';
+                                $label = esc_html($acc['name'] ?? ('Account ' . ($i + 1)));
+                                $selected = $i === 0 ? ' selected' : '';
+                                echo '<option value="' . esc_attr($i) . '"' . $selected . '>' . $label . '</option>';
                             } ?>
+                            <option value=""><?php esc_html_e('Personalizado', 'kt-abm'); ?></option>
                         </select>
                     </div>
                     <div>
@@ -781,15 +769,10 @@ function ktDownloadEMLZip(){
                     </div>
                     <div>
                         <label>Nombre del remitente</label>
-                        <input id="ktFromName" class="kt-input" type="text" value="<?php echo esc_attr($o['from_name'] ?? get_bloginfo('name')); ?>" />
-                    </div>
-                    <div style="align-self:flex-end; display:flex; gap:8px;">
-                        <button class="kt-btn" onclick="ktDownloadEMLZip()">Descargar borradores (.zip)</button>
-                        <button class="kt-btn kt-primary" onclick="ktSend()">Enviar correos</button>
+                        <input id="ktFromName" class="kt-input" type="text" value="<?php echo esc_attr($from_name_default); ?>" />
                     </div>
                 </div>
                 <p class="kt-muted" style="margin-top:6px">Variables: <code>{{first_name}}</code>, <code>{{surname}}</code>, <code>{{country}}</code>, <code>{{city}}</code>, <code>{{role}}</code> (proceso), <code>{{sender}}</code></p>
-                <p class="kt-muted" style="margin-top:6px"><strong>Nota:</strong> El envío directo no está operativo en este momento. Utiliza <em>Descargar borradores (.zip)</em> para generar los borradores y revisarlos en tu cliente de correo.</p>
             </div>
 
             <div class="kt-grid kt-cols-3">
@@ -910,6 +893,10 @@ function ktDownloadEMLZip(){
                 <div class="kt-card">
                     <h2 style="margin-top:0;">Vista previa</h2>
                     <div id="ktPreview" class="kt-preview">Usa “Vista previa” tras seleccionar al menos un contacto.</div>
+                </div>
+                <div class="kt-row" style="margin-top:8px; gap:8px;">
+                    <button class="kt-btn" onclick="ktDownloadEMLZip()">Descargar borradores (.zip)</button>
+                    <button class="kt-btn kt-primary" onclick="ktSend()">Enviar correos</button>
                 </div>
             </div>
 

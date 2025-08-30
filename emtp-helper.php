@@ -39,7 +39,15 @@ add_action('admin_init', 'smtp_helper_register_settings');
  */
 function smtp_helper_get_accounts() {
     $accounts = get_option('smtp_helper_accounts', array());
-    return is_array($accounts) ? $accounts : array();
+    if (!is_array($accounts) || empty($accounts)) {
+        $accounts = array(array('name' => 'Account 1'));
+    }
+    foreach ($accounts as $i => $acc) {
+        if (empty($acc['name'])) {
+            $accounts[$i]['name'] = 'Account ' . ($i + 1);
+        }
+    }
+    return $accounts;
 }
 
 /**
@@ -47,9 +55,6 @@ function smtp_helper_get_accounts() {
  */
 function smtp_helper_render_settings_page() {
     $accounts = smtp_helper_get_accounts();
-    if (empty($accounts)) {
-        $accounts = array(array());
-    }
     ?>
     <div class="wrap">
         <h1><?php esc_html_e('SMTP Helper Settings', 'smtp-helper'); ?></h1>
@@ -58,8 +63,12 @@ function smtp_helper_render_settings_page() {
             <div id="smtp-helper-accounts">
                 <?php foreach ($accounts as $i => $acc) : ?>
                 <fieldset class="smtp-helper-account" style="border:1px solid #ccc;padding:10px;margin-bottom:10px;">
-                    <legend><?php printf(esc_html__('Account %d', 'smtp-helper'), $i + 1); ?></legend>
+                    <legend><?php echo esc_html($acc['name'] ?? ('Account ' . ($i + 1))); ?></legend>
                     <table class="form-table" role="presentation">
+                        <tr>
+                            <th scope="row"><label for="smtp_helper_name_<?php echo $i; ?>"><?php esc_html_e('Account Name', 'smtp-helper'); ?></label></th>
+                            <td><input name="smtp_helper_accounts[<?php echo $i; ?>][name]" id="smtp_helper_name_<?php echo $i; ?>" type="text" value="<?php echo esc_attr($acc['name'] ?? ('Account ' . ($i + 1))); ?>" class="regular-text" /></td>
+                        </tr>
                         <tr>
                             <th scope="row"><label for="smtp_helper_host_<?php echo $i; ?>"><?php esc_html_e('SMTP Host', 'smtp-helper'); ?></label></th>
                             <td><input name="smtp_helper_accounts[<?php echo $i; ?>][host]" id="smtp_helper_host_<?php echo $i; ?>" type="text" value="<?php echo esc_attr($acc['host'] ?? ''); ?>" class="regular-text" /></td>
@@ -119,7 +128,11 @@ function smtp_helper_render_settings_page() {
                 if(name) el.setAttribute('name', name.replace(/\[\d+\]/, '[' + index + ']'));
                 const id = el.getAttribute('id');
                 if(id) el.setAttribute('id', id.replace(/_\d+$/, '_' + index));
-                el.value = '';
+                if(name && /\[name\]$/.test(name)){
+                    el.value = 'Account ' + (index + 1);
+                } else {
+                    el.value = '';
+                }
             }
         });
         container.appendChild(clone);
@@ -137,8 +150,13 @@ function smtp_helper_render_settings_page() {
 function smtp_helper_sanitize_accounts($input) {
     $out = array();
     if (is_array($input)) {
+        $i = 1;
         foreach ($input as $acc) {
             $o = array();
+            $o['name']      = sanitize_text_field($acc['name'] ?? '');
+            if ($o['name'] === '') {
+                $o['name'] = 'Account ' . $i;
+            }
             $o['host']       = sanitize_text_field($acc['host'] ?? '');
             $o['port']       = intval($acc['port'] ?? 0);
             $o['encryption'] = sanitize_text_field($acc['encryption'] ?? '');
@@ -147,6 +165,7 @@ function smtp_helper_sanitize_accounts($input) {
             $o['from_email'] = sanitize_email($acc['from_email'] ?? '');
             $o['from_name']  = sanitize_text_field($acc['from_name'] ?? '');
             $out[] = $o;
+            $i++;
         }
     }
     return $out;
