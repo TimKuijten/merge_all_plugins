@@ -1275,7 +1275,7 @@ document.addEventListener('DOMContentLoaded', function(){
       if (c.meta.next_action){
         follow = document.createElement('p');
         follow.className = 'kvt-followup';
-        follow.textContent = c.meta.next_action;
+        follow.textContent = 'Próxima acción: ' + c.meta.next_action;
         const parts = c.meta.next_action.split('-');
         if(parts.length===3){
           const dt = new Date(parts[2], parts[1]-1, parts[0]);
@@ -1344,7 +1344,8 @@ document.addEventListener('DOMContentLoaded', function(){
       kvInp('CV (URL)',     input((m.cv_url||''), 'url', 'https://...')) +
       kvInp('Subir CV',     '<input class=\"kvt-input kvt-cv-file\" type=\"file\" accept=\".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document\">'+
                             '<button type=\"button\" class=\"kvt-upload-cv\" style=\"margin-top:6px\">Subir y guardar</button>') +
-      kvInp('Fecha subida', input((m.cv_uploaded||''), 'text', 'DD-MM-YYYY'));
+      kvInp('Fecha subida', input((m.cv_uploaded||''), 'text', 'DD-MM-YYYY')) +
+      kvInp('Próxima acción', input((m.next_action||''), 'text', 'DD-MM-YYYY'));
 
     const notesVal = m.notes || '';
     const notes =
@@ -1394,6 +1395,7 @@ document.addEventListener('DOMContentLoaded', function(){
         tags:       vals[6] || '',
         cv_url:     vals[7] || '',
         cv_uploaded:vals[9] || '',
+        next_action:vals[10] || '',
         notes:      txtNotes ? txtNotes.value : '',
       };
       fetch(KVT_AJAX, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:new URLSearchParams({action:'kvt_update_profile', _ajax_nonce:KVT_NONCE, id, ...payload}).toString()})
@@ -1415,6 +1417,29 @@ document.addEventListener('DOMContentLoaded', function(){
                 tagWrap.appendChild(span);
               });
             }
+          }
+          const follow = card.querySelector('.kvt-followup');
+          if (payload.next_action){
+            const txt = 'Próxima acción: ' + payload.next_action;
+            if (follow){
+              follow.textContent = txt;
+            } else {
+              const tagsWrap = card.querySelector('.kvt-tags');
+              const f = document.createElement('p');
+              f.className = 'kvt-followup';
+              f.textContent = txt;
+              if (tagsWrap) tagsWrap.after(f); else card.prepend(f);
+            }
+            const parts = payload.next_action.split('-');
+            card.classList.remove('kvt-overdue');
+            if(parts.length===3){
+              const dt = new Date(parts[2], parts[1]-1, parts[0]);
+              const today = new Date(); today.setHours(0,0,0,0);
+              if(dt < today) card.classList.add('kvt-overdue');
+            }
+          } else if (follow){
+            follow.remove();
+            card.classList.remove('kvt-overdue');
           }
           alert('Perfil guardado.');
         });
@@ -2213,9 +2238,11 @@ JS;
             'kvt_tags'       => isset($_POST['tags'])       ? sanitize_text_field($_POST['tags'])       : '',
             'kvt_cv_url'     => isset($_POST['cv_url'])     ? esc_url_raw($_POST['cv_url'])             : '',
             'kvt_cv_uploaded'=> isset($_POST['cv_uploaded'])? sanitize_text_field($_POST['cv_uploaded']): '',
+            'kvt_next_action'=> isset($_POST['next_action'])? sanitize_text_field($_POST['next_action']): '',
             'kvt_notes'      => isset($_POST['notes'])      ? wp_kses_post($_POST['notes'])             : '',
         ];
         if ($fields['kvt_cv_uploaded']) $fields['kvt_cv_uploaded'] = $this->fmt_date_ddmmyyyy($fields['kvt_cv_uploaded']);
+        if ($fields['kvt_next_action']) $fields['kvt_next_action'] = $this->fmt_date_ddmmyyyy($fields['kvt_next_action']);
 
         foreach ($fields as $k=>$v) {
             update_post_meta($id, $k, $v);
