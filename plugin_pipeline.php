@@ -684,7 +684,7 @@ cv_uploaded|Fecha de subida");
                 <button type="button" class="kvt-tab active" data-target="candidates">Candidatos</button>
                 <button type="button" class="kvt-tab" data-target="clients">Clientes</button>
                 <button type="button" class="kvt-tab" data-target="processes">Procesos</button>
-                <button type="button" class="kvt-tab" data-target="ai">AI Search</button>
+                <button type="button" class="kvt-tab" data-target="ai">Buscada IA</button>
               </div>
               <div class="kvt-new" id="kvt_new_container">
                 <button type="button" class="kvt-btn" id="kvt_new_btn">Nuevo</button>
@@ -1462,16 +1462,46 @@ document.addEventListener('DOMContentLoaded', function(){
         aiBtn.disabled = false;
         if(!j.success){ alert('No se pudo buscar.'); aiResults.innerHTML=''; return; }
         const items = Array.isArray(j.data.items)?j.data.items:[];
+        const procSel = selProcess && selProcess.value;
+        const cliSel  = selClient && selClient.value;
+        const allowAdd = !!(procSel && (cliSel || getClientIdForProcess(procSel)));
         if(!items.length){ aiResults.innerHTML = '<p>No hay coincidencias reales.</p>'; return; }
         aiResults.innerHTML = items.map(it=>{
           const m = it.meta||{};
           return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
             '<h4>'+esc((m.first_name||'')+' '+(m.last_name||''))+(m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'')+'</h4>'+
             '<p class="kvt-ai-summary">'+esc(it.summary||'')+'</p>'+
-            '<div class="kvt-mini-actions"><button type="button" class="kvt-btn kvt-secondary kvt-mini-view">Ver perfil</button></div>'+
+            '<div class="kvt-mini-actions">'+
+              (allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'')+
+              '<button type="button" class="kvt-btn kvt-secondary kvt-mini-view">Ver perfil</button>'+
+            '</div>'+
             '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
         }).join('');
+        if(allowAdd){
+          els('.kvt-mini-add', aiResults).forEach(b=>{
+            b.addEventListener('click', ()=>{
+              const id = b.getAttribute('data-id');
+              const proc = selProcess.value;
+              let cli = selClient.value;
+              if(!cli) cli = getClientIdForProcess(proc);
+              if(!proc || !cli){ alert('Seleccione cliente y proceso en el tablero.'); return; }
+              const p = new URLSearchParams();
+              p.set('action','kvt_assign_candidate');
+              p.set('_ajax_nonce', KVT_NONCE);
+              p.set('candidate_id', id);
+              p.set('process_id', proc);
+              p.set('client_id', cli);
+              fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+                .then(r=>r.json()).then(j=>{
+                  if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo asignar.');
+                  alert('Candidato asignado.');
+                  closeModal();
+                  refresh();
+                });
+            });
+          });
+        }
         els('.kvt-mini-view', aiResults).forEach(b=>{
           b.addEventListener('click', ()=>{
             const card = b.closest('.kvt-card-mini');
@@ -1480,6 +1510,14 @@ document.addEventListener('DOMContentLoaded', function(){
             panel.style.display = show?'none':'block';
             b.textContent = show?'Ver perfil':'Ocultar';
           });
+        });
+        items.forEach(it=>{
+          const card = aiResults.querySelector('.kvt-card-mini[data-id="'+it.id+'"]');
+          if(card){
+            enableNotesHandlers(card, String(it.id));
+            enableProfileEditHandlers(card, String(it.id));
+            enableCvUploadHandlers(card, String(it.id));
+          }
         });
       }).catch(()=>{ aiBtn.disabled=false; aiResults.innerHTML=''; });
   });
@@ -1528,7 +1566,8 @@ document.addEventListener('DOMContentLoaded', function(){
               '<div class="kvt-mini-actions">'+
                 (allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'')+
                 '<button type="button" class="kvt-btn kvt-secondary kvt-mini-view" data-id="'+it.id+'">Ver perfil</button>'+
-              '</div>'+
+                '<button type="button" class="kvt-delete kvt-mini-delete dashicons dashicons-trash" data-id="'+it.id+'" title="Eliminar"></button>'+
+              '</div>'+ 
               '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
             '</div>';
           }).join('');
@@ -1559,6 +1598,21 @@ document.addEventListener('DOMContentLoaded', function(){
               });
             });
           }
+          els('.kvt-mini-delete', modalList).forEach(b=>{
+            b.addEventListener('click', ()=>{
+              if(!confirm('¿Eliminar candidato permanentemente?')) return;
+              const id = b.getAttribute('data-id');
+              const p = new URLSearchParams();
+              p.set('action','kvt_delete_candidate');
+              p.set('_ajax_nonce', KVT_NONCE);
+              p.set('id', id);
+              fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+                .then(r=>r.json()).then(j=>{
+                  if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo eliminar.');
+                  b.closest('.kvt-card-mini').remove();
+                });
+            });
+          });
           els('.kvt-mini-view', modalList).forEach(b=>{
             b.addEventListener('click', ()=>{
               const card = b.closest('.kvt-card-mini');
@@ -2022,8 +2076,8 @@ JS;
         check_ajax_referer('kvt_nonce');
         $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
         if (!$id) wp_send_json_error(['msg'=>'Invalid'], 400);
-        $res = wp_trash_post($id);
-        if (!$res) wp_send_json_error(['msg'=>'No se pudo mover a la papelera.']);
+        $res = wp_delete_post($id, true);
+        if (!$res) wp_send_json_error(['msg'=>'No se pudo eliminar.']);
         wp_send_json_success(['ok'=>true]);
     }
 
