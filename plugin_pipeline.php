@@ -350,6 +350,7 @@ cv_uploaded|Fecha de subida");
         $cv_txt  = get_post_meta($post->ID, 'kvt_cv_text_url', true);
         $next_raw = $this->meta_get_compat($post->ID, 'kvt_next_action', ['next_action']);
         $next_action = $this->fmt_date_ddmmyyyy($next_raw);
+        $next_note = $this->meta_get_compat($post->ID, 'kvt_next_action_note', ['next_action_note']);
         $notes   = $this->meta_get_compat($post->ID, 'kvt_notes',       ['notes']);
         ?>
         <table class="form-table">
@@ -392,8 +393,9 @@ cv_uploaded|Fecha de subida");
                 </td>
             </tr>
 
-            <tr><th><label>Fecha de subida</label></th><td><input type="text" name="kvt_cv_uploaded" value="<?php echo esc_attr($cv_date); ?>" class="regular-text" placeholder="DD-MM-YYYY"></td></tr>
-            <tr><th><label>Próxima acción</label></th><td><input type="text" name="kvt_next_action" value="<?php echo esc_attr($next_action); ?>" class="regular-text" placeholder="DD-MM-YYYY"></td></tr>
+            <tr><th><label>Fecha de subida</label></th><td><input type="text" name="kvt_cv_uploaded" value="<?php echo esc_attr($cv_date); ?>" class="regular-text kvt-date" placeholder="DD-MM-YYYY"></td></tr>
+            <tr><th><label>Próxima acción</label></th><td><input type="text" name="kvt_next_action" value="<?php echo esc_attr($next_action); ?>" class="regular-text kvt-date" placeholder="DD-MM-YYYY"></td></tr>
+            <tr><th><label>Comentario próxima acción</label></th><td><input type="text" name="kvt_next_action_note" value="<?php echo esc_attr($next_note); ?>" class="regular-text"></td></tr>
 
             <tr><th><label>Notas</label></th>
                 <td><textarea name="kvt_notes" rows="6" class="large-text" placeholder="Notas internas"><?php echo esc_textarea($notes); ?></textarea></td>
@@ -409,6 +411,15 @@ cv_uploaded|Fecha de subida");
             const dateFld= document.querySelector('input[name="kvt_cv_uploaded"]');
             const nonce  = document.getElementById('kvt_nonce_ajax');
             const pid    = <?php echo $post->ID; ?>;
+            const maskDate = e => {
+                let v = e.target.value.replace(/[^0-9]/g,'').slice(0,8);
+                if (v.length > 4) v = v.replace(/(\d{2})(\d{2})(\d+)/,'$1-$2-$3');
+                else if (v.length > 2) v = v.replace(/(\d{2})(\d+)/,'$1-$2');
+                e.target.value = v;
+            };
+            document.querySelectorAll('input.kvt-date').forEach(inp=>{
+                inp.addEventListener('input', maskDate);
+            });
             if(btn && input){
                 btn.addEventListener('click', function(){ input.click(); });
                 input.addEventListener('change', function(){
@@ -538,6 +549,7 @@ cv_uploaded|Fecha de subida");
             'kvt_cv_url'     => ['cv_url'],
             'kvt_cv_uploaded'=> ['cv_uploaded'],
             'kvt_next_action'=> ['next_action'],
+            'kvt_next_action_note'=> ['next_action_note'],
             'kvt_status'     => [],
             'kvt_notes'      => ['notes'],
         ];
@@ -1275,7 +1287,7 @@ document.addEventListener('DOMContentLoaded', function(){
       if (c.meta.next_action){
         follow = document.createElement('p');
         follow.className = 'kvt-followup';
-        follow.textContent = 'Próxima acción: ' + c.meta.next_action;
+        follow.textContent = 'Próxima acción: ' + c.meta.next_action + (c.meta.next_action_note ? ' — ' + c.meta.next_action_note : '');
         const parts = c.meta.next_action.split('-');
         if(parts.length===3){
           const dt = new Date(parts[2], parts[1]-1, parts[0]);
@@ -1330,7 +1342,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
   function buildProfileHTML(c){
     const m = c.meta||{};
-    const input = (val,type='text',ph='')=>'<input class="kvt-input" type="'+type+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'">';
+    const input = (val,type='text',ph='',cls='')=>'<input class="kvt-input'+(cls?' '+cls:'')+'" type="'+type+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'">';
     const kvInp = (label, html)=>'<dt>'+esc(label)+'</dt><dd>'+html+'</dd>';
 
     const dl =
@@ -1344,8 +1356,9 @@ document.addEventListener('DOMContentLoaded', function(){
       kvInp('CV (URL)',     input((m.cv_url||''), 'url', 'https://...')) +
       kvInp('Subir CV',     '<input class=\"kvt-input kvt-cv-file\" type=\"file\" accept=\".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document\">'+
                             '<button type=\"button\" class=\"kvt-upload-cv\" style=\"margin-top:6px\">Subir y guardar</button>') +
-      kvInp('Fecha subida', input((m.cv_uploaded||''), 'text', 'DD-MM-YYYY')) +
-      kvInp('Próxima acción', input((m.next_action||''), 'text', 'DD-MM-YYYY'));
+      kvInp('Fecha subida', input((m.cv_uploaded||''), 'text', 'DD-MM-YYYY', 'kvt-date')) +
+      kvInp('Próxima acción', input((m.next_action||''), 'text', 'DD-MM-YYYY', 'kvt-date')) +
+      kvInp('Comentario próxima acción', input((m.next_action_note||'')));
 
     const notesVal = m.notes || '';
     const notes =
@@ -1383,6 +1396,14 @@ document.addEventListener('DOMContentLoaded', function(){
     const btnSaveProfile = card.querySelector('.kvt-save-profile');
     if (!btnSaveProfile) return;
 
+    const maskDate = e => {
+      let v = e.target.value.replace(/[^0-9]/g,'').slice(0,8);
+      if (v.length > 4) v = v.replace(/(\d{2})(\d{2})(\d+)/,'$1-$2-$3');
+      else if (v.length > 2) v = v.replace(/(\d{2})(\d+)/,'$1-$2');
+      e.target.value = v;
+    };
+    card.querySelectorAll('.kvt-date').forEach(i=>i.addEventListener('input', maskDate));
+
     btnSaveProfile.addEventListener('click', ()=>{
       const vals = Array.from(inputs).map(i=>i.value || '');
       const payload = {
@@ -1396,6 +1417,7 @@ document.addEventListener('DOMContentLoaded', function(){
         cv_url:     vals[7] || '',
         cv_uploaded:vals[9] || '',
         next_action:vals[10] || '',
+        next_action_note:vals[11] || '',
         notes:      txtNotes ? txtNotes.value : '',
       };
       fetch(KVT_AJAX, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:new URLSearchParams({action:'kvt_update_profile', _ajax_nonce:KVT_NONCE, id, ...payload}).toString()})
@@ -1420,7 +1442,7 @@ document.addEventListener('DOMContentLoaded', function(){
           }
           const follow = card.querySelector('.kvt-followup');
           if (payload.next_action){
-            const txt = 'Próxima acción: ' + payload.next_action;
+            const txt = 'Próxima acción: ' + payload.next_action + (payload.next_action_note ? ' — ' + payload.next_action_note : '');
             if (follow){
               follow.textContent = txt;
             } else {
@@ -2166,6 +2188,7 @@ JS;
                 'cv_url'      => $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']),
                 'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
                 'next_action' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_next_action',['next_action'])),
+                'next_action_note' => $this->meta_get_compat($p->ID,'kvt_next_action_note',['next_action_note']),
                 'notes'       => $notes_raw,
                 'notes_count' => $this->count_notes($notes_raw),
                 'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
@@ -2239,6 +2262,7 @@ JS;
             'kvt_cv_url'     => isset($_POST['cv_url'])     ? esc_url_raw($_POST['cv_url'])             : '',
             'kvt_cv_uploaded'=> isset($_POST['cv_uploaded'])? sanitize_text_field($_POST['cv_uploaded']): '',
             'kvt_next_action'=> isset($_POST['next_action'])? sanitize_text_field($_POST['next_action']): '',
+            'kvt_next_action_note'=> isset($_POST['next_action_note'])? sanitize_text_field($_POST['next_action_note']): '',
             'kvt_notes'      => isset($_POST['notes'])      ? wp_kses_post($_POST['notes'])             : '',
         ];
         if ($fields['kvt_cv_uploaded']) $fields['kvt_cv_uploaded'] = $this->fmt_date_ddmmyyyy($fields['kvt_cv_uploaded']);
@@ -2890,7 +2914,7 @@ JS;
         $q = new WP_Query($args);
 
         // Fixed order export
-        $headers = ['email','first_name','surname','country','city','proceso','cliente','phone','cv_url','next_action'];
+        $headers = ['email','first_name','surname','country','city','proceso','cliente','phone','cv_url','next_action','next_action_note'];
         $filename = 'pipeline_export_' . date('Ymd_His');
 
         if ($format === 'xls') {
@@ -2917,7 +2941,8 @@ JS;
             $phone   = $this->meta_get_compat($p->ID,'kvt_phone',['phone']);
             $cv      = $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']);
             $next    = $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_next_action',['next_action']));
-            fputcsv($out, [$email,$fname,$lname,$country,$city,$proc,$client,$phone,$cv,$next]);
+            $note    = $this->meta_get_compat($p->ID,'kvt_next_action_note',['next_action_note']);
+            fputcsv($out, [$email,$fname,$lname,$country,$city,$proc,$client,$phone,$cv,$next,$note]);
         }
         fclose($out);
         exit;
