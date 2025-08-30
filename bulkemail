@@ -148,7 +148,6 @@ class KT_AIBulkMailer_ES {
 // App JS (first_name + surname; EML ZIP; delete selected; NO importar base)
 // ===============================
 const KT_SMTP_ACCOUNTS = <?php echo wp_json_encode($smtp_accounts); ?>;
-const SIG_KEY = 'kt_abm_signature_v1';
 
 // ---- Utilities ----
 function ktParseCSV(text){
@@ -251,8 +250,10 @@ function ktUseAccount(idx){
   if(!acc) return;
   const fe=document.getElementById('ktFromEmail');
   const fn=document.getElementById('ktFromName');
+  const sig=document.getElementById('ktSignature');
   if(fe) fe.value = acc.from_email || '';
   if(fn) fn.value = acc.from_name || '';
+  if(sig) sig.value = acc.signature || '';
 }
 
 function ktAppendSignature(tpl){
@@ -262,24 +263,6 @@ function ktAppendSignature(tpl){
   return tpl.includes('{{sender}}') ? tpl.replace('{{sender}}','{{sender}}<br>'+sig) : tpl + '<br>'+sig;
 }
 
-function loadSignature(){
-  try{
-    const sig = localStorage.getItem(SIG_KEY);
-    if(sig){
-      const el=document.getElementById('ktSignature');
-      if(el) el.value = sig;
-    }
-  }catch(e){}
-}
-
-function saveSignature(){
-  try{
-    const el=document.getElementById('ktSignature');
-    if(!el) return;
-    localStorage.setItem(SIG_KEY, el.value || '');
-    alert('Firma guardada');
-  }catch(e){}
-}
 
 function ktUniq(arr){ return [...new Set(arr.filter(Boolean).map(x=>x.trim()))].sort((a,b)=>a.localeCompare(b)); }
 function ktEscape(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -697,9 +680,6 @@ function ktDownloadEMLZip(){
     sel.addEventListener('change', e=>ktUseAccount(e.target.value));
     if(sel.value !== '') ktUseAccount(sel.value);
   }
-  const sigBtn=document.getElementById('ktSaveSignature');
-  if(sigBtn) sigBtn.addEventListener('click', saveSignature);
-  loadSignature();
 })();
 </script>
 <?php
@@ -746,7 +726,6 @@ function ktDownloadEMLZip(){
                 <textarea id="ktBody" class="kt-textarea" placeholder="Hola {{first_name}}, ..."></textarea>
                 <label style="margin-top:8px">Firma (HTML)</label>
                 <textarea id="ktSignature" class="kt-textarea" placeholder="Tu firma..."></textarea>
-                <div class="kt-row" style="margin-top:8px"><button id="ktSaveSignature" type="button" class="kt-btn">Guardar firma</button></div>
                 <div class="kt-row" style="margin-top:8px">
                     <button class="kt-btn" onclick="ktPreview()">Vista previa</button>
                 </div>

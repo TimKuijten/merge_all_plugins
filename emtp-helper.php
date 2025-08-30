@@ -40,11 +40,14 @@ add_action('admin_init', 'smtp_helper_register_settings');
 function smtp_helper_get_accounts() {
     $accounts = get_option('smtp_helper_accounts', array());
     if (!is_array($accounts) || empty($accounts)) {
-        $accounts = array(array('name' => 'Account 1'));
+        $accounts = array(array('name' => 'Account 1', 'signature' => ''));
     }
     foreach ($accounts as $i => $acc) {
         if (empty($acc['name'])) {
             $accounts[$i]['name'] = 'Account ' . ($i + 1);
+        }
+        if (!isset($acc['signature'])) {
+            $accounts[$i]['signature'] = '';
         }
     }
     return $accounts;
@@ -104,6 +107,10 @@ function smtp_helper_render_settings_page() {
                             <th scope="row"><label for="smtp_helper_from_name_<?php echo $i; ?>"><?php esc_html_e('From Name', 'smtp-helper'); ?></label></th>
                             <td><input name="smtp_helper_accounts[<?php echo $i; ?>][from_name]" id="smtp_helper_from_name_<?php echo $i; ?>" type="text" value="<?php echo esc_attr($acc['from_name'] ?? ''); ?>" class="regular-text" /></td>
                         </tr>
+                        <tr>
+                            <th scope="row"><label for="smtp_helper_signature_<?php echo $i; ?>"><?php esc_html_e('Signature (HTML)', 'smtp-helper'); ?></label></th>
+                            <td><textarea name="smtp_helper_accounts[<?php echo $i; ?>][signature]" id="smtp_helper_signature_<?php echo $i; ?>" rows="5" class="large-text code"><?php echo esc_textarea($acc['signature'] ?? ''); ?></textarea></td>
+                        </tr>
                     </table>
                 </fieldset>
                 <?php endforeach; ?>
@@ -119,7 +126,7 @@ function smtp_helper_render_settings_page() {
         const template = container.querySelector('.smtp-helper-account');
         if(!template) return;
         const clone = template.cloneNode(true);
-        clone.querySelectorAll('input,select,label').forEach(function(el){
+        clone.querySelectorAll('input,select,textarea,label').forEach(function(el){
             if(el.tagName === 'LABEL'){
                 const attr = el.getAttribute('for');
                 if(attr) el.setAttribute('for', attr.replace(/_\d+$/, '_' + index));
@@ -164,6 +171,7 @@ function smtp_helper_sanitize_accounts($input) {
             $o['password']   = sanitize_text_field($acc['password'] ?? '');
             $o['from_email'] = sanitize_email($acc['from_email'] ?? '');
             $o['from_name']  = sanitize_text_field($acc['from_name'] ?? '');
+            $o['signature']  = wp_kses_post($acc['signature'] ?? '');
             $out[] = $o;
             $i++;
         }
