@@ -3,7 +3,7 @@
  * Plugin Name: Correo Masivo
  * Description: Sube un CSV de contactos, filtra (dropdowns multi-select con casillas), genera correo con IA, previsualiza y envía desde el admin de WordPress. Dedup, persistencia local y descarga de borradores .EML incluidos.
  * Version:     1.7.4
- * Author:      Tim Kuijten
+ * Author:      Tim Kuijten - Kovacic Executive Talent Research
  */
 
 if (!defined('ABSPATH')) exit;
@@ -18,6 +18,7 @@ class KT_AIBulkMailer_ES {
         add_action('admin_menu',               [$this, 'menu']);
         add_action('admin_init',               [$this, 'register_settings']);
         add_action('admin_enqueue_scripts',    [$this, 'enqueue']);
+        add_action('wp_ajax_kt_abm_import_candidates', [$this, 'ajax_import_candidates']);
         add_action('wp_ajax_kt_abm_generate',  [$this, 'ajax_generate']);
         add_action('wp_ajax_kt_abm_send',      [$this, 'ajax_send']);
         add_action('wp_ajax_kt_abm_eml_zip',   [$this, 'ajax_eml_zip']); // EML ZIP
@@ -145,7 +146,7 @@ class KT_AIBulkMailer_ES {
 // ===============================
 // Persistence + De-dup + App JS (first_name + surname; EML ZIP; delete selected; NO importar base)
 // ===============================
-const STORAGE_KEY = 'kt_abm_state_v9';
+const STORAGE_KEY = 'kt_abm_state_v10';
 
 // ---- Utilities ----
 function ktParseCSV(text){
@@ -187,7 +188,9 @@ function ktParseCSV(text){
     'surname','last_name','lastname','apellido','apellidos','last',
     'country','pais',
     'city','ciudad',
-    'role','rol','cargo','proceso'
+    'client','cliente',
+    'role','rol','cargo','proceso',
+    'status','estado'
   ];
   const headerLooksValid = headerNorm.some(h => known.includes(h));
 
@@ -196,7 +199,7 @@ function ktParseCSV(text){
     header = headerNorm;
     dataRows = rows.slice(1);
   } else {
-    header = ['email','first_name','surname','country','city','role'];
+    header = ['email','first_name','surname','country','city','client','role','status'];
     dataRows = rows;
   }
 
@@ -214,7 +217,9 @@ function ktParseCSV(text){
     surname:    idxOf(['surname','last_name','lastname','apellido','apellidos','last']),
     country:    idxOf(['country','pais']),
     city:       idxOf(['city','ciudad']),
-    role:       idxOf(['role','rol','cargo','proceso'])
+    client:     idxOf(['client','cliente']),
+    role:       idxOf(['role','rol','cargo','proceso']),
+    status:     idxOf(['status','estado'])
   };
 
   const out=[];
@@ -230,7 +235,9 @@ function ktParseCSV(text){
       surname: get('surname'),
       country: get('country'),
       city: get('city'),
-      role: get('role')
+      client: get('client'),
+      role: get('role'),
+      status: get('status')
     });
   }
   return out;
@@ -242,7 +249,8 @@ function ktRender(tpl, data){ return tpl.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/
 
 // ---- App State ----
 let KT_CONTACTS=[], KT_VIEW=[], KT_SELECTED=new Set();
-let FILTERS = { roles: [], countries: [], cities: [] };
+let KT_PAGE=1, KT_PER_PAGE=20;
+let FILTERS = { roles: [], countries: [], cities: [], clients: [], statuses: [] };
 
 // ---- Persistence ----
 function loadSaved(){
@@ -250,8 +258,6 @@ function loadSaved(){
     const raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return;
     const st = JSON.parse(raw);
-    KT_CONTACTS = Array.isArray(st.contacts) ? st.contacts : [];
-    KT_SELECTED = new Set(Array.isArray(st.selectedKeys) ? st.selectedKeys : []);
     const setVal = (id, val) => { const el=document.getElementById(id); if(el && typeof val === 'string') el.value = val; };
     setVal('ktSubject', st.subject);
     setVal('ktBody', st.body);
@@ -262,6 +268,8 @@ function loadSaved(){
     FILTERS.roles     = Array.isArray(st.rolesSel)     ? st.rolesSel : [];
     FILTERS.countries = Array.isArray(st.countriesSel) ? st.countriesSel : [];
     FILTERS.cities    = Array.isArray(st.citiesSel)    ? st.citiesSel : [];
+    FILTERS.clients   = Array.isArray(st.clientsSel)   ? st.clientsSel : [];
+    FILTERS.statuses  = Array.isArray(st.statusesSel)  ? st.statusesSel : [];
   }catch(e){}
 }
 
@@ -269,8 +277,6 @@ function saveState(){
   try{
     const getVal = (id) => (document.getElementById(id)?.value ?? '');
     const state = {
-      contacts: KT_CONTACTS,
-      selectedKeys: Array.from(KT_SELECTED),
       subject: getVal('ktSubject'),
       body: getVal('ktBody'),
       prompt: getVal('ktPrompt'),
@@ -280,6 +286,8 @@ function saveState(){
       rolesSel: FILTERS.roles,
       countriesSel: FILTERS.countries,
       citiesSel: FILTERS.cities,
+      clientsSel: FILTERS.clients,
+      statusesSel: FILTERS.statuses,
       savedAt: Date.now()
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -306,7 +314,9 @@ function mergeContacts(newOnes){
         surname: n.surname || cur.surname || '',
         country: n.country || cur.country || '',
         city: n.city || cur.city || '',
-        role: n.role || cur.role || ''
+        client: n.client || cur.client || '',
+        role: n.role || cur.role || '',
+        status: n.status || cur.status || ''
       };
       map.set(k, merged);
       skipped++;
@@ -421,11 +431,22 @@ function ktSelectAll(on){
   ktRenderTable();
   saveState();
 }
+function ktPrevPage(){
+  if(KT_PAGE>1){ KT_PAGE--; ktRenderTable(); saveState(); }
+}
+function ktNextPage(){
+  const total=Math.ceil(KT_VIEW.length/KT_PER_PAGE);
+  if(KT_PAGE<total){ KT_PAGE++; ktRenderTable(); saveState(); }
+}
 function ktRenderTable(){
   const tb=document.getElementById('ktTbody'); if(!tb) return;
+  const totalPages = Math.max(1, Math.ceil(KT_VIEW.length / KT_PER_PAGE));
+  if(KT_PAGE>totalPages) KT_PAGE = totalPages;
+  const start = (KT_PAGE-1)*KT_PER_PAGE;
+  const page = KT_VIEW.slice(start, start + KT_PER_PAGE);
   let html='';
-  KT_VIEW.forEach((c,i)=>{
-    const k=rowKeyFrom(c,i);
+  page.forEach((c,i)=>{
+    const k=rowKeyFrom(c,start+i);
     const checked = KT_SELECTED.has(k) ? 'checked' : '';
     html += `<tr>
       <td><input type="checkbox" data-key="${k}" ${checked} onchange="ktRowToggle(this)"></td>
@@ -434,11 +455,15 @@ function ktRenderTable(){
       <td>${ktEscape(c.surname)}</td>
       <td>${ktEscape(c.country)}</td>
       <td>${ktEscape(c.city)}</td>
+      <td>${ktEscape(c.client)}</td>
       <td>${ktEscape(c.role)}</td>
+      <td>${ktEscape(c.status)}</td>
     </tr>`;
   });
   tb.innerHTML = html;
   document.getElementById('ktSel').innerText = `${KT_SELECTED.size} seleccionados`;
+  const pi=document.getElementById('ktPageInfo');
+  if(pi) pi.innerText = `Página ${KT_PAGE} de ${totalPages}`;
 }
 
 // ---- Delete selected ----
@@ -463,13 +488,18 @@ function ktDeleteSelected(){
 
 // ---- Flows ----
 function ktAfterLoad(){
+  KT_PAGE = 1;
   document.getElementById('ktCount').innerText = `${KT_CONTACTS.length} contactos`;
 
   const roles     = ktUniq(KT_CONTACTS.map(x=>x.role));
   const countries = ktUniq(KT_CONTACTS.map(x=>x.country));
   const cities    = ktUniq(KT_CONTACTS.map(x=>x.city));
+  const clients   = ktUniq(KT_CONTACTS.map(x=>x.client));
+  const statuses  = ktUniq(KT_CONTACTS.map(x=>x.status));
 
   ktDD.build('ddRole', roles);
+  ktDD.build('ddClient', clients);
+  ktDD.build('ddStatus', statuses);
   ktDD.build('ddCountry', countries);
   ktDD.build('ddCity', cities);
 
@@ -502,22 +532,46 @@ function ktLoadCSV(){
   }
 }
 
+async function ktImportCandidates(){
+  const res = await fetch(KT_ABM.ajax, {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({action:'kt_abm_import_candidates', _ajax_nonce:KT_ABM.nonce})
+  });
+  let payload;
+  try { payload = await res.json(); }
+  catch(e){ console.error('kt_abm_import_candidates JSON parse error', e); alert('Respuesta inválida del servidor (import).'); return; }
+  if(!payload.success){
+    const msg = payload.data && payload.data.error ? payload.data.error : 'Error desconocido al importar';
+    alert('Error: ' + msg);
+    return;
+  }
+  const arr = Array.isArray(payload.data) ? payload.data : [];
+  const {added, skipped} = mergeContacts(arr);
+  ktAfterLoad();
+}
+
 function ktApply(){
+  KT_PAGE = 1;
   const q=(document.getElementById('ktQ').value||'').trim().toLowerCase();
 
   const rolesSel     = (FILTERS.roles||[]).map(v => v.toLowerCase());
   const countriesSel = (FILTERS.countries||[]).map(v => v.toLowerCase());
   const citiesSel    = (FILTERS.cities||[]).map(v => v.toLowerCase());
+  const clientsSel   = (FILTERS.clients||[]).map(v => v.toLowerCase());
+  const statusesSel  = (FILTERS.statuses||[]).map(v => v.toLowerCase());
 
   KT_VIEW = KT_CONTACTS.filter(c => {
     const fullName = (c.first_name + ' ' + c.surname).trim();
-    const hit = !q || [c.email, fullName, c.country, c.city, c.role]
+    const hit = !q || [c.email, fullName, c.country, c.city, c.client, c.role, c.status]
                    .some(v => (v||'').toLowerCase().includes(q));
 
     const inRole     = !rolesSel.length     || rolesSel.includes((c.role||'').toLowerCase());
     const inCountry  = !countriesSel.length || countriesSel.includes((c.country||'').toLowerCase());
     const inCity     = !citiesSel.length    || citiesSel.includes((c.city||'').toLowerCase());
-    return hit && inRole && inCountry && inCity;
+    const inClient   = !clientsSel.length   || clientsSel.includes((c.client||'').toLowerCase());
+    const inStatus   = !statusesSel.length  || statusesSel.includes((c.status||'').toLowerCase());
+    return hit && inRole && inCountry && inCity && inClient && inStatus;
   });
   ktRenderTable();
   saveState();
@@ -632,25 +686,16 @@ function ktDownloadEMLZip(){
 // ---- Bootstrapping ----
 (function init(){
   loadSaved();
+  KT_CONTACTS = [];
+  KT_SELECTED.clear();
+  FILTERS = {roles:[],countries:[],cities:[],clients:[],statuses:[]};
   ktAfterLoad();
+  ktImportCandidates();
 
   ['ktSubject','ktBody','ktPrompt','ktFromEmail','ktFromName','ktQ'].forEach(id => {
     const el=document.getElementById(id);
     if(el) el.addEventListener('input', saveState);
   });
-
-  // Clear saved data button
-  const csvCard = document.querySelector('.kt-card');
-  if(csvCard){
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'kt-btn';
-    btn.textContent = 'Borrar datos guardados';
-    btn.style.marginLeft = '8px';
-    btn.onclick = (e)=>{ e.preventDefault(); localStorage.removeItem(STORAGE_KEY); KT_CONTACTS=[]; KT_SELECTED.clear(); FILTERS={roles:[],countries:[],cities:[]}; ktAfterLoad(); alert('Datos guardados eliminados.'); };
-    const wrap = csvCard.querySelector('.kt-row');
-    if(wrap) wrap.appendChild(btn);
-  }
 })();
 </script>
 <?php
@@ -665,107 +710,25 @@ function ktDownloadEMLZip(){
         <div class="wrap">
             <h1 class="kt-title">Correo con IA</h1>
 
-            <div class="kt-grid kt-cols-3">
-                <div class="kt-card">
-                    <h2 style="margin-top:0;">CSV</h2>
-                    <p class="kt-muted">Cabeceras: <code>email, first_name, surname, country, city, role</code> (o pega filas sin cabecera en ese orden).</p>
-                    <input id="ktCsvFile" type="file" accept=".csv" />
-                    <p class="kt-muted">O pega el CSV</p>
-                    <textarea id="ktCsvPaste" class="kt-textarea" placeholder="email,first_name,surname,country,city,role&#10;timkuijten@kovacictalent.com,Tim,Kuijten,Países Bajos,Heeze,CEO"></textarea>
-                    <div class="kt-row" style="margin-top:10px">
-                        <button class="kt-btn" onclick="ktLoadCSV()">Cargar datos</button>
-                        <span class="kt-tag" id="ktCount">0 contactos</span>
-                    </div>
-                </div>
-
-                <div class="kt-card">
-                    <h2 style="margin-top:0;">Filtros</h2>
-                    <div class="kt-grid kt-cols-4">
-                        <div>
-                            <label>Nombre</label>
-                            <input id="ktQ" class="kt-input" type="text" placeholder="Buscar por nombre, email, país, ciudad o rol" oninput="ktApply()" />
-                        </div>
-
-                        <div>
-                            <label>Rol</label>
-                            <div id="ddRole" class="kt-dd" data-key="roles">
-                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddRole')">
-                                    <span class="summary" id="ddRoleSummary">Todos</span>
-                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
-                                </button>
-                                <div class="kt-dd-menu">
-                                    <input class="kt-dd-search" placeholder="Buscar rol..." oninput="ktDD.filter('ddRole', this.value)">
-                                    <div class="kt-dd-actions">
-                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddRole')">Seleccionar todo</button>
-                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddRole')">Limpiar</button>
-                                    </div>
-                                    <div class="kt-dd-list"></div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label>País</label>
-                            <div id="ddCountry" class="kt-dd" data-key="countries">
-                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddCountry')">
-                                    <span class="summary" id="ddCountrySummary">Todos</span>
-                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
-                                </button>
-                                <div class="kt-dd-menu">
-                                    <input class="kt-dd-search" placeholder="Buscar país..." oninput="ktDD.filter('ddCountry', this.value)">
-                                    <div class="kt-dd-actions">
-                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddCountry')">Seleccionar todo</button>
-                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddCountry')">Limpiar</button>
-                                    </div>
-                                    <div class="kt-dd-list"></div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label>Ciudad</label>
-                            <div id="ddCity" class="kt-dd" data-key="cities">
-                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddCity')">
-                                    <span class="summary" id="ddCitySummary">Todas</span>
-                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
-                                </button>
-                                <div class="kt-dd-menu">
-                                    <input class="kt-dd-search" placeholder="Buscar ciudad..." oninput="ktDD.filter('ddCity', this.value)">
-                                    <div class="kt-dd-actions">
-                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddCity')">Seleccionar todo</button>
-                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddCity')">Limpiar</button>
-                                    </div>
-                                    <div class="kt-dd-list"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="kt-row" style="margin-top:10px">
-                        <button class="kt-btn" onclick="ktSelectAll(true)">Seleccionar todo</button>
-                        <button class="kt-btn" onclick="ktSelectAll(false)">Limpiar</button>
-                        <span class="kt-muted" id="ktSel">0 seleccionados</span>
-                    </div>
-                </div>
-
-                <div class="kt-card">
-                    <h2 style="margin-top:0;">Prompt de IA</h2>
-                    <textarea id="ktPrompt" class="kt-textarea" placeholder="Escribe un correo de acercamiento para {{role}} en {{city}} (120–150 palabras) con un CTA claro. Usa {{first_name}} en el saludo."></textarea>
-                    <p class="kt-muted" style="margin-top:6px">
-                        El correo generado siempre debe usar estos placeholders:
-                        <strong>Nombre</strong> = <code>{{first_name}}</code>,
-                        <strong>Apellido</strong> = <code>{{surname}}</code>,
-                        <strong>País</strong> = <code>{{country}}</code>,
-                        <strong>Ciudad</strong> = <code>{{city}}</code>,
-                        <strong>Proceso</strong> = <code>{{role}}</code>,
-                        <strong>El remitente</strong> = <code>{{sender}}</code>.
-                    </p>
-                    <p class="kt-muted" style="margin-top:6px">
-                        <strong>Aviso:</strong> Los placeholders se rellenan con la información del candidato. Si estás promocionando un nuevo puesto, no uses <code>{{role}}</code> para el nombre del puesto en el texto, escribe el nombre real del rol (por ejemplo, “Director/a Comercial”) para evitar que se reemplace por el <em>rol vinculado</em> al candidato.
-                    </p>
-                    <div class="kt-row" style="margin-top:10px">
-                        <button class="kt-btn" onclick="ktGenerate()">Generar</button>
-                    </div>
+            <div class="kt-card">
+                <h2 style="margin-top:0;">Prompt de IA</h2>
+                <textarea id="ktPrompt" class="kt-textarea" placeholder="Escribe un correo de acercamiento para el proceso {{role}} en {{city}} (120–150 palabras) con un CTA claro. Usa {{first_name}} en el saludo."></textarea>
+                <p class="kt-muted" style="margin-top:6px">
+                    El correo generado siempre debe usar estos placeholders:
+                    <strong>Nombre</strong> = <code>{{first_name}}</code>,
+                    <strong>Apellido</strong> = <code>{{surname}}</code>,
+                    <strong>País</strong> = <code>{{country}}</code>,
+                    <strong>Ciudad</strong> = <code>{{city}}</code>,
+                    <strong>Cliente</strong> = <code>{{client}}</code>,
+                    <strong>Proceso</strong> = <code>{{role}}</code>,
+                    <strong>Estado</strong> = <code>{{status}}</code>,
+                    <strong>El remitente</strong> = <code>{{sender}}</code>.
+                </p>
+                <p class="kt-muted" style="margin-top:6px">
+                    <strong>Aviso:</strong> Los placeholders se rellenan con la información del candidato. Si estás promocionando un nuevo puesto, no uses <code>{{role}}</code> para el nombre del puesto en el texto, escribe el nombre real del proceso (por ejemplo, “Director/a Comercial”) para evitar que se reemplace por el <em>proceso vinculado</em> al candidato.
+                </p>
+                <div class="kt-row" style="margin-top:10px">
+                    <button class="kt-btn" onclick="ktGenerate()">Generar</button>
                 </div>
             </div>
 
@@ -794,21 +757,121 @@ function ktDownloadEMLZip(){
                         <button class="kt-btn kt-primary" onclick="ktSend()">Enviar correos</button>
                     </div>
                 </div>
-                <p class="kt-muted" style="margin-top:6px">Variables: <code>{{first_name}}</code>, <code>{{surname}}</code>, <code>{{country}}</code>, <code>{{city}}</code>, <code>{{role}}</code>, <code>{{sender}}</code></p>
+                <p class="kt-muted" style="margin-top:6px">Variables: <code>{{first_name}}</code>, <code>{{surname}}</code>, <code>{{country}}</code>, <code>{{city}}</code>, <code>{{role}}</code> (proceso), <code>{{sender}}</code></p>
                 <p class="kt-muted" style="margin-top:6px"><strong>Nota:</strong> El envío directo no está operativo en este momento. Utiliza <em>Descargar borradores (.zip)</em> para generar los borradores y revisarlos en tu cliente de correo.</p>
             </div>
 
             <div class="kt-grid kt-cols-3">
                 <div class="kt-card" style="grid-column: span 2;">
+                    <div class="kt-row" style="margin-bottom:10px;align-items:center;flex-wrap:wrap;gap:10px">
+                        <input id="ktQ" class="kt-input" type="text" placeholder="Buscar por nombre, email, país, ciudad, cliente, proceso o estado" oninput="ktApply()" style="flex:1;max-width:300px" />
+                        <span class="kt-tag" id="ktCount">0 contactos</span>
+                    </div>
+                    <div class="kt-row" style="margin-bottom:10px;flex-wrap:wrap;gap:10px">
+                        <div>
+                            <label>Proceso</label>
+                            <div id="ddRole" class="kt-dd" data-key="roles">
+                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddRole')">
+                                    <span class="summary" id="ddRoleSummary">Todos</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                                </button>
+                                <div class="kt-dd-menu">
+                                    <input class="kt-dd-search" placeholder="Buscar proceso..." oninput="ktDD.filter('ddRole', this.value)">
+                                    <div class="kt-dd-actions">
+                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddRole')">Seleccionar todo</button>
+                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddRole')">Limpiar</button>
+                                    </div>
+                                    <div class="kt-dd-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label>Cliente</label>
+                            <div id="ddClient" class="kt-dd" data-key="clients">
+                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddClient')">
+                                    <span class="summary" id="ddClientSummary">Todos</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                                </button>
+                                <div class="kt-dd-menu">
+                                    <input class="kt-dd-search" placeholder="Buscar cliente..." oninput="ktDD.filter('ddClient', this.value)">
+                                    <div class="kt-dd-actions">
+                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddClient')">Seleccionar todo</button>
+                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddClient')">Limpiar</button>
+                                    </div>
+                                    <div class="kt-dd-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label>Estado</label>
+                            <div id="ddStatus" class="kt-dd" data-key="statuses">
+                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddStatus')">
+                                    <span class="summary" id="ddStatusSummary">Todos</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                                </button>
+                                <div class="kt-dd-menu">
+                                    <input class="kt-dd-search" placeholder="Buscar estado..." oninput="ktDD.filter('ddStatus', this.value)">
+                                    <div class="kt-dd-actions">
+                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddStatus')">Seleccionar todo</button>
+                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddStatus')">Limpiar</button>
+                                    </div>
+                                    <div class="kt-dd-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label>País</label>
+                            <div id="ddCountry" class="kt-dd" data-key="countries">
+                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddCountry')">
+                                    <span class="summary" id="ddCountrySummary">Todos</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                                </button>
+                                <div class="kt-dd-menu">
+                                    <input class="kt-dd-search" placeholder="Buscar país..." oninput="ktDD.filter('ddCountry', this.value)">
+                                    <div class="kt-dd-actions">
+                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddCountry')">Seleccionar todo</button>
+                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddCountry')">Limpiar</button>
+                                    </div>
+                                    <div class="kt-dd-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label>Ciudad</label>
+                            <div id="ddCity" class="kt-dd" data-key="cities">
+                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddCity')">
+                                    <span class="summary" id="ddCitySummary">Todas</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                                </button>
+                                <div class="kt-dd-menu">
+                                    <input class="kt-dd-search" placeholder="Buscar ciudad..." oninput="ktDD.filter('ddCity', this.value)">
+                                    <div class="kt-dd-actions">
+                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddCity')">Seleccionar todo</button>
+                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddCity')">Limpiar</button>
+                                    </div>
+                                    <div class="kt-dd-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kt-row" style="margin-bottom:10px">
+                        <button class="kt-btn" onclick="ktSelectAll(true)">Seleccionar todo</button>
+                        <button class="kt-btn" style="margin-left:8px" onclick="ktSelectAll(false)">Limpiar</button>
+                        <span class="kt-muted" id="ktSel" style="margin-left:8px">0 seleccionados</span>
+                    </div>
                     <table class="kt-table">
                         <thead>
                             <tr>
-                                <th></th><th>Email</th><th>Nombre</th><th>Apellido</th><th>País</th><th>Ciudad</th><th>Rol</th>
+                                <th></th><th>Email</th><th>Nombre</th><th>Apellido</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th>
                             </tr>
                         </thead>
                         <tbody id="ktTbody"></tbody>
                     </table>
-                    <!-- Delete button BELOW the list -->
+                    <div class="kt-row" style="margin-top:10px">
+                        <button class="kt-btn" onclick="ktPrevPage()">Anterior</button>
+                        <button class="kt-btn" style="margin-left:8px" onclick="ktNextPage()">Siguiente</button>
+                        <span class="kt-muted" id="ktPageInfo" style="margin-left:8px"></span>
+                    </div>
                     <div class="kt-row" style="margin-top:10px">
                         <button class="kt-btn" onclick="ktDeleteSelected()">Eliminar seleccionados</button>
                     </div>
@@ -845,8 +908,8 @@ function ktDownloadEMLZip(){
         $model   = $o['openai_model']   ?? 'gpt-4o-mini';
 
         $fallback = [
-            'subject'   => '{{first_name}}, nota rápida para un/a {{role}} en {{city}}',
-            'body_html' => 'Hola {{first_name}},<br><br>Te escribo desde Kovacic Talent. Por tu experiencia como <strong>{{role}}</strong> en {{city}}, {{country}}, creo que esto puede interesarte.<br><br>'.esc_html($prompt).'<br><br>Si te encaja, responde a este correo y te cuento más.<br><br>Saludos,<br>{{sender}}'
+            'subject'   => '{{first_name}}, nota rápida para el proceso {{role}} en {{city}}',
+            'body_html' => 'Hola {{first_name}},<br><br>Te escribo desde Kovacic Talent. Por tu experiencia en el proceso <strong>{{role}}</strong> en {{city}}, {{country}}, creo que esto puede interesarte.<br><br>'.esc_html($prompt).'<br><br>Si te encaja, responde a este correo y te cuento más.<br><br>Saludos,<br>{{sender}}'
         ];
 
         if (!$api_key) {
@@ -855,7 +918,7 @@ function ktDownloadEMLZip(){
 
         $sys = "Eres un redactor de emails de Kovacic Executive Talent Research. Devuelve un JSON con las claves 'subject' y 'body_html'. ".
                "Debes usar SIEMPRE estos placeholders cuando corresponda y NO inventar otros: ".
-               "Nombre = {{first_name}}, Apellido = {{surname}}, País = {{country}}, Ciudad = {{city}}, Proceso = {{role}}, El remitente = {{sender}}. ".
+               "Nombre = {{first_name}}, Apellido = {{surname}}, País = {{country}}, Ciudad = {{city}}, Cliente = {{client}}, Proceso = {{role}}, Estado = {{status}}, El remitente = {{sender}}. ".
                "El cuerpo debe ser HTML y usar saltos de línea <br> (NO uses etiquetas <p>). Y Nunca uses '—'.";
 
         $req = [
@@ -1053,6 +1116,74 @@ function ktDownloadEMLZip(){
         readfile($zip_path);
         @unlink($zip_path);
         exit;
+    }
+
+    // ---------- AJAX: Import Candidate Base ----------
+    public function ajax_import_candidates() {
+        check_ajax_referer(self::NONCE_KEY);
+        if (!current_user_can('manage_options')) wp_send_json_error(['error' => 'No autorizado'], 403);
+
+        $q = new WP_Query([
+            'post_type'      => 'kvt_candidate',
+            'post_status'    => 'any',
+            'posts_per_page' => -1,
+            'no_found_rows'  => true,
+        ]);
+
+        $rows = [];
+        foreach ($q->posts as $p) {
+            $email = sanitize_email(get_post_meta($p->ID, 'kvt_email', true));
+            if (!$email) $email = sanitize_email(get_post_meta($p->ID, 'email', true));
+            if (!$email) continue;
+
+            $first = sanitize_text_field(get_post_meta($p->ID, 'kvt_first_name', true));
+            if ($first === '') $first = sanitize_text_field(get_post_meta($p->ID, 'first_name', true));
+
+            $last = sanitize_text_field(get_post_meta($p->ID, 'kvt_last_name', true));
+            if ($last === '') $last = sanitize_text_field(get_post_meta($p->ID, 'last_name', true));
+
+            $country = sanitize_text_field(get_post_meta($p->ID, 'kvt_country', true));
+            if ($country === '') $country = sanitize_text_field(get_post_meta($p->ID, 'country', true));
+
+            $city = sanitize_text_field(get_post_meta($p->ID, 'kvt_city', true));
+            if ($city === '') $city = sanitize_text_field(get_post_meta($p->ID, 'city', true));
+
+            $client = '';
+            $terms = get_the_terms($p->ID, 'kvt_client');
+            if ($terms && !is_wp_error($terms) && !empty($terms)) {
+                $client = sanitize_text_field($terms[0]->name);
+            }
+
+            $role = '';
+            $terms = get_the_terms($p->ID, 'kvt_process');
+            if ($terms && !is_wp_error($terms) && !empty($terms)) {
+                $role = sanitize_text_field($terms[0]->name);
+                if ($client === '') {
+                    $linked = (int) get_term_meta($terms[0]->term_id, 'kvt_process_client', true);
+                    if ($linked) {
+                        $client_term = get_term($linked, 'kvt_client');
+                        if ($client_term && !is_wp_error($client_term)) {
+                            $client = sanitize_text_field($client_term->name);
+                        }
+                    }
+                }
+            }
+
+            $status = sanitize_text_field(get_post_meta($p->ID, 'kvt_status', true));
+
+            $rows[] = [
+                'email'      => $email,
+                'first_name' => $first,
+                'surname'    => $last,
+                'country'    => $country,
+                'city'       => $city,
+                'client'     => $client,
+                'role'       => $role,
+                'status'     => $status,
+            ];
+        }
+
+        wp_send_json_success($rows);
     }
 
     // ------- Helpers for EML build -------
