@@ -117,3 +117,4 @@ function smtp_helper_phpmailer_init($phpmailer) {
     }
 }
 add_action('phpmailer_init', 'smtp_helper_phpmailer_init');
+
