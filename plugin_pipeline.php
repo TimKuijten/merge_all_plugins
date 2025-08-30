@@ -421,6 +421,15 @@ cv_uploaded|Fecha de subida");
 
         // Upload new CV
         if (!empty($_FILES['kvt_cv_file']['name'])) {
+            // Remove previous cached text if exists
+            $old_txt = get_post_meta($post_id, 'kvt_cv_text_url', true);
+            if ($old_txt) {
+                $path = wp_parse_url($old_txt, PHP_URL_PATH);
+                if ($path) @unlink(ABSPATH . ltrim($path, '/'));
+            }
+            delete_post_meta($post_id, 'kvt_cv_text');
+            delete_post_meta($post_id, 'kvt_cv_text_url');
+
             if (!function_exists('media_handle_upload')) {
                 require_once ABSPATH . 'wp-admin/includes/image.php';
                 require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -1534,6 +1543,7 @@ document.addEventListener('DOMContentLoaded', function(){
               '<div class="kvt-mini-actions">'+
                 (allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'')+
                 '<button type="button" class="kvt-btn kvt-secondary kvt-mini-view" data-id="'+it.id+'">Ver perfil</button>'+
+                '<button type="button" class="kvt-delete dashicons dashicons-trash kvt-mini-delete" title="Eliminar" data-id="'+it.id+'"></button>'+
               '</div>'+
               '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
             '</div>';
@@ -1572,6 +1582,23 @@ document.addEventListener('DOMContentLoaded', function(){
               const show = panel.style.display==='block';
               panel.style.display = show?'none':'block';
               b.textContent = show?'Ver perfil':'Ocultar';
+            });
+          });
+          els('.kvt-mini-delete', modalList).forEach(b=>{
+            b.addEventListener('click', ()=>{
+              if(!confirm('¿Enviar este candidato a la papelera?')) return;
+              const id = b.getAttribute('data-id');
+              const p = new URLSearchParams();
+              p.set('action','kvt_delete_candidate');
+              p.set('_ajax_nonce', KVT_NONCE);
+              p.set('id', id);
+              fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+                .then(r=>r.json()).then(j=>{
+                  if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo eliminar.');
+                  alert('Candidato eliminado.');
+                  listProfiles(currentPage);
+                  refresh();
+                });
             });
           });
           items.forEach(it=>{
