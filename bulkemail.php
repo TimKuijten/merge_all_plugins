@@ -17,10 +17,15 @@ class KT_AIBulkMailer_ES {
     public function __construct() {
         add_action('admin_menu',               [$this, 'menu']);
         add_action('admin_init',               [$this, 'register_settings']);
-        add_action('admin_enqueue_scripts',    [$this, 'enqueue']);
-        add_action('wp_ajax_kt_abm_generate',  [$this, 'ajax_generate']);
-        add_action('wp_ajax_kt_abm_send',      [$this, 'ajax_send']);
-        add_action('wp_ajax_kt_abm_eml_zip',   [$this, 'ajax_eml_zip']); // EML ZIP
+        add_action('admin_enqueue_scripts',    [$this, 'enqueue_admin']);
+        add_action('wp_enqueue_scripts',       [$this, 'enqueue_frontend']);
+        add_action('wp_ajax_kt_abm_generate',      [$this, 'ajax_generate']);
+        add_action('wp_ajax_nopriv_kt_abm_generate', [$this, 'ajax_generate']);
+        add_action('wp_ajax_kt_abm_send',          [$this, 'ajax_send']);
+        add_action('wp_ajax_nopriv_kt_abm_send',   [$this, 'ajax_send']);
+        add_action('wp_ajax_kt_abm_eml_zip',       [$this, 'ajax_eml_zip']); // EML ZIP
+        add_action('wp_ajax_nopriv_kt_abm_eml_zip',[$this, 'ajax_eml_zip']); // nopriv EML ZIP
+        add_shortcode('kt_bulk_mailer',       [$this, 'render_frontend']);
     }
 
     public function menu() {
@@ -81,35 +86,52 @@ class KT_AIBulkMailer_ES {
         }, self::OPTION_KEY, 'kt_abm_main');
     }
 
-    public function enqueue($hook) {
-        if ($hook !== 'toplevel_page_kt-abm') return;
+    public function enqueue_admin($hook) {
+        if ($hook === 'toplevel_page_kt-abm') {
+            $this->enqueue_assets();
+        }
+    }
 
-        // Styles (ALL buttons #0A212E with white text)
+    public function enqueue_frontend() {
+        if (is_singular()) {
+            global $post;
+            if (has_shortcode($post->post_content, 'kt_bulk_mailer')) {
+                $this->enqueue_assets();
+            }
+        }
+    }
+
+    private function enqueue_assets() {
+
+        // Styles to match Pipeline plugin
         $css = "
         :root{--kt-accent: ".self::ACCENT.";}
-        .kt-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin:0 0 16px}
-        .kt-btn{
+        .kvt-wrapper{max-width:1200px;margin:0 auto;padding:16px;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.06)}
+        .kt-card, .kvt-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin:0 0 16px;box-shadow:0 3px 10px rgba(0,0,0,.04)}
+        .kt-btn, .kvt-btn{
             background:var(--kt-accent);
             color:#fff;
-            border:1px solid var(--kt-accent);
+            border:none;
             border-radius:10px;
             padding:10px 14px;
             cursor:pointer;
+            font-weight:600;
         }
-        .kt-btn:hover{filter:brightness(0.95)}
-        .kt-btn.kt-primary{background:var(--kt-accent);border-color:var(--kt-accent);color:#fff}
-        .kt-grid{display:grid;gap:16px}
-        .kt-cols-4{grid-template-columns:2fr 1fr 1fr 1fr}
-        .kt-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
-        .kt-input, .kt-textarea{width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px}
-        .kt-table{width:100%;border-collapse:separate;border-spacing:0}
-        .kt-table th, .kt-table td{padding:8px 10px;border-bottom:1px solid #eef0f3;text-align:left}
-        .kt-muted{color:#6b7280}
-        .kt-tag{display:inline-block;padding:6px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#f3f4f6}
-        .kt-preview{white-space:pre-wrap;border:1px dashed #e5e7eb;border-radius:12px;padding:12px;background:#fcfcfd;min-height:100px}
+        .kt-btn:hover, .kvt-btn:hover{opacity:.95}
+        .kt-btn.kt-primary, .kvt-btn.kvt-primary{background:var(--kt-accent);color:#fff}
+        .kt-btn.kt-secondary, .kvt-btn.kvt-secondary{background:#475569}
+        .kt-grid, .kvt-grid{display:grid;gap:16px}
+        .kt-cols-4, .kvt-cols-4{grid-template-columns:2fr 1fr 1fr 1fr}
+        .kt-cols-3, .kvt-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+        .kt-input, .kt-textarea, .kvt-input, .kvt-textarea{width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px}
+        .kt-table, .kvt-table{width:100%;border-collapse:separate;border-spacing:0}
+        .kt-table th, .kt-table td, .kvt-table th, .kvt-table td{padding:8px 10px;border-bottom:1px solid #eef0f3;text-align:left}
+        .kt-muted, .kvt-muted{color:#6b7280}
+        .kt-tag, .kvt-tag{display:inline-block;padding:6px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#f3f4f6}
+        .kt-preview, .kvt-preview{white-space:pre-wrap;border:1px dashed #e5e7eb;border-radius:12px;padding:12px;background:#fcfcfd;min-height:100px}
         .kt-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
         .kt-hr{border:0;border-top:1px solid #eef0f3;margin:10px 0}
-        h1.kt-title{color:".self::ACCENT."}
+        h1.kt-title, h1.kvt-title{color:".self::ACCENT."}
 
         /* Multi-select dropdown with checkboxes */
         .kt-dd{position:relative}
@@ -644,7 +666,7 @@ function ktDownloadEMLZip(){
   if(csvCard){
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'kt-btn';
+    btn.className = 'kt-btn kvt-btn';
     btn.textContent = 'Borrar datos guardados';
     btn.style.marginLeft = '8px';
     btn.onclick = (e)=>{ e.preventDefault(); localStorage.removeItem(STORAGE_KEY); KT_CONTACTS=[]; KT_SELECTED.clear(); FILTERS={roles:[],countries:[],cities:[]}; ktAfterLoad(); alert('Datos guardados eliminados.'); };
@@ -657,28 +679,38 @@ function ktDownloadEMLZip(){
         wp_add_inline_script('kt-abm', ob_get_clean());
     }
 
+    public function render_frontend() {
+        if (!current_user_can('manage_options')) {
+            return '';
+        }
+        ob_start();
+        $this->page();
+        return ob_get_clean();
+    }
+
     public function page() {
         if (!current_user_can('manage_options')) return;
         $o = get_option(self::OPTION_KEY, []);
         $from_default = $o['from_email'] ?? self::DEFAULT_FROM;
         ?>
-        <div class="wrap">
-            <h1 class="kt-title">Correo con IA</h1>
+        <div class="wrap kvt-wrapper">
+            <h1 class="kt-title kvt-title">Correo con IA</h1>
 
             <div class="kt-grid kt-cols-3">
-                <div class="kt-card">
+                <div class="kt-card kvt-card">
                     <h2 style="margin-top:0;">CSV</h2>
-                    <p class="kt-muted">Cabeceras: <code>email, first_name, surname, country, city, role</code> (o pega filas sin cabecera en ese orden).</p>
+                    <p class="kt-muted kvt-muted">Cabeceras: <code>email, first_name, surname, country, city, role</code> (o pega filas sin cabecera en ese orden).</p>
                     <input id="ktCsvFile" type="file" accept=".csv" />
-                    <p class="kt-muted">O pega el CSV</p>
+                    <p class="kt-muted kvt-muted">O pega el CSV</p>
                     <textarea id="ktCsvPaste" class="kt-textarea" placeholder="email,first_name,surname,country,city,role&#10;timkuijten@kovacictalent.com,Tim,Kuijten,Países Bajos,Heeze,CEO"></textarea>
                     <div class="kt-row" style="margin-top:10px">
-                        <button class="kt-btn" onclick="ktLoadCSV()">Cargar datos</button>
-                        <span class="kt-tag" id="ktCount">0 contactos</span>
+                        <button class="kt-btn kvt-btn" onclick="ktLoadCSV()">Cargar datos</button>
+        
+                        <span class="kt-tag kvt-tag" id="ktCount">0 contactos</span>
                     </div>
                 </div>
 
-                <div class="kt-card">
+                <div class="kt-card kvt-card">
                     <h2 style="margin-top:0;">Filtros</h2>
                     <div class="kt-grid kt-cols-4">
                         <div>
@@ -742,16 +774,16 @@ function ktDownloadEMLZip(){
                     </div>
 
                     <div class="kt-row" style="margin-top:10px">
-                        <button class="kt-btn" onclick="ktSelectAll(true)">Seleccionar todo</button>
-                        <button class="kt-btn" onclick="ktSelectAll(false)">Limpiar</button>
-                        <span class="kt-muted" id="ktSel">0 seleccionados</span>
+                        <button class="kt-btn kvt-btn" onclick="ktSelectAll(true)">Seleccionar todo</button>
+                        <button class="kt-btn kvt-btn" onclick="ktSelectAll(false)">Limpiar</button>
+                        <span class="kt-muted kvt-muted" id="ktSel">0 seleccionados</span>
                     </div>
                 </div>
 
-                <div class="kt-card">
+                <div class="kt-card kvt-card">
                     <h2 style="margin-top:0;">Prompt de IA</h2>
                     <textarea id="ktPrompt" class="kt-textarea" placeholder="Escribe un correo de acercamiento para {{role}} en {{city}} (120–150 palabras) con un CTA claro. Usa {{first_name}} en el saludo."></textarea>
-                    <p class="kt-muted" style="margin-top:6px">
+                    <p class="kt-muted kvt-muted" style="margin-top:6px">
                         El correo generado siempre debe usar estos placeholders:
                         <strong>Nombre</strong> = <code>{{first_name}}</code>,
                         <strong>Apellido</strong> = <code>{{surname}}</code>,
@@ -760,16 +792,16 @@ function ktDownloadEMLZip(){
                         <strong>Proceso</strong> = <code>{{role}}</code>,
                         <strong>El remitente</strong> = <code>{{sender}}</code>.
                     </p>
-                    <p class="kt-muted" style="margin-top:6px">
+                    <p class="kt-muted kvt-muted" style="margin-top:6px">
                         <strong>Aviso:</strong> Los placeholders se rellenan con la información del candidato. Si estás promocionando un nuevo puesto, no uses <code>{{role}}</code> para el nombre del puesto en el texto, escribe el nombre real del rol (por ejemplo, “Director/a Comercial”) para evitar que se reemplace por el <em>rol vinculado</em> al candidato.
                     </p>
                     <div class="kt-row" style="margin-top:10px">
-                        <button class="kt-btn" onclick="ktGenerate()">Generar</button>
+                        <button class="kt-btn kvt-btn" onclick="ktGenerate()">Generar</button>
                     </div>
                 </div>
             </div>
 
-            <div class="kt-card">
+            <div class="kt-card kvt-card">
                 <h2 style="margin-top:0;">Plantilla</h2>
                 <label>Asunto</label>
                 <input id="ktSubject" class="kt-input" type="text" placeholder="{{first_name}}, nota rápida de Kovacic Executive Talent" />
@@ -777,7 +809,7 @@ function ktDownloadEMLZip(){
                 <textarea id="ktBody" class="kt-textarea" placeholder="Hola {{first_name}}, ..."></textarea>
 
                 <div class="kt-row" style="margin-top:8px">
-                    <button class="kt-btn" onclick="ktPreview()">Vista previa</button>
+                    <button class="kt-btn kvt-btn" onclick="ktPreview()">Vista previa</button>
                 </div>
 
                 <div class="kt-row" style="margin-top:8px; gap:12px;">
@@ -790,16 +822,16 @@ function ktDownloadEMLZip(){
                         <input id="ktFromName" class="kt-input" type="text" value="<?php echo esc_attr($o['from_name'] ?? get_bloginfo('name')); ?>" />
                     </div>
                     <div style="align-self:flex-end; display:flex; gap:8px;">
-                        <button class="kt-btn" onclick="ktDownloadEMLZip()">Descargar borradores (.zip)</button>
-                        <button class="kt-btn kt-primary" onclick="ktSend()">Enviar correos</button>
+                        <button class="kt-btn kvt-btn" onclick="ktDownloadEMLZip()">Descargar borradores (.zip)</button>
+                        <button class="kt-btn kvt-btn kvt-primary" onclick="ktSend()">Enviar correos</button>
                     </div>
                 </div>
-                <p class="kt-muted" style="margin-top:6px">Variables: <code>{{first_name}}</code>, <code>{{surname}}</code>, <code>{{country}}</code>, <code>{{city}}</code>, <code>{{role}}</code>, <code>{{sender}}</code></p>
-                <p class="kt-muted" style="margin-top:6px"><strong>Nota:</strong> El envío directo no está operativo en este momento. Utiliza <em>Descargar borradores (.zip)</em> para generar los borradores y revisarlos en tu cliente de correo.</p>
+                <p class="kt-muted kvt-muted" style="margin-top:6px">Variables: <code>{{first_name}}</code>, <code>{{surname}}</code>, <code>{{country}}</code>, <code>{{city}}</code>, <code>{{role}}</code>, <code>{{sender}}</code></p>
+                <p class="kt-muted kvt-muted" style="margin-top:6px"><strong>Nota:</strong> El envío directo no está operativo en este momento. Utiliza <em>Descargar borradores (.zip)</em> para generar los borradores y revisarlos en tu cliente de correo.</p>
             </div>
 
             <div class="kt-grid kt-cols-3">
-                <div class="kt-card" style="grid-column: span 2;">
+                <div class="kt-card kvt-card" style="grid-column: span 2;">
                     <table class="kt-table">
                         <thead>
                             <tr>
@@ -810,16 +842,16 @@ function ktDownloadEMLZip(){
                     </table>
                     <!-- Delete button BELOW the list -->
                     <div class="kt-row" style="margin-top:10px">
-                        <button class="kt-btn" onclick="ktDeleteSelected()">Eliminar seleccionados</button>
+                        <button class="kt-btn kvt-btn" onclick="ktDeleteSelected()">Eliminar seleccionados</button>
                     </div>
                 </div>
-                <div class="kt-card">
+                <div class="kt-card kvt-card">
                     <h2 style="margin-top:0;">Vista previa</h2>
-                    <div id="ktPreview" class="kt-preview">Usa “Vista previa” tras seleccionar al menos un contacto.</div>
+                    <div id="ktPreview" class="kt-preview kvt-preview">Usa “Vista previa” tras seleccionar al menos un contacto.</div>
                 </div>
             </div>
 
-            <div class="kt-card">
+            <div class="kt-card kvt-card">
                 <form method="post" action="options.php">
                     <?php
                         settings_fields(self::OPTION_KEY);
