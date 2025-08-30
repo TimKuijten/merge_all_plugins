@@ -364,6 +364,7 @@ cv_uploaded|Fecha de subida");
                 <td>
                     <input type="file" id="kvt_cv_file" name="kvt_cv_file" style="display:none" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
                     <button type="button" class="button" id="kvt_cv_file_btn">Seleccionar archivo</button>
+                    <button type="button" class="button" id="kvt_cv_upload_btn" disabled>Subir</button>
                     <span id="kvt_cv_file_label" style="margin-left:.5em;">
                         <?php echo $cv_att ? esc_html(basename(get_attached_file($cv_att))) : 'Ningún archivo seleccionado'; ?>
                     </span>
@@ -392,13 +393,42 @@ cv_uploaded|Fecha de subida");
         </table>
         <script>
         document.addEventListener('DOMContentLoaded', function(){
-            const btn   = document.getElementById('kvt_cv_file_btn');
-            const input = document.getElementById('kvt_cv_file');
-            const label = document.getElementById('kvt_cv_file_label');
+            const btn    = document.getElementById('kvt_cv_file_btn');
+            const input  = document.getElementById('kvt_cv_file');
+            const label  = document.getElementById('kvt_cv_file_label');
+            const upload = document.getElementById('kvt_cv_upload_btn');
+            const urlFld = document.querySelector('input[name="kvt_cv_url"]');
+            const dateFld= document.querySelector('input[name="kvt_cv_uploaded"]');
+            const nonce  = document.getElementById('kvt_nonce');
+            const pid    = <?php echo $post->ID; ?>;
             if(btn && input){
                 btn.addEventListener('click', function(){ input.click(); });
                 input.addEventListener('change', function(){
                     label.textContent = input.files[0] ? input.files[0].name : 'Ningún archivo seleccionado';
+                    if(upload) upload.disabled = !input.files.length;
+                });
+            }
+            if(upload && input){
+                upload.addEventListener('click', function(){
+                    if(!input.files.length) return;
+                    upload.disabled = true;
+                    const fd = new FormData();
+                    fd.append('action','kvt_upload_cv');
+                    if(nonce) fd.append('_ajax_nonce', nonce.value);
+                    fd.append('id', pid);
+                    fd.append('file', input.files[0]);
+                    fetch(window.ajaxurl || '', {method:'POST', body: fd})
+                        .then(r=>r.json())
+                        .then(j=>{
+                            upload.disabled = false;
+                            if(!j.success){ alert(j.data && j.data.msg ? j.data.msg : 'Error al subir CV'); return; }
+                            if(urlFld) urlFld.value = j.data.url || '';
+                            if(dateFld && !dateFld.value) dateFld.value = j.data.date || '';
+                            label.textContent = 'Ningún archivo seleccionado';
+                            input.value = '';
+                            alert('CV subido y guardado.');
+                        })
+                        .catch(()=>{ upload.disabled = false; alert('Error de red.'); });
                 });
             }
         });
