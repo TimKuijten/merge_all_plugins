@@ -1118,8 +1118,13 @@ cv_uploaded|Fecha de subida");
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
         .kvt-ats-bar{display:flex;gap:8px;align-items:center;padding:8px}
         .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
-        .kvt-step{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e5e7eb;margin-right:4px}
-        .kvt-step.active{background:#0A212E}
+        .kvt-stage-cell{display:flex;align-items:center;gap:4px}
+        .kvt-stage-icon{width:20px;height:20px;border-radius:50%;background:#e5e7eb;position:relative}
+        .kvt-stage-icon.done{background:#22c55e}
+        .kvt-stage-icon.current{background:#3b82f6}
+        .kvt-stage-icon.done:before{content:'\2713';color:#fff;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:12px}
+        .kvt-stage-icon.current:before{content:'\27A4';color:#fff;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:12px}
+        .kvt-stage-name{margin-left:8px;white-space:nowrap}
         .kvt-modal{position:fixed;inset:0;background:rgba(2,6,23,.5);display:flex;align-items:center;justify-content:center;z-index:9999}
         .kvt-modal-content{background:#fff;max-width:980px;width:95%;border-radius:12px;box-shadow:0 15px 40px rgba(0,0,0,.2)}
         #kvt_modal .kvt-modal-content{width:95vw;height:90vh;max-width:95vw;max-height:95vh;resize:both;overflow:auto}
@@ -1960,17 +1965,17 @@ document.addEventListener('DOMContentLoaded', function(){
 
   function renderTable(rows){
     if(!tHead || !tBody) return;
-    tHead.innerHTML = '<th>Applicant</th><th>Experiencia / Localización</th><th>Etapas</th><th>Etapa actual</th><th></th>';
+    tHead.innerHTML = '<th>Applicant</th><th>Int No.</th><th>Current Stage</th><th></th>';
     tBody.innerHTML = rows.map(r=>{
       const name = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
-      const expLoc = esc([r.meta.tags||'', [r.meta.city||'', r.meta.country||''].filter(Boolean).join(', ')].filter(Boolean).join(' / '));
-      const dots = KVT_STATUSES.map(s=>{
-        const idx = KVT_STATUSES.indexOf(s);
-        const cidx = KVT_STATUSES.indexOf(r.status||'');
-        return '<span class="kvt-step'+(idx<=cidx?' active':'')+'"></span>';
+      const intNo = esc(r.meta.int_no||'');
+      const cidx = KVT_STATUSES.indexOf(r.status||'');
+      const steps = KVT_STATUSES.map((s,idx)=>{
+        const cls = idx < cidx ? 'done' : (idx===cidx ? 'current' : '');
+        return '<span class="kvt-stage-icon '+cls+'" title="'+escAttr(s)+'"></span>';
       }).join('');
       const stage = esc(r.status||'');
-      return '<tr><td>'+name+'</td><td>'+expLoc+'</td><td>'+dots+'</td><td>'+stage+'</td><td><button type="button" class="kvt-btn kvt-secondary kvt-row-view" data-id="'+escAttr(r.id)+'">Ver perfil</button></td></tr>';
+      return '<tr><td>'+name+'</td><td>'+intNo+'</td><td class="kvt-stage-cell">'+steps+'<span class="kvt-stage-name">'+stage+'</span></td><td><button type="button" class="kvt-btn kvt-secondary kvt-row-view" data-id="'+escAttr(r.id)+'">Ver perfil</button></td></tr>';
     }).join('');
   }
 
@@ -2758,6 +2763,7 @@ JS;
                 'status'      => get_post_meta($p->ID,'kvt_status',true),
                 'client'      => $client_name,
                 'process'     => $process_name,
+                'int_no'      => $this->meta_get_compat($p->ID,'kvt_int_no',['int_no']),
                 'first_name'  => $this->meta_get_compat($p->ID,'kvt_first_name',['first_name']),
                 'last_name'   => $this->meta_get_compat($p->ID,'kvt_last_name',['last_name']),
                 'email'       => $this->meta_get_compat($p->ID,'kvt_email',['email']),
