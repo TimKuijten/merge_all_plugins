@@ -636,8 +636,10 @@ cv_uploaded|Fecha de subida");
         }
         if (empty($cols)) {
             $cols = [
-                ['key'=>'first_name','label'=>'Nombre'],
-                ['key'=>'last_name','label'=>'Apellidos'],
+                ['key'=>'candidate','label'=>'Candidato'],
+                ['key'=>'status','label'=>'Estado'],
+                ['key'=>'client','label'=>'Cliente'],
+                ['key'=>'process','label'=>'Proceso'],
                 ['key'=>'email','label'=>'Email'],
                 ['key'=>'phone','label'=>'Teléfono'],
                 ['key'=>'country','label'=>'País'],
@@ -782,14 +784,6 @@ cv_uploaded|Fecha de subida");
                 <div class="kvt-actions">
                     <button class="kvt-btn" id="kvt_add_profile">Base</button>
                     <button class="kvt-btn" id="kvt_toggle_table">Tabla</button>
-                    <form id="kvt_export_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank" style="display:inline;">
-                        <input type="hidden" name="action" value="kvt_export">
-                        <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
-                        <input type="hidden" name="filter_client"  id="kvt_export_client"  value="">
-                        <input type="hidden" name="filter_process" id="kvt_export_process" value="">
-                        <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
-                        <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
-                    </form>
                     <button class="kvt-btn" type="button" id="kvt_mandar_correos">Mandar correos</button>
                     <button class="kvt-btn" type="button" id="kvt_share_board">Tablero cliente</button>
                 </div>
@@ -806,14 +800,26 @@ cv_uploaded|Fecha de subida");
             </div>
             <?php endif; ?>
 
-            <div id="kvt_board" class="kvt-board" aria-live="polite"></div>
-
-            <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:none;">
+            <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:block;">
+                <div id="kvt_ats_bar" class="kvt-ats-bar">
+                    <input type="text" id="kvt_search" placeholder="Buscar candidato, empresa, ciudad...">
+                    <select id="kvt_stage_filter"><option value="">Todas las etapas</option></select>
+                    <form id="kvt_export_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank" style="display:inline;">
+                        <input type="hidden" name="action" value="kvt_export">
+                        <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
+                        <input type="hidden" name="filter_client"  id="kvt_export_client"  value="">
+                        <input type="hidden" name="filter_process" id="kvt_export_process" value="">
+                        <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
+                        <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
+                    </form>
+                </div>
                 <table id="kvt_table">
                     <thead><tr id="kvt_table_head"></tr></thead>
                     <tbody id="kvt_table_body"></tbody>
                 </table>
             </div>
+
+            <div id="kvt_board" class="kvt-board" aria-live="polite"></div>
         </div>
         <!-- Info Modal -->
         <div class="kvt-modal" id="kvt_info_modal" style="display:none;">
@@ -1110,6 +1116,10 @@ cv_uploaded|Fecha de subida");
         #kvt_table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
         #kvt_table thead th{position:sticky;top:0;background:#0A212E;color:#fff;padding:10px;border-bottom:1px solid #0A212E;text-align:left}
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
+        .kvt-ats-bar{display:flex;gap:8px;align-items:center;padding:8px}
+        .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
+        .kvt-step{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e5e7eb;margin-right:4px}
+        .kvt-step.active{background:#0A212E}
         .kvt-modal{position:fixed;inset:0;background:rgba(2,6,23,.5);display:flex;align-items:center;justify-content:center;z-index:9999}
         .kvt-modal-content{background:#fff;max-width:980px;width:95%;border-radius:12px;box-shadow:0 15px 40px rgba(0,0,0,.2)}
         #kvt_modal .kvt-modal-content{width:95vw;height:90vh;max-width:95vw;max-height:95vh;resize:both;overflow:auto}
@@ -1278,6 +1288,8 @@ document.addEventListener('DOMContentLoaded', function(){
   const tableWrap = el('#kvt_table_wrap');
   const tHead = el('#kvt_table_head');
   const tBody = el('#kvt_table_body');
+  const searchInput = el('#kvt_search');
+  const stageSelect = el('#kvt_stage_filter');
 
   const selClient  = el('#kvt_client');
   const selProcess = el('#kvt_process');
@@ -1306,6 +1318,11 @@ document.addEventListener('DOMContentLoaded', function(){
     const selProcessInfo = el('#kvt_selected_process');
     const selBoardInfo = el('#kvt_selected_board');
     const clientLink   = el('#kvt_client_link');
+  let allRows = [];
+
+  if(stageSelect){
+    stageSelect.innerHTML = '<option value="">Todas las etapas</option>' + KVT_STATUSES.map(s=>'<option value="'+escAttr(s)+'">'+esc(s)+'</option>').join('');
+  }
   const infoModal = el('#kvt_info_modal');
   const infoClose = el('#kvt_info_close');
   const infoBody  = el('#kvt_info_body');
@@ -1937,19 +1954,38 @@ document.addEventListener('DOMContentLoaded', function(){
     });
 
     if (!CLIENT_VIEW) enableDnD();
+    allRows = Array.isArray(data) ? data : [];
+    filterTable();
+  }
 
-    const tableCols = CLIENT_VIEW && ALLOWED_FIELDS.length ? KVT_COLUMNS.filter(c=>ALLOWED_FIELDS.includes(c.key)) : KVT_COLUMNS;
-    tHead.innerHTML = tableCols.map(c=>'<th>'+esc(c.label)+'</th>').join('');
-    tBody.innerHTML = data.map(row=>{
-      const tds = tableCols.map(col=>{
-        const val = row.meta[col.key] || '';
-        if (col.key==='cv_url') {
-          return '<td>'+(val ? '<a href="'+escAttr(val)+'" target="_blank" rel="noopener">Abrir</a>' : '')+'</td>';
-        }
-        return '<td>'+esc(val)+'</td>';
+  function renderTable(rows){
+    if(!tHead || !tBody) return;
+    tHead.innerHTML = '<th>Applicant</th><th>Experiencia / Localización</th><th>Etapas</th><th>Etapa actual</th><th></th>';
+    tBody.innerHTML = rows.map(r=>{
+      const name = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
+      const expLoc = esc([r.meta.tags||'', [r.meta.city||'', r.meta.country||''].filter(Boolean).join(', ')].filter(Boolean).join(' / '));
+      const dots = KVT_STATUSES.map(s=>{
+        const idx = KVT_STATUSES.indexOf(s);
+        const cidx = KVT_STATUSES.indexOf(r.status||'');
+        return '<span class="kvt-step'+(idx<=cidx?' active':'')+'"></span>';
       }).join('');
-      return '<tr>'+tds+'</tr>';
+      const stage = esc(r.status||'');
+      return '<tr><td>'+name+'</td><td>'+expLoc+'</td><td>'+dots+'</td><td>'+stage+'</td><td><button type="button" class="kvt-btn kvt-secondary kvt-row-view" data-id="'+escAttr(r.id)+'">Ver perfil</button></td></tr>';
     }).join('');
+  }
+
+  function filterTable(){
+    let rows = allRows.slice();
+    const q = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    if(q){
+      rows = rows.filter(r=>{
+        const blob = (r.meta.first_name+' '+r.meta.last_name+' '+(r.client||'')+' '+(r.process||'')+' '+Object.values(r.meta).join(' ')).toLowerCase();
+        return blob.includes(q);
+      });
+    }
+    const st = stageSelect ? stageSelect.value : '';
+    if(st){ rows = rows.filter(r=>r.status===st); }
+    renderTable(rows);
   }
 
   function syncExportHidden(){
@@ -2111,11 +2147,23 @@ document.addEventListener('DOMContentLoaded', function(){
     tableWrap.style.display = (tableWrap.style.display==='none' || !tableWrap.style.display) ? 'block' : 'none';
   });
 
+  searchInput && searchInput.addEventListener('input', filterTable);
+  stageSelect && stageSelect.addEventListener('change', filterTable);
+  tBody && tBody.addEventListener('click', e=>{
+    if(e.target.classList.contains('kvt-row-view')){
+      const id = e.target.dataset.id;
+      const cand = allRows.find(r=>String(r.id)===id);
+      if(cand){
+        infoBody.innerHTML = buildProfileHTML(cand);
+        infoModal.style.display='flex';
+      }
+    }
+  });
+
   function refresh(){
-    const hasSel = (selClient && selClient.value) || (selProcess && selProcess.value);
-    (hasSel ? fetchCandidates() : fetchDashboard()).then(j=>{
+    fetchCandidates().then(j=>{
       if(j.success){
-        if(hasSel){ renderData(j.data); } else { renderDashboard(j.data); }
+        renderData(j.data);
       } else {
         alert('Error cargando datos');
       }
@@ -2703,7 +2751,13 @@ JS;
             if ($notes_raw === '') $notes_raw = get_post_meta($p->ID,'notes',true);
             $public_notes_raw = get_post_meta($p->ID,'kvt_public_notes',true);
             if ($public_notes_raw === '') $public_notes_raw = get_post_meta($p->ID,'public_notes',true);
+            $client_name  = $this->get_term_name($p->ID, self::TAX_CLIENT);
+            $process_name = $this->get_term_name($p->ID, self::TAX_PROCESS);
             $meta = [
+                'candidate'   => get_the_title($p),
+                'status'      => get_post_meta($p->ID,'kvt_status',true),
+                'client'      => $client_name,
+                'process'     => $process_name,
                 'first_name'  => $this->meta_get_compat($p->ID,'kvt_first_name',['first_name']),
                 'last_name'   => $this->meta_get_compat($p->ID,'kvt_last_name',['last_name']),
                 'email'       => $this->meta_get_compat($p->ID,'kvt_email',['email']),
@@ -2714,13 +2768,13 @@ JS;
                 'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
                 'next_action' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_next_action',['next_action'])),
                 'next_action_note' => $this->meta_get_compat($p->ID,'kvt_next_action_note',['next_action_note']),
-                  'notes'       => $notes_raw,
-                  'notes_count' => $this->count_notes($notes_raw),
-                  'public_notes'       => $public_notes_raw,
-                  'public_notes_count' => $this->count_notes($public_notes_raw),
-                  'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
-                  'client_comments' => get_post_meta($p->ID,'kvt_client_comments',true),
-              ];
+                'notes'       => $notes_raw,
+                'notes_count' => $this->count_notes($notes_raw),
+                'public_notes'       => $public_notes_raw,
+                'public_notes_count' => $this->count_notes($public_notes_raw),
+                'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
+                'client_comments' => get_post_meta($p->ID,'kvt_client_comments',true),
+            ];
             $data[] = [
                 'id'     => $p->ID,
                 'title'  => get_the_title($p),
