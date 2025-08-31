@@ -1118,13 +1118,17 @@ cv_uploaded|Fecha de subida");
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
         .kvt-ats-bar{display:flex;gap:8px;align-items:center;padding:8px}
         .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
-        .kvt-stage-cell{display:flex;align-items:center;gap:4px}
-        .kvt-stage-icon{width:20px;height:20px;border-radius:50%;background:#e5e7eb;position:relative}
-        .kvt-stage-icon.done{background:#22c55e}
-        .kvt-stage-icon.current{background:#3b82f6}
-        .kvt-stage-icon.done:before{content:'\2713';color:#fff;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:12px}
-        .kvt-stage-icon.current:before{content:'\27A4';color:#fff;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:12px}
-        .kvt-stage-name{margin-left:8px;white-space:nowrap}
+        .kvt-stage-cell{display:flex;align-items:center;gap:4px;font-size:12px}
+        .kvt-stage-step{position:relative;padding:4px 12px 4px 16px;background:#e5e7eb;color:#6b7280;margin-right:6px}
+        .kvt-stage-step:after{content:'';position:absolute;top:0;right:-12px;width:0;height:0;border-top:14px solid transparent;border-bottom:14px solid transparent;border-left:12px solid #e5e7eb}
+        .kvt-stage-step:not(:first-child){margin-left:6px;padding-left:20px}
+        .kvt-stage-step:not(:first-child):before{content:'';position:absolute;top:0;left:0;width:0;height:0;border-top:14px solid transparent;border-bottom:14px solid transparent;border-left:12px solid #fff}
+        .kvt-stage-step:last-child{margin-right:0}
+        .kvt-stage-step:last-child:after{display:none}
+        .kvt-stage-step.current{background:#3b82f6;color:#fff}
+        .kvt-stage-step.current:after{border-left-color:#3b82f6}
+        .kvt-stage-step.done{background:#22c55e;color:#fff}
+        .kvt-stage-step.done:after{border-left-color:#22c55e}
         .kvt-modal{position:fixed;inset:0;background:rgba(2,6,23,.5);display:flex;align-items:center;justify-content:center;z-index:9999}
         .kvt-modal-content{background:#fff;max-width:980px;width:95%;border-radius:12px;box-shadow:0 15px 40px rgba(0,0,0,.2)}
         #kvt_modal .kvt-modal-content{width:95vw;height:90vh;max-width:95vw;max-height:95vh;resize:both;overflow:auto}
@@ -1965,17 +1969,17 @@ document.addEventListener('DOMContentLoaded', function(){
 
   function renderTable(rows){
     if(!tHead || !tBody) return;
-    tHead.innerHTML = '<th>Applicant</th><th>Int No.</th><th>Current Stage</th><th></th>';
+    tHead.innerHTML = '<th>Applicant</th><th>Int No.</th><th>Stages</th><th></th>';
     tBody.innerHTML = rows.map(r=>{
       const name = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
       const intNo = esc(r.meta.int_no||'');
       const cidx = KVT_STATUSES.indexOf(r.status||'');
       const steps = KVT_STATUSES.map((s,idx)=>{
-        const cls = idx < cidx ? 'done' : (idx===cidx ? 'current' : '');
-        return '<span class="kvt-stage-icon '+cls+'" title="'+escAttr(s)+'"></span>';
+        if(idx < cidx) return '<span class="kvt-stage-step done" title="'+escAttr(s)+'">&#10003;</span>';
+        if(idx === cidx) return '<span class="kvt-stage-step current" title="'+escAttr(s)+'">'+esc(s)+'</span>';
+        return '<span class="kvt-stage-step" title="'+escAttr(s)+'">'+esc(s)+'</span>';
       }).join('');
-      const stage = esc(r.status||'');
-      return '<tr><td>'+name+'</td><td>'+intNo+'</td><td class="kvt-stage-cell">'+steps+'<span class="kvt-stage-name">'+stage+'</span></td><td><button type="button" class="kvt-btn kvt-secondary kvt-row-view" data-id="'+escAttr(r.id)+'">Ver perfil</button></td></tr>';
+      return '<tr><td>'+name+'</td><td>'+intNo+'</td><td class="kvt-stage-cell">'+steps+'</td><td><button type="button" class="kvt-btn kvt-secondary kvt-row-view" data-id="'+escAttr(r.id)+'">Ver perfil</button></td></tr>';
     }).join('');
   }
 
