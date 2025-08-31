@@ -918,6 +918,20 @@ cv_uploaded|Fecha de subida");
           </div>
         </div>
 
+        <div class="kvt-modal" id="kvt_stage_modal" style="display:none;">
+          <div class="kvt-modal-content">
+            <div class="kvt-modal-header">
+              <h3>Actualizar etapa</h3>
+              <button type="button" class="kvt-modal-close" id="kvt_stage_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
+            </div>
+            <div class="kvt-modal-body">
+              <form id="kvt_stage_form">
+                <textarea id="kvt_stage_comment" placeholder="Comentario (opcional)" style="width:100%;min-height:80px;"></textarea>
+                <p><button type="submit" class="kvt-btn">Guardar</button></p>
+              </form>
+            </div>
+          </div>
+        </div>
         <!-- Modal Base -->
         <div class="kvt-modal" id="kvt_modal" style="display:none;">
           <div class="kvt-modal-content" role="dialog" aria-modal="true" aria-labelledby="kvt_modal_title">
@@ -1158,6 +1172,10 @@ cv_uploaded|Fecha de subida");
         .kvt-stage-step.done{background:#22c55e;color:#fff}
         .kvt-stage-step.current{background:#3b82f6;color:#fff}
         .kvt-stage-overview{margin:8px;padding:0 8px;font-size:14px}
+        .kvt-name-icon{margin-left:4px;font-size:14px;vertical-align:middle;cursor:default}
+        .kvt-name-icon.kvt-alert{color:#f59e0b;font-weight:700}
+        .kvt-followup-date{margin-left:2px;font-size:12px;color:#000;vertical-align:middle}
+        .kvt-followup-date.overdue{color:#dc2626}
         .kvt-board-wrap{margin-top:40px}
         .kvt-modal{position:fixed;inset:0;background:rgba(2,6,23,.5);display:flex;align-items:center;justify-content:center;z-index:9999}
         .kvt-modal-content{background:#fff;max-width:980px;width:95%;border-radius:12px;box-shadow:0 15px 40px rgba(0,0,0,.2)}
@@ -1242,6 +1260,9 @@ cv_uploaded|Fecha de subida");
         wp_add_inline_script('kvt-app', 'const KVT_ALLOW_COMMENTS='.(!empty($link_cfg['comments'])?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_SLUG="'.esc_js($slug).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_IS_ADMIN='.((is_user_logged_in() && current_user_can('edit_posts'))?'true':'false').';', 'before');
+        $user = wp_get_current_user();
+        $display = ($user && $user->exists()) ? $user->display_name : ''; 
+        wp_add_inline_script('kvt-app', 'const KVT_CURRENT_USER="'.esc_js($display).'";', 'before');
         $link_map = [];
         foreach ($all_links as $s=>$cfg) {
             $c = isset($cfg['client']) ? (int)$cfg['client'] : 0;
@@ -1337,6 +1358,12 @@ document.addEventListener('DOMContentLoaded', function(){
   const taskCandidate = el('#kvt_task_candidate');
   const taskDate = el('#kvt_task_date');
   const taskNote = el('#kvt_task_note');
+  const stageModal = el('#kvt_stage_modal');
+  const stageClose = el('#kvt_stage_close');
+  const stageForm = el('#kvt_stage_form');
+  const stageComment = el('#kvt_stage_comment');
+  let stageId = '';
+  let stageNext = '';
 
   const selClient  = el('#kvt_client');
   const selProcess = el('#kvt_process');
@@ -2013,7 +2040,27 @@ document.addEventListener('DOMContentLoaded', function(){
     tHead.innerHTML = '<th>Applicant</th><th>Stages</th>';
     tBody.innerHTML = rows.map(r=>{
       const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
-      const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>';
+      const icons=[];
+      const comments=Array.isArray(r.meta.client_comments)?r.meta.client_comments:[];
+      if(comments.length && (!CLIENT_VIEW || ALLOW_COMMENTS)){
+        const cm=comments[comments.length-1];
+        icons.push('<span class="kvt-name-icon kvt-alert" title="'+escAttr(cm.comment)+'">!</span>');
+      }
+      if(r.meta.next_action && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('next_action'))){
+        const parts=r.meta.next_action.split('-');
+        let overdue=false;
+        if(parts.length===3){
+          const d=new Date(parts[2],parts[1]-1,parts[0]);
+          const today=new Date();today.setHours(0,0,0,0);
+          overdue=d<=today;
+        }
+        const note=r.meta.next_action_note?escAttr(r.meta.next_action_note):'';
+        icons.push('<span class="kvt-name-icon dashicons dashicons-clock" title="'+note+'"></span><span class="kvt-followup-date'+(overdue?' overdue':'')+'">'+esc(r.meta.next_action)+'</span>');
+      }
+      const noteSrc = (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) ? r.meta.notes : (ALLOWED_FIELDS.includes('public_notes') ? r.meta.public_notes : '');
+      const snip = lastNoteSnippet(noteSrc);
+      if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
+      const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+icons.join('');
       const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
       let cidx = stepStatuses.indexOf(r.status||'');
       if((r.status||'') === 'Descartados') cidx = stepStatuses.length;
@@ -2241,22 +2288,26 @@ document.addEventListener('DOMContentLoaded', function(){
   tBody && tBody.addEventListener('click', e=>{
     const step = e.target.closest('.kvt-stage-step');
     if(step){
-      const id = step.dataset.id;
-      const next = step.dataset.status;
-      const comment = prompt('Comentario (opcional):') || '';
-      const author = prompt('Nombre (opcional):') || '';
-      const params = new URLSearchParams();
-      params.set('action','kvt_update_status');
-      params.set('_ajax_nonce', KVT_NONCE);
-      params.set('id', id);
-      params.set('status', next);
-      params.set('comment', comment);
-      params.set('author', author);
-      fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
-        .then(r=>r.json()).then(()=>refresh());
+      stageId = step.dataset.id;
+      stageNext = step.dataset.status;
+      if(stageModal) stageModal.style.display='flex';
     }
   });
 
+  stageClose && stageClose.addEventListener('click', ()=>{ if(stageModal) stageModal.style.display='none'; });
+  stageModal && stageModal.addEventListener('click', e=>{ if(e.target===stageModal) stageModal.style.display='none'; });
+  stageForm && stageForm.addEventListener('submit', e=>{
+    e.preventDefault();
+    const params = new URLSearchParams();
+    params.set('action','kvt_update_status');
+    params.set('_ajax_nonce', KVT_NONCE);
+    params.set('id', stageId);
+    params.set('status', stageNext);
+    params.set('comment', stageComment.value.trim());
+    params.set('author', KVT_CURRENT_USER || '');
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json()).then(()=>{ if(stageModal) stageModal.style.display='none'; refresh(); });
+  });
   boardToggle && boardToggle.addEventListener('click', ()=>{
     const hidden = board.style.display === 'none';
     board.style.display = hidden ? 'flex' : 'none';
@@ -3007,6 +3058,10 @@ JS;
         $st = isset($_POST['status']) ? sanitize_text_field($_POST['status']) : '';
         $comment = isset($_POST['comment']) ? sanitize_text_field($_POST['comment']) : '';
         $author  = isset($_POST['author']) ? sanitize_text_field($_POST['author']) : '';
+        if(!$author){
+            $u = wp_get_current_user();
+            if($u && $u->exists()) $author = $u->display_name;
+        }
 
         $statuses = $this->get_statuses();
         if (!$id || !in_array($st, $statuses, true)) {
