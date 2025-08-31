@@ -636,8 +636,10 @@ cv_uploaded|Fecha de subida");
         }
         if (empty($cols)) {
             $cols = [
-                ['key'=>'first_name','label'=>'Nombre'],
-                ['key'=>'last_name','label'=>'Apellidos'],
+                ['key'=>'candidate','label'=>'Candidato'],
+                ['key'=>'status','label'=>'Estado'],
+                ['key'=>'client','label'=>'Cliente'],
+                ['key'=>'process','label'=>'Proceso'],
                 ['key'=>'email','label'=>'Email'],
                 ['key'=>'phone','label'=>'Teléfono'],
                 ['key'=>'country','label'=>'País'],
@@ -806,14 +808,14 @@ cv_uploaded|Fecha de subida");
             </div>
             <?php endif; ?>
 
-            <div id="kvt_board" class="kvt-board" aria-live="polite"></div>
-
-            <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:none;">
+            <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:block;">
                 <table id="kvt_table">
                     <thead><tr id="kvt_table_head"></tr></thead>
                     <tbody id="kvt_table_body"></tbody>
                 </table>
             </div>
+
+            <div id="kvt_board" class="kvt-board" aria-live="polite"></div>
         </div>
         <!-- Info Modal -->
         <div class="kvt-modal" id="kvt_info_modal" style="display:none;">
@@ -2112,10 +2114,9 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 
   function refresh(){
-    const hasSel = (selClient && selClient.value) || (selProcess && selProcess.value);
-    (hasSel ? fetchCandidates() : fetchDashboard()).then(j=>{
+    fetchCandidates().then(j=>{
       if(j.success){
-        if(hasSel){ renderData(j.data); } else { renderDashboard(j.data); }
+        renderData(j.data);
       } else {
         alert('Error cargando datos');
       }
@@ -2703,7 +2704,13 @@ JS;
             if ($notes_raw === '') $notes_raw = get_post_meta($p->ID,'notes',true);
             $public_notes_raw = get_post_meta($p->ID,'kvt_public_notes',true);
             if ($public_notes_raw === '') $public_notes_raw = get_post_meta($p->ID,'public_notes',true);
+            $client_name  = $this->get_term_name($p->ID, self::TAX_CLIENT);
+            $process_name = $this->get_term_name($p->ID, self::TAX_PROCESS);
             $meta = [
+                'candidate'   => get_the_title($p),
+                'status'      => get_post_meta($p->ID,'kvt_status',true),
+                'client'      => $client_name,
+                'process'     => $process_name,
                 'first_name'  => $this->meta_get_compat($p->ID,'kvt_first_name',['first_name']),
                 'last_name'   => $this->meta_get_compat($p->ID,'kvt_last_name',['last_name']),
                 'email'       => $this->meta_get_compat($p->ID,'kvt_email',['email']),
@@ -2714,13 +2721,13 @@ JS;
                 'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
                 'next_action' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_next_action',['next_action'])),
                 'next_action_note' => $this->meta_get_compat($p->ID,'kvt_next_action_note',['next_action_note']),
-                  'notes'       => $notes_raw,
-                  'notes_count' => $this->count_notes($notes_raw),
-                  'public_notes'       => $public_notes_raw,
-                  'public_notes_count' => $this->count_notes($public_notes_raw),
-                  'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
-                  'client_comments' => get_post_meta($p->ID,'kvt_client_comments',true),
-              ];
+                'notes'       => $notes_raw,
+                'notes_count' => $this->count_notes($notes_raw),
+                'public_notes'       => $public_notes_raw,
+                'public_notes_count' => $this->count_notes($public_notes_raw),
+                'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
+                'client_comments' => get_post_meta($p->ID,'kvt_client_comments',true),
+            ];
             $data[] = [
                 'id'     => $p->ID,
                 'title'  => get_the_title($p),
