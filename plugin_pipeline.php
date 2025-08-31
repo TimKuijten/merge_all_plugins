@@ -844,7 +844,10 @@ cv_uploaded|Fecha de subida");
                 </div>
             </div>
 
-            <div id="kvt_board" class="kvt-board" aria-live="polite"></div>
+            <div id="kvt_board_wrap" class="kvt-board-wrap">
+                <button class="kvt-btn" type="button" id="kvt_board_toggle">Ocultar Kanban</button>
+                <div id="kvt_board" class="kvt-board" aria-live="polite"></div>
+            </div>
         </div>
         <!-- Info Modal -->
         <div class="kvt-modal" id="kvt_info_modal" style="display:none;">
@@ -1151,15 +1154,11 @@ cv_uploaded|Fecha de subida");
         .kvt-activity-list li{margin-bottom:4px}
         .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-stage-cell{display:flex;align-items:center;font-size:12px;flex-wrap:nowrap}
-        .kvt-stage-step{display:inline-flex;align-items:center;justify-content:center;width:120px;padding:4px 12px;background:#e5e7eb;color:#6b7280;white-space:nowrap;box-sizing:border-box}
+        .kvt-stage-step{display:inline-flex;align-items:center;justify-content:center;width:120px;padding:4px 12px;background:#e5e7eb;color:#6b7280;white-space:nowrap;box-sizing:border-box;border:none;cursor:pointer}
         .kvt-stage-step.done{background:#22c55e;color:#fff}
         .kvt-stage-step.current{background:#3b82f6;color:#fff}
-        .kvt-stage-arrow{width:0;height:0;border-top:14px solid transparent;border-bottom:14px solid transparent;border-left:14px solid #e5e7eb;display:inline-block;cursor:pointer;background:none;border:none;padding:0}
-        .kvt-stage-step.done + .kvt-stage-arrow{border-left-color:#22c55e}
-        .kvt-stage-step.current + .kvt-stage-arrow{border-left-color:#3b82f6}
-        .kvt-stage-arrow.disabled{opacity:.3;cursor:default}
-        .kvt-stage-arrow + .kvt-stage-step{margin-left:-14px}
         .kvt-stage-overview{margin:8px;padding:0 8px;font-size:14px}
+        .kvt-board-wrap{margin-top:40px}
         .kvt-modal{position:fixed;inset:0;background:rgba(2,6,23,.5);display:flex;align-items:center;justify-content:center;z-index:9999}
         .kvt-modal-content{background:#fff;max-width:980px;width:95%;border-radius:12px;box-shadow:0 15px 40px rgba(0,0,0,.2)}
         #kvt_modal .kvt-modal-content{width:95vw;height:90vh;max-width:95vw;max-height:95vh;resize:both;overflow:auto}
@@ -1324,6 +1323,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
   const board = el('#kvt_board');
   if (!board) return;
+  const boardToggle = el('#kvt_board_toggle');
 
   const tableWrap = el('#kvt_table_wrap');
   const tHead = el('#kvt_table_head');
@@ -2018,15 +2018,11 @@ document.addEventListener('DOMContentLoaded', function(){
       let cidx = stepStatuses.indexOf(r.status||'');
       if((r.status||'') === 'Descartados') cidx = stepStatuses.length;
       const parts = stepStatuses.map((s,idx)=>{
-        let html = '';
-        if(idx < cidx) html = '<span class="kvt-stage-step done" title="'+escAttr(s)+'">&#10003;</span>';
-        else if(idx === cidx) html = '<span class="kvt-stage-step current" title="'+escAttr(s)+'">'+esc(s)+'</span>';
-        else html = '<span class="kvt-stage-step" title="'+escAttr(s)+'">'+esc(s)+'</span>';
-        if(idx < stepStatuses.length-1){
-          if(idx === cidx) html += '<button type="button" class="kvt-stage-arrow" data-id="'+escAttr(r.id)+'" data-next="'+escAttr(stepStatuses[idx+1])+'"></button>';
-          else html += '<span class="kvt-stage-arrow disabled"></span>';
-        }
-        return html;
+        let cls = 'kvt-stage-step';
+        if(idx < cidx) cls += ' done';
+        else if(idx === cidx) cls += ' current';
+        const label = idx < cidx ? '&#10003;' : esc(s);
+        return '<button type="button" class="'+cls+'" data-id="'+escAttr(r.id)+'" data-status="'+escAttr(s)+'" title="'+escAttr(s)+'">'+label+'</button>';
       }).join('');
       return '<tr><td>'+name+'</td><td class="kvt-stage-cell">'+parts+'</td></tr>';
     }).join('');
@@ -2243,10 +2239,10 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 
   tBody && tBody.addEventListener('click', e=>{
-    const arrow = e.target.closest('.kvt-stage-arrow');
-    if(arrow && !arrow.classList.contains('disabled')){
-      const id = arrow.dataset.id;
-      const next = arrow.dataset.next;
+    const step = e.target.closest('.kvt-stage-step');
+    if(step){
+      const id = step.dataset.id;
+      const next = step.dataset.status;
       const comment = prompt('Comentario (opcional):') || '';
       const author = prompt('Nombre (opcional):') || '';
       const params = new URLSearchParams();
@@ -2259,6 +2255,12 @@ document.addEventListener('DOMContentLoaded', function(){
       fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
         .then(r=>r.json()).then(()=>refresh());
     }
+  });
+
+  boardToggle && boardToggle.addEventListener('click', ()=>{
+    const hidden = board.style.display === 'none';
+    board.style.display = hidden ? 'flex' : 'none';
+    boardToggle.textContent = hidden ? 'Ocultar Kanban' : 'Mostrar Kanban';
   });
 
   taskForm && taskForm.addEventListener('submit', e=>{
