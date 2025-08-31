@@ -800,23 +800,36 @@ cv_uploaded|Fecha de subida");
             </div>
             <?php endif; ?>
 
-            <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:block;">
-                <div id="kvt_ats_bar" class="kvt-ats-bar">
-                    <input type="text" id="kvt_search" placeholder="Buscar candidato, empresa, ciudad...">
-                    <select id="kvt_stage_filter"><option value="">Todas las etapas</option></select>
-                    <form id="kvt_export_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank" style="display:inline;">
-                        <input type="hidden" name="action" value="kvt_export">
-                        <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
-                        <input type="hidden" name="filter_client"  id="kvt_export_client"  value="">
-                        <input type="hidden" name="filter_process" id="kvt_export_process" value="">
-                        <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
-                        <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
-                    </form>
+            <div class="kvt-main">
+                <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:block;">
+                    <div id="kvt_ats_bar" class="kvt-ats-bar">
+                        <input type="text" id="kvt_search" placeholder="Buscar candidato, empresa, ciudad...">
+                        <select id="kvt_stage_filter"><option value="">Todas las etapas</option></select>
+                        <form id="kvt_export_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank" style="display:inline;">
+                            <input type="hidden" name="action" value="kvt_export">
+                            <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
+                            <input type="hidden" name="filter_client"  id="kvt_export_client"  value="">
+                            <input type="hidden" name="filter_process" id="kvt_export_process" value="">
+                            <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
+                            <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
+                        </form>
+                    </div>
+                    <table id="kvt_table">
+                        <thead><tr id="kvt_table_head"></tr></thead>
+                        <tbody id="kvt_table_body"></tbody>
+                    </table>
                 </div>
-                <table id="kvt_table">
-                    <thead><tr id="kvt_table_head"></tr></thead>
-                    <tbody id="kvt_table_body"></tbody>
-                </table>
+                <div id="kvt_activity" class="kvt-activity">
+                    <h3>Actividad</h3>
+                    <div class="kvt-activity-group">
+                        <h4>Pendientes</h4>
+                        <ul id="kvt_tasks_due" class="kvt-activity-list"></ul>
+                    </div>
+                    <div class="kvt-activity-group">
+                        <h4>Próximas</h4>
+                        <ul id="kvt_tasks_upcoming" class="kvt-activity-list"></ul>
+                    </div>
+                </div>
             </div>
 
             <div id="kvt_board" class="kvt-board" aria-live="polite"></div>
@@ -1112,11 +1125,18 @@ cv_uploaded|Fecha de subida");
         .kvt-delete{background:none !important;border:none !important;color:#b91c1c !important;font-size:18px;line-height:1;cursor:pointer;padding:0}
         .kvt-delete:hover{color:#7f1d1d !important}
         .kvt-delete.dashicons{vertical-align:middle}
+        .kvt-main{display:flex;gap:16px}
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
+        #kvt_table_wrap{flex:0 0 70%}
         #kvt_table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
         #kvt_table thead th{position:sticky;top:0;background:#0A212E;color:#fff;padding:10px;border-bottom:1px solid #0A212E;text-align:left}
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
         .kvt-ats-bar{display:flex;gap:8px;align-items:center;padding:8px}
+        .kvt-activity{margin-top:16px;flex:1;border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto}
+        .kvt-activity-group{margin-bottom:12px}
+        .kvt-activity-group h4{margin:8px 0;font-size:14px}
+        .kvt-activity-list{list-style:none;margin:0;padding-left:16px;font-size:13px}
+        .kvt-activity-list li{margin-bottom:4px}
         .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-stage-cell{display:flex;align-items:center;font-size:12px;flex-wrap:nowrap}
         .kvt-stage-step{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:0 0 120px;padding:4px 12px 4px 16px;background:#e5e7eb;color:#6b7280;white-space:nowrap;box-sizing:border-box}
@@ -1298,6 +1318,8 @@ document.addEventListener('DOMContentLoaded', function(){
   const tBody = el('#kvt_table_body');
   const searchInput = el('#kvt_search');
   const stageSelect = el('#kvt_stage_filter');
+  const activityDue = el('#kvt_tasks_due');
+  const activityUpcoming = el('#kvt_tasks_upcoming');
 
   const selClient  = el('#kvt_client');
   const selProcess = el('#kvt_process');
@@ -1964,22 +1986,45 @@ document.addEventListener('DOMContentLoaded', function(){
     if (!CLIENT_VIEW) enableDnD();
     allRows = Array.isArray(data) ? data : [];
     filterTable();
+    renderActivity(allRows);
   }
 
   function renderTable(rows){
     if(!tHead || !tBody) return;
-    tHead.innerHTML = '<th>Applicant</th><th>Int No.</th><th>Stages</th><th></th>';
+    tHead.innerHTML = '<th>Applicant</th><th>Stages</th>';
     tBody.innerHTML = rows.map(r=>{
-      const name = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
-      const intNo = esc(r.meta.int_no||'');
-      const cidx = KVT_STATUSES.indexOf(r.status||'');
-      const steps = KVT_STATUSES.map((s,idx)=>{
+      const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
+      const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>';
+      const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
+      let cidx = stepStatuses.indexOf(r.status||'');
+      if((r.status||'') === 'Descartados') cidx = stepStatuses.length;
+      const steps = stepStatuses.map((s,idx)=>{
         if(idx < cidx) return '<span class="kvt-stage-step done" title="'+escAttr(s)+'">&#10003;</span>';
         if(idx === cidx) return '<span class="kvt-stage-step current" title="'+escAttr(s)+'">'+esc(s)+'</span>';
         return '<span class="kvt-stage-step" title="'+escAttr(s)+'">'+esc(s)+'</span>';
       }).join('');
-      return '<tr><td>'+name+'</td><td>'+intNo+'</td><td class="kvt-stage-cell">'+steps+'</td><td><button type="button" class="kvt-btn kvt-secondary kvt-row-view" data-id="'+escAttr(r.id)+'">Ver perfil</button></td></tr>';
+      return '<tr><td>'+name+'</td><td class="kvt-stage-cell">'+steps+'</td></tr>';
     }).join('');
+  }
+
+  function renderActivity(rows){
+    if(!activityDue || !activityUpcoming) return;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const due=[]; const upcoming=[];
+    rows.forEach(r=>{
+      const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
+      if(r.meta.next_action){
+        const parts = r.meta.next_action.split('-');
+        if(parts.length===3){
+          const d = new Date(parts[2], parts[1]-1, parts[0]);
+          const note = esc(r.meta.next_action_note||'');
+          const item = '<li><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a> - '+esc(r.meta.next_action)+(note?' — '+note:'')+'</li>';
+          (d <= today ? due : upcoming).push(item);
+        }
+      }
+    });
+    activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
+    activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
   }
 
   function filterTable(){
@@ -2157,7 +2202,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
   searchInput && searchInput.addEventListener('input', filterTable);
   stageSelect && stageSelect.addEventListener('change', filterTable);
-  tBody && tBody.addEventListener('click', e=>{
+  document.addEventListener('click', e=>{
     if(e.target.classList.contains('kvt-row-view')){
       const id = e.target.dataset.id;
       const cand = allRows.find(r=>String(r.id)===id);
