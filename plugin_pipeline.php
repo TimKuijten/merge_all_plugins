@@ -1541,8 +1541,6 @@ function kvtInit(){
     if(shareComments) shareComments.checked = ALLOW_COMMENTS;
   }
 
-  let currentPage = 1;
-
   function switchTab(target){
     if(tabCandidates) tabCandidates.classList.toggle('active', target==='candidates');
     if(tabClients) tabClients.classList.toggle('active', target==='clients');
