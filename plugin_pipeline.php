@@ -44,7 +44,9 @@ class Kovacic_Pipeline_Visualizer {
         add_action('admin_menu',                 [$this, 'replace_tax_metaboxes']);
 
         // Frontend UI
-        add_shortcode('kovacic_pipeline',        [$this, 'shortcode']);
+        add_shortcode('kvt_pipeline',            [$this, 'shortcode']);
+        add_shortcode('kovacic_pipeline',        [$this, 'shortcode']); // Backwards compatibility
+        add_shortcode('kvt_company_ats',         [$this, 'company_ats_shortcode']);
         add_action('wp_enqueue_scripts',         [$this, 'enqueue_assets']);
 
         // AJAX
@@ -1203,7 +1205,8 @@ JS;
                             <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                         </form>
                     </div>
-                    <table id="kvt_table">
+                    <div id="kvt_list" class="kvt-list" style="display:none;"></div>
+                    <table id="kvt_table" style="display:none;">
                         <thead><tr id="kvt_table_head"></tr></thead>
                         <tbody id="kvt_table_body"></tbody>
                     </table>
@@ -1622,6 +1625,31 @@ JS;
             .kvt-share-title{font-weight:600;margin-bottom:6px}
           .kvt-config-client{background:none;border:none;cursor:pointer;margin-left:8px}
           .kvt-config-client .dashicons{vertical-align:middle}
+
+:root{--ink:#0A212E;--muted:#6B7280;--line:#E5E7EB;--bg:#FFFFFF;--accent:#0A212E;--radius:8px;--shadow:0 6px 20px rgba(10,33,46,.06);}
+.kvt *{box-sizing:border-box}
+.kvt{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial;color:var(--ink);background:var(--bg)}
+.kvt a{color:var(--accent);text-decoration:none}
+.kvt a:hover{text-decoration:underline}
+.kvt-wrap{max-width:1100px;margin:0 auto;padding:24px}
+.kvt-head{position:sticky;top:0;background:#fff;z-index:10;padding:12px 0 16px;border-bottom:1px solid var(--line)}
+.kvt-title{font-weight:700;font-size:18px;margin:0 0 12px}
+.kvt-toolbar{display:flex;gap:8px;flex-wrap:wrap}
+.kvt-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
+.kvt-btn:hover{box-shadow:var(--shadow)}
+.kvt-list{margin-top:16px;border-top:1px solid var(--line)}
+.kvt-row{display:grid;grid-template-columns:28px 1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.kvt-row:hover{background:rgba(10,33,46,.02)}
+.kvt-check{display:flex;align-items:center;justify-content:center}
+.kvt-name{font-weight:600}
+.kvt-sub{color:var(--muted);font-size:14px}
+.kvt-meta{display:flex;align-items:center;gap:10px;white-space:nowrap}
+.kvt-chip{border:1px solid var(--line);padding:2px 8px;border-radius:999px;font-size:12px;color:var(--ink);background:#fff}
+.kvt-row.is-selected{background:rgba(10,33,46,.05)}
+@media (max-width:720px){
+  .kvt-row{grid-template-columns:28px 1fr}
+  .kvt-meta{grid-column:2;justify-content:flex-start;margin-top:4px}
+}
         ";
         wp_register_style('kvt-style', false);
         wp_enqueue_style('kvt-style');
@@ -1766,6 +1794,8 @@ function kvtInit(){
   const tableWrap = el('#kvt_table_wrap');
   const tHead = el('#kvt_table_head');
   const tBody = el('#kvt_table_body');
+  const tableEl = el('#kvt_table');
+  const listWrap = el('#kvt_list');
   const searchInput = el('#kvt_search');
   const stageSelect = el('#kvt_stage_filter');
   const activityDue = el('#kvt_tasks_due');
@@ -2520,21 +2550,41 @@ function kvtInit(){
   }
 
   function renderTable(rows){
-    if(!tHead || !tBody) return;
     const baseMode = !selClient.value && !selProcess.value;
     if(baseMode){
-      tHead.innerHTML = '<th>Candidato</th><th>Current role</th>';
-      tBody.innerHTML = rows.map(r=>{
-        const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
-        const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>';
-        const stageInfo = r.status ? r.status + (r.meta.process ? ' - '+r.meta.process : '') : '';
-        const infoParts = ['Candidate'];
-        if(stageInfo) infoParts.push(stageInfo);
-        if(r.meta.cv_uploaded) infoParts.push(r.meta.cv_uploaded);
-        const infoLine = '<em>'+infoParts.map(p=>esc(p)).join(' / ')+'</em>';
-        return '<tr><td>'+name+'<br>'+infoLine+'</td><td>'+esc(r.meta.current_role||'')+'</td></tr>';
-      }).join('');
+      if(listWrap) listWrap.style.display = 'block';
+      if(tableEl) tableEl.style.display = 'none';
+      if(tHead) tHead.innerHTML = '';
+      if(tBody) tBody.innerHTML = '';
+      if(listWrap){
+        const header = '<div class="kvt-row kvt-head"><div class="kvt-check"><input type="checkbox" id="kvt_select_all" aria-label="Seleccionar todos"></div><div class="kvt-name">Candidato</div><div class="kvt-meta">Estado</div></div>';
+        listWrap.innerHTML = header + rows.map(r=>{
+          const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
+          const link = '<a href="#" class="kvt-name kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>';
+          const companyRole = [r.meta.company||'', r.meta.current_role||''].filter(Boolean).join(' — ');
+          const meta = [];
+          if(r.status) meta.push('<span class="kvt-chip">'+esc(r.status)+'</span>');
+          if(r.meta.cv_uploaded) meta.push('<span>'+esc(r.meta.cv_uploaded)+'</span>');
+          return '<div class="kvt-row" data-id="'+escAttr(r.id)+'"><div class="kvt-check"><input type="checkbox" class="kvt-row-check" aria-label="Seleccionar '+escAttr(nameTxt)+'"></div><div>'+link+'<div class="kvt-sub">'+esc(companyRole)+'</div></div><div class="kvt-meta">'+meta.join('')+'</div></div>';
+        }).join('');
+        const selectAll = el('#kvt_select_all', listWrap);
+        const rowChecks = els('.kvt-row-check', listWrap);
+        if(selectAll){
+          selectAll.addEventListener('change',()=>{
+            rowChecks.forEach(cb=>{ cb.checked = selectAll.checked; cb.dispatchEvent(new Event('change')); });
+          });
+        }
+        rowChecks.forEach(cb=>{
+          cb.addEventListener('change',()=>{
+            const row = cb.closest('.kvt-row');
+            if(row) row.classList.toggle('is-selected', cb.checked);
+          });
+        });
+      }
     } else {
+      if(listWrap){ listWrap.style.display='none'; listWrap.innerHTML=''; }
+      if(tableEl) tableEl.style.display = 'table';
+      if(!tHead || !tBody) return;
       tHead.innerHTML = '<th>Applicant</th><th>Stages</th>';
       tBody.innerHTML = rows.map(r=>{
         const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
@@ -4749,6 +4799,163 @@ JS;
           if ($process_id) wp_remove_object_terms($id, [$process_id], self::TAX_PROCESS);
 
           wp_send_json_success(['id'=>$id]);
+      }
+
+      public function company_ats_shortcode($atts = []) {
+        $atts = shortcode_atts(['client' => 0, 'process' => 0], $atts);
+        $client_id  = intval($atts['client']);
+        $process_id = intval($atts['process']);
+
+        $tax_query = [];
+        if ($client_id)  $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
+        if ($process_id) $tax_query[] = ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>[$process_id]];
+
+        $args = [
+          'post_type'      => self::CPT,
+          'post_status'    => 'any',
+          'posts_per_page' => -1,
+        ];
+        if ($tax_query) $args['tax_query'] = $tax_query;
+
+        $q = new \WP_Query($args);
+        $stage_order = ['Sourcing','Long list','Shortlist','Interview','Offer','Placement'];
+        $stage_map = [
+          'Long list'     => 'Long list',
+          'Short list'    => 'Shortlist',
+          'Contactados'   => 'Interview',
+          'Entrevistados' => 'Interview',
+          'En oferta'     => 'Offer',
+          'Incorporado'   => 'Placement',
+        ];
+        $counts = array_fill_keys($stage_order,0);
+        $rows   = '';
+        foreach ($q->posts as $p) {
+          $status = get_post_meta($p->ID,'kvt_status',true);
+          $stage  = isset($stage_map[$status]) ? $stage_map[$status] : 'Sourcing';
+          if (isset($counts[$stage])) $counts[$stage]++;
+
+          $int_no = $this->meta_get_compat($p->ID,'kvt_int_no',['int_no']);
+          $cv     = $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']);
+
+          $rows .= '<tr class="kvt-row" data-current-stage="'.esc_attr($stage).'">'
+               . '<td class="kvt-td"><input type="checkbox" aria-label="Select"></td>'
+               . '<td class="kvt-td"><a href="'.esc_url(get_permalink($p)).'">'.esc_html(get_the_title($p)).'</a></td>'
+               . '<td class="kvt-td">'.esc_html($int_no).'</td>'
+               . '<td class="kvt-td"><div class="kvt-stage">';
+          foreach ($stage_order as $s) {
+            $rows .= '<div class="seg" data-stage="'.$s.'">'.$s.'</div>';
+          }
+          $rows .= '</div></td>'
+               . '<td class="kvt-td">'.($stage==='Offer'||$stage==='Placement'?'✓':'').'</td>'
+               . '<td class="kvt-td">'.($stage==='Placement'?'✓':'').'</td>'
+               . '<td class="kvt-td">'.($cv?'<a href="'.esc_url($cv).'" class="kvt-cv-link" target="_blank">CV</a>':'').'</td>'
+               . '</tr>';
+        }
+
+        ob_start();
+        ?>
+        <div class="kvt">
+          <div class="kvt-wrap">
+            <div class="kvt-header">
+              <div class="kvt-pill">Long lists<span><?php echo intval($counts['Long list']); ?></span></div>
+              <div class="kvt-pill">Shortlists<span><?php echo intval($counts['Shortlist']); ?></span></div>
+              <div class="kvt-pill">Interviews<span><?php echo intval($counts['Interview']); ?></span></div>
+              <div class="kvt-pill">Offers<span><?php echo intval($counts['Offer']); ?></span></div>
+              <div class="kvt-pill">Placements<span><?php echo intval($counts['Placement']); ?></span></div>
+            </div>
+            <div class="kvt-tabs">
+              <div class="kvt-tab is-active">ATS</div>
+            </div>
+            <div class="kvt-main">
+              <div>
+                <div class="kvt-toolbar">
+                  <select aria-label="Filter records"><option>All records</option></select>
+                  <button type="button" class="kvt-btn">Create new filter</button>
+                  <div class="kvt-btn"><input type="checkbox" id="kvt_select_all" aria-label="Select all"></div>
+                  <button type="button" class="kvt-btn" id="kvt_refresh">↻</button>
+                </div>
+                <table class="kvt-table">
+                  <thead>
+                    <tr>
+                      <th class="kvt-th"><input type="checkbox" id="kvt_select_all_head" aria-label="Select all"></th>
+                      <th class="kvt-th">Applicant</th>
+                      <th class="kvt-th">Int No.</th>
+                      <th class="kvt-th">Current Stage</th>
+                      <th class="kvt-th">Offer</th>
+                      <th class="kvt-th">Placement</th>
+                      <th class="kvt-th"></th>
+                    </tr>
+                  </thead>
+                  <tbody><?php echo $rows; ?></tbody>
+                </table>
+              </div>
+              <aside class="kvt-activity">
+                <div class="kvt-activity-tabs">
+                  <button class="kvt-btn" type="button">Log a Call</button>
+                  <button class="kvt-btn" type="button">Email</button>
+                  <button class="kvt-btn" type="button">New Event</button>
+                  <button class="kvt-btn" type="button">New Task</button>
+                </div>
+                <ul class="kvt-activity-list" aria-label="Upcoming &amp; Overdue"></ul>
+              </aside>
+            </div>
+          </div>
+        </div>
+        <style>
+:root{
+  --brand:#0A212E; --muted:#6B7280; --line:#E5E7EB;
+  --ok:#22C55E; --info:#2563EB; --bg:#FFFFFF;
+  --radius:10px; --shadow:0 8px 24px rgba(10,33,46,.08);
+}
+.kvt{font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--brand); background:var(--bg)}
+.kvt a{color:var(--brand); text-decoration:none} .kvt a:hover{text-decoration:underline}
+.kvt-wrap{max-width:1200px;margin:0 auto;padding:20px}
+.kvt-header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.kvt-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12px;color:var(--brand);background:#fff}
+.kvt-tabs{display:flex;gap:12px;border-bottom:1px solid var(--line);margin:8px 0 12px}
+.kvt-tab{padding:8px 10px;border-radius:8px} .kvt-tab.is-active{background:#eef2ff;color:var(--brand);font-weight:600}
+.kvt-main{display:grid;grid-template-columns:1fr 340px;gap:16px}
+.kvt-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 10px}
+.kvt-btn{border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:#fff;cursor:pointer}
+.kvt-table{width:100%;border-collapse:separate;border-spacing:0;margin-top:4px}
+.kvt-th,.kvt-td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.kvt-th{background:#0a212e; color:#fff; font-weight:700}
+.kvt-row:hover{background:rgba(10,33,46,.03)}
+.kvt-chip{border:1px solid var(--line);border-radius:999px;padding:2px 8px;font-size:12px;color:var(--brand);background:#fff}
+.kvt-stage{display:flex;gap:6px;align-items:center}
+.kvt-stage .seg{height:24px;border-radius:999px;min-width:54px;padding:0 10px;display:flex;align-items:center;justify-content:center;font-size:12px;border:1px solid var(--line);background:#f5f7fb}
+.kvt-stage .seg.done{background:var(--ok); color:#fff; border-color:var(--ok); position:relative; font-size:0;}
+.kvt-stage .seg.done::before{content:"\2713";font-size:12px;}
+.kvt-stage .seg.current{background:var(--info); color:#fff; border-color:var(--info); font-weight:600}
+.kvt-activity{border:1px solid var(--line);border-radius:var(--radius);padding:12px}
+.kvt-activity-tabs{display:flex;gap:6px;margin-bottom:8px}
+.kvt-activity li{border-bottom:1px solid var(--line);padding:8px 0}
+@media (max-width:980px){ .kvt-main{grid-template-columns:1fr} }
+        </style>
+        <script>
+// Select all, row select state
+const root=document.querySelector('.kvt');
+if(root){
+  const selAll=root.querySelector('#kvt_select_all');
+  const boxes=[...root.querySelectorAll('.kvt-row input[type=checkbox]')];
+  selAll?.addEventListener('change',e=>boxes.forEach(b=>{b.checked=e.target.checked; b.closest('tr').classList.toggle('is-selected', b.checked)}));
+  boxes.forEach(b=>b.addEventListener('change',()=>b.closest('tr').classList.toggle('is-selected', b.checked)));
+
+  function paintStages(row,current){
+    const order=['Sourcing','Long list','Shortlist','Interview','Offer','Placement'];
+    [...row.querySelectorAll('.seg')].forEach(seg=>{
+      const idx=order.indexOf(seg.dataset.stage);
+      const cur=order.indexOf(current);
+      seg.classList.toggle('done', idx>=0 && idx<cur);
+      seg.classList.toggle('current', idx===cur);
+    });
+  }
+  root.querySelectorAll('tr.kvt-row').forEach(tr=>paintStages(tr, tr.dataset.currentStage||'Sourcing'));
+}
+// Re-bind your existing click handlers (CV, profile, comments, export) to the new selectors here.
+        </script>
+        <?php
+        return ob_get_clean();
       }
 
       /* Export */
