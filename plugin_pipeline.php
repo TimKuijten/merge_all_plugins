@@ -830,6 +830,7 @@ cv_uploaded|Fecha de subida");
                     <div class="kvt-activity-tabs">
                         <button type="button" class="kvt-activity-tab active" data-target="tasks">Actividad</button>
                         <button type="button" class="kvt-activity-tab" data-target="log">Activity</button>
+                        <button type="button" class="kvt-activity-tab" data-target="mail">Correos</button>
                     </div>
                     <div id="kvt_activity_tasks" class="kvt-activity-content">
                         <div class="kvt-activity-columns">
@@ -853,6 +854,9 @@ cv_uploaded|Fecha de subida");
                     </div>
                     <div id="kvt_activity_log" class="kvt-activity-content" style="display:none;">
                         <ul id="kvt_activity_log_list" class="kvt-activity-list"></ul>
+                    </div>
+                    <div id="kvt_activity_mail" class="kvt-activity-content" style="display:none;">
+                        <iframe id="kvt_correo_iframe" style="width:100%;border:0;min-height:600px;"></iframe>
                     </div>
                 </div>
             </div>
@@ -1299,6 +1303,7 @@ cv_uploaded|Fecha de subida");
             wp_add_inline_script('kvt-app', 'const KVT_CLIENT_ID='.$cid.';', 'before');
             wp_add_inline_script('kvt-app', 'const KVT_PROCESS_ID='.$pid.';', 'before');
         }
+        wp_add_inline_script('kvt-app', 'const KVT_BULKREADER_URL="'.esc_url(admin_url('admin.php?page=bulkreader')).'";', 'before');
 
             // App JS
             $js = <<<'JS'
@@ -1380,6 +1385,7 @@ document.addEventListener('DOMContentLoaded', function(){
   const activityLog = el('#kvt_activity_log_list');
   const activityTabs = document.querySelectorAll('.kvt-activity-tab');
   const activityViews = document.querySelectorAll('.kvt-activity-content');
+  const correoFrame = el('#kvt_correo_iframe');
   const overview = el('#kvt_stage_overview');
   const taskForm = el('#kvt_task_form');
   const taskCandidate = el('#kvt_task_candidate');
@@ -2401,6 +2407,15 @@ document.addEventListener('DOMContentLoaded', function(){
     boardToggle.textContent = hidden ? 'Ocultar Kanban' : 'Mostrar Kanban';
   });
 
+  const loadCorreos = ()=>{
+    if(!correoFrame) return;
+    const pid = selProcess ? selProcess.value : '';
+    correoFrame.src = KVT_BULKREADER_URL + (pid ? '&process='+encodeURIComponent(pid) : '');
+  };
+
+  selProcess && selProcess.addEventListener('change', ()=>{ loadCorreos(); });
+  loadCorreos();
+
   activityTabs.forEach(tab=>{
     tab.addEventListener('click', ()=>{
       activityTabs.forEach(t=>t.classList.remove('active'));
@@ -2408,6 +2423,7 @@ document.addEventListener('DOMContentLoaded', function(){
       tab.classList.add('active');
       const pane = el('#kvt_activity_'+tab.dataset.target);
       if(pane) pane.style.display='block';
+      if(tab.dataset.target==='mail') loadCorreos();
     });
   });
 
