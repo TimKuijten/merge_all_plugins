@@ -103,6 +103,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_get_dashboard', [$this, 'ajax_get_dashboard']);
         add_action('wp_ajax_kvt_dismiss_comment',      [$this, 'ajax_dismiss_comment']);
         add_action('wp_ajax_nopriv_kvt_dismiss_comment',[$this, 'ajax_dismiss_comment']);
+        add_action('wp_ajax_kvt_generate_roles',       [$this, 'ajax_generate_roles']);
+        add_action('wp_ajax_nopriv_kvt_generate_roles',[$this, 'ajax_generate_roles']);
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
@@ -128,6 +130,7 @@ email|Email
 phone|Teléfono
 country|País
 city|Ciudad
+current_role|Current role
 cv_url|CV (URL)
 cv_uploaded|Fecha de subida");
         }
@@ -362,6 +365,7 @@ cv_uploaded|Fecha de subida");
         $phone   = $this->meta_get_compat($post->ID, 'kvt_phone',       ['phone']);
         $country = $this->meta_get_compat($post->ID, 'kvt_country',     ['country']);
         $city    = $this->meta_get_compat($post->ID, 'kvt_city',        ['city']);
+        $current_role = $this->meta_get_compat($post->ID, 'kvt_current_role', ['current_role']);
         $cv_url  = $this->meta_get_compat($post->ID, 'kvt_cv_url',      ['cv_url']);
         $cv_date_raw = $this->meta_get_compat($post->ID, 'kvt_cv_uploaded', ['cv_uploaded']);
         $cv_date = $this->fmt_date_ddmmyyyy($cv_date_raw);
@@ -380,6 +384,7 @@ cv_uploaded|Fecha de subida");
             <tr><th><label>Teléfono</label></th><td><input type="text" name="kvt_phone" value="<?php echo esc_attr($phone); ?>" class="regular-text"></td></tr>
             <tr><th><label>País</label></th><td><input type="text" name="kvt_country" value="<?php echo esc_attr($country); ?>" class="regular-text"></td></tr>
             <tr><th><label>Ciudad</label></th><td><input type="text" name="kvt_city" value="<?php echo esc_attr($city); ?>" class="regular-text"></td></tr>
+            <tr><th><label>Current role</label></th><td><input type="text" name="kvt_current_role" value="<?php echo esc_attr($current_role); ?>" class="regular-text"></td></tr>
 
             <tr><th><label>CV (URL)</label></th>
                 <td>
@@ -466,11 +471,24 @@ cv_uploaded|Fecha de subida");
                             if(!j.success){ alert(j.data && j.data.msg ? j.data.msg : 'Error al subir CV'); return; }
                             if(urlFld) urlFld.value = j.data.url || '';
                             if(dateFld && !dateFld.value) dateFld.value = j.data.date || '';
+                            if(j.data.fields){
+                                const f = j.data.fields;
+                                const map = {
+                                    first_name: document.querySelector('input[name="kvt_first_name"]'),
+                                    last_name: document.querySelector('input[name="kvt_last_name"]'),
+                                    email: document.querySelector('input[name="kvt_email"]'),
+                                    phone: document.querySelector('input[name="kvt_phone"]'),
+                                    country: document.querySelector('input[name="kvt_country"]'),
+                                    city: document.querySelector('input[name="kvt_city"]'),
+                                    current_role: document.querySelector('input[name="kvt_current_role"]'),
+                                };
+                                Object.keys(map).forEach(k=>{ if(map[k] && f[k]) map[k].value = f[k]; });
+                            }
                             label.textContent = 'Ningún archivo seleccionado';
                             input.value = '';
                             alert('CV subido y guardado.');
-                        })
-                        .catch(()=>{ upload.disabled = false; alert('Error de red.'); });
+                            })
+                            .catch(()=>{ upload.disabled = false; alert('Error de red.'); });
                 });
             }
         });
@@ -556,6 +574,8 @@ cv_uploaded|Fecha de subida");
                 update_post_meta($post_id, 'kvt_cv_uploaded', $today);
                 update_post_meta($post_id, 'cv_uploaded', $today);
                 $uploaded_dt = $today;
+                // Extract current role from CV using AI
+                $this->update_current_role_from_cv($post_id);
             } else {
                 error_log('[KVT] Error subiendo CV: ' . $attach_id->get_error_message());
             }
@@ -569,6 +589,7 @@ cv_uploaded|Fecha de subida");
             'kvt_phone'      => ['phone'],
             'kvt_country'    => ['country'],
             'kvt_city'       => ['city'],
+            'kvt_current_role'=> ['current_role'],
             'kvt_cv_url'     => ['cv_url'],
             'kvt_cv_uploaded'=> ['cv_uploaded'],
             'kvt_next_action'=> ['next_action'],
@@ -650,6 +671,7 @@ cv_uploaded|Fecha de subida");
                 ['key'=>'phone','label'=>'Teléfono'],
                 ['key'=>'country','label'=>'País'],
                 ['key'=>'city','label'=>'Ciudad'],
+                ['key'=>'current_role','label'=>'Current role'],
                 ['key'=>'cv_url','label'=>'CV (URL)'],
                 ['key'=>'cv_uploaded','label'=>'Fecha de subida'],
             ];
@@ -792,6 +814,7 @@ cv_uploaded|Fecha de subida");
                     <button class="kvt-btn" id="kvt_toggle_table">Tabla</button>
                     <button class="kvt-btn" type="button" id="kvt_mandar_correos">Mandar correos</button>
                     <button class="kvt-btn" type="button" id="kvt_share_board">Tablero cliente</button>
+                    <button class="kvt-btn" type="button" id="kvt_generate_roles">Generar roles</button>
                 </div>
             </div>
 
@@ -825,6 +848,11 @@ cv_uploaded|Fecha de subida");
                         <thead><tr id="kvt_table_head"></tr></thead>
                         <tbody id="kvt_table_body"></tbody>
                     </table>
+                    <div id="kvt_table_pager" class="kvt-table-pager" style="display:none;">
+                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_table_prev">Anterior</button>
+                        <span id="kvt_table_pageinfo"></span>
+                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_table_next">Siguiente</button>
+                    </div>
                 </div>
                 <div id="kvt_activity" class="kvt-activity">
                     <div class="kvt-activity-tabs">
@@ -1144,6 +1172,7 @@ cv_uploaded|Fecha de subida");
         .kvt-card .kvt-followup .dashicons{margin-right:4px;line-height:1;font-size:16px}
         .kvt-card .kvt-title{font-weight:700;margin:0 0 4px}
         .kvt-card .kvt-sub{font-size:12px;color:#64748b;margin:0}
+        .kvt-card .kvt-role{font-size:12px;color:#334155;margin:0}
         .kvt-card .kvt-tags, .kvt-card-mini .kvt-tags{margin:4px 0;display:flex;gap:4px;flex-wrap:wrap}
         .kvt-card .kvt-tag, .kvt-card-mini .kvt-tag{background:#eef2f7;color:#0A212E;border:1px solid #e5e7eb;border-radius:6px;padding:2px 6px;font-size:12px}
         .kvt-card .kvt-meta{display:none}
@@ -1189,7 +1218,7 @@ cv_uploaded|Fecha de subida");
         .kvt-activity-list li{margin-bottom:4px}
         .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-stage-cell{display:flex;align-items:center;font-size:12px;flex-wrap:nowrap}
-        .kvt-stage-step{display:inline-flex;align-items:center;justify-content:center;width:120px;padding:4px 12px;background:#e5e7eb;color:#6b7280;white-space:nowrap;box-sizing:border-box;border:none;cursor:pointer}
+        .kvt-stage-step{display:inline-flex;align-items:center;justify-content:center;width:120px;flex:0 0 120px;padding:4px 12px;background:#e5e7eb;color:#6b7280;white-space:nowrap;box-sizing:border-box;border:none;cursor:pointer}
         .kvt-stage-step.done{background:#22c55e;color:#fff}
         .kvt-stage-step.current{background:#3b82f6;color:#fff}
         .kvt-stage-overview{margin:8px;padding:0 8px;font-size:14px}
@@ -1228,6 +1257,7 @@ cv_uploaded|Fecha de subida");
           .kvt-loading:before{content:'';width:16px;height:16px;border:2px solid #e5e7eb;border-top-color:#0A212E;border-radius:50%;animation:kvt-spin 1s linear infinite}
           @keyframes kvt-spin{to{transform:rotate(360deg)}}
           .kvt-modal-pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px}
+          .kvt-table-pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;padding:8px}
           .kvt-share-grid{display:flex;gap:20px}
             .kvt-share-grid>div{flex:1}
             .kvt-share-title{font-weight:600;margin-bottom:6px}
@@ -1307,7 +1337,7 @@ cv_uploaded|Fecha de subida");
 
             // App JS
             $js = <<<'JS'
-document.addEventListener('DOMContentLoaded', function(){
+function kvtInit(){
   const el = (sel, root=document)=>root.querySelector(sel);
   const els = (sel, root=document)=>Array.from(root.querySelectorAll(sel));
   const esc = (s)=>String(s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m]));
@@ -1387,6 +1417,7 @@ document.addEventListener('DOMContentLoaded', function(){
   const activityViews = document.querySelectorAll('.kvt-activity-content');
   const correoFrame = el('#kvt_correo_iframe');
   const overview = el('#kvt_stage_overview');
+  const atsBar   = el('#kvt_ats_bar');
   const taskForm = el('#kvt_task_form');
   const taskCandidate = el('#kvt_task_candidate');
   const taskDate = el('#kvt_task_date');
@@ -1410,6 +1441,7 @@ document.addEventListener('DOMContentLoaded', function(){
   const exportAllFormat = el('#kvt_export_all_format');
   const btnMail    = el('#kvt_mandar_correos');
   const btnShare   = el('#kvt_share_board');
+  const btnRoles   = el('#kvt_generate_roles');
   const shareModal = el('#kvt_share_modal');
   const shareClose = el('#kvt_share_close');
   const shareFieldsWrap = el('#kvt_share_fields');
@@ -1423,8 +1455,14 @@ document.addEventListener('DOMContentLoaded', function(){
     const selDetails = el('#kvt_selected_details');
     const selClientInfo = el('#kvt_selected_client');
     const selProcessInfo = el('#kvt_selected_process');
-    const selBoardInfo = el('#kvt_selected_board');
-    const clientLink   = el('#kvt_client_link');
+  const selBoardInfo = el('#kvt_selected_board');
+  const clientLink   = el('#kvt_client_link');
+  const tablePager = el('#kvt_table_pager');
+  const tablePrev  = el('#kvt_table_prev');
+  const tableNext  = el('#kvt_table_next');
+  const tablePage  = el('#kvt_table_pageinfo');
+  let currentPage = 1;
+  let totalPages = 1;
   let allRows = [];
 
   if(stageSelect){
@@ -1502,8 +1540,6 @@ document.addEventListener('DOMContentLoaded', function(){
     if(shareStepsAll) shareStepsAll.checked = els('input[type="checkbox"]', shareStepsWrap).every(cb=>cb.checked);
     if(shareComments) shareComments.checked = ALLOW_COMMENTS;
   }
-
-  let currentPage = 1;
 
   function switchTab(target){
     if(tabCandidates) tabCandidates.classList.toggle('active', target==='candidates');
@@ -1591,6 +1627,13 @@ document.addEventListener('DOMContentLoaded', function(){
         cv.className = 'kvt-cv-link dashicons dashicons-media-document';
         cv.setAttribute('title','Ver CV');
         head.appendChild(cv);
+      }
+
+      let roleLine = null;
+      if (c.meta.current_role){
+        roleLine = document.createElement('p');
+        roleLine.className = 'kvt-role';
+        roleLine.textContent = c.meta.current_role;
       }
 
       const sub = document.createElement('p'); sub.className = 'kvt-sub';
@@ -1742,7 +1785,7 @@ document.addEventListener('DOMContentLoaded', function(){
       });
     }
 
-      card.appendChild(head); card.appendChild(tagsWrap); if (follow) card.appendChild(follow); if (commentLine) card.appendChild(commentLine); card.appendChild(sub);
+      card.appendChild(head); if(roleLine) card.appendChild(roleLine); card.appendChild(tagsWrap); if (follow) card.appendChild(follow); if (commentLine) card.appendChild(commentLine); card.appendChild(sub);
     card.appendChild(expand); card.appendChild(panel);
 
     if (!CLIENT_VIEW) {
@@ -1774,6 +1817,7 @@ document.addEventListener('DOMContentLoaded', function(){
       kvInp('Teléfono',     input((m.phone||''))) +
       kvInp('País',         input((m.country||''))) +
       kvInp('Ciudad',       input((m.city||''))) +
+      kvInp('Current role', input((m.current_role||''))) +
       kvInp('Tags',         input((m.tags||''))) +
       kvInp('CV (URL)',     input((m.cv_url||''), 'url', 'https://...')) +
       kvInp('Subir CV',     '<input class=\"kvt-input kvt-cv-file\" type=\"file\" accept=\".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document\">'+
@@ -1847,11 +1891,12 @@ document.addEventListener('DOMContentLoaded', function(){
         phone:      vals[3] || '',
         country:    vals[4] || '',
         city:       vals[5] || '',
-        tags:       vals[6] || '',
-        cv_url:     vals[7] || '',
-        cv_uploaded:vals[9] || '',
-        next_action:vals[10] || '',
-        next_action_note:vals[11] || '',
+        current_role: vals[6] || '',
+        tags:       vals[7] || '',
+        cv_url:     vals[8] || '',
+        cv_uploaded:vals[10] || '',
+        next_action:vals[11] || '',
+        next_action_note:vals[12] || '',
         notes:      txtNotes ? txtNotes.value : '',
         public_notes: txtPubNotes ? txtPubNotes.value : '',
       };
@@ -1880,6 +1925,16 @@ document.addEventListener('DOMContentLoaded', function(){
                 tagWrap.appendChild(span);
               });
             }
+          }
+          const roleLine = card.querySelector('.kvt-role');
+          if(roleLine){
+            roleLine.textContent = payload.current_role || '';
+          } else if(payload.current_role){
+            const rl = document.createElement('p');
+            rl.className='kvt-role';
+            rl.textContent = payload.current_role;
+            const head = card.querySelector('.kvt-card-head');
+            if(head) head.after(rl);
           }
           const follow = card.querySelector('.kvt-followup');
           if (payload.next_action){
@@ -1919,7 +1974,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function enableCvUploadHandlers(card, id){
     const fileInput = card.querySelector('.kvt-cv-file');
     const urlInput  = card.querySelector('dl .kvt-input[type="url"]');
-    const dateInput = card.querySelectorAll('dl .kvt-input')[9];
+    const dateInput = card.querySelectorAll('dl .kvt-input')[10];
     const btnUpload = card.querySelector('.kvt-upload-cv');
     if (!fileInput || !btnUpload) return;
     btnUpload.addEventListener('click', async ()=>{
@@ -1940,7 +1995,18 @@ document.addEventListener('DOMContentLoaded', function(){
       if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo subir el CV.');
       if (urlInput) urlInput.value = j.data.url || '';
       if (dateInput) dateInput.value = j.data.date || '';
+      if(j.data.fields){
+        const inputs = card.querySelectorAll('dl .kvt-input');
+        if(inputs[0] && j.data.fields.first_name) inputs[0].value = j.data.fields.first_name;
+        if(inputs[1] && j.data.fields.last_name) inputs[1].value = j.data.fields.last_name;
+        if(inputs[2] && j.data.fields.email) inputs[2].value = j.data.fields.email;
+        if(inputs[3] && j.data.fields.phone) inputs[3].value = j.data.fields.phone;
+        if(inputs[4] && j.data.fields.country) inputs[4].value = j.data.fields.country;
+        if(inputs[5] && j.data.fields.city) inputs[5].value = j.data.fields.city;
+        if(inputs[6] && j.data.fields.current_role) inputs[6].value = j.data.fields.current_role;
+      }
       alert('CV subido y guardado.');
+      refresh();
     });
   }
 
@@ -1964,6 +2030,7 @@ document.addEventListener('DOMContentLoaded', function(){
     params.set('_ajax_nonce', KVT_NONCE);
     params.set('client', selClient ? selClient.value : '');
     params.set('process', selProcess ? selProcess.value : '');
+    params.set('page', currentPage);
     return fetch(KVT_AJAX, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params.toString() }).then(r=>r.json());
   }
 
@@ -2059,76 +2126,93 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   function renderData(data){
+    const baseMode = !selClient.value && !selProcess.value;
+    if(overview) overview.style.display = baseMode ? 'none' : 'block';
+    if(atsBar) atsBar.style.display = baseMode ? 'none' : 'flex';
     board.innerHTML = '';
-    KVT_STATUSES.forEach(st=>{
-      const col = document.createElement('div');
-      col.className = 'kvt-col'; col.dataset.status = st;
-      const h = document.createElement('h3'); h.textContent = st;
-      const zone = document.createElement('div'); zone.className = 'kvt-dropzone'; zone.dataset.status = st;
-      col.appendChild(h); col.appendChild(zone); board.appendChild(col);
-    });
+    if(!baseMode){
+      KVT_STATUSES.forEach(st=>{
+        const col = document.createElement('div');
+        col.className = 'kvt-col'; col.dataset.status = st;
+        const h = document.createElement('h3'); h.textContent = st;
+        const zone = document.createElement('div'); zone.className = 'kvt-dropzone'; zone.dataset.status = st;
+        col.appendChild(h); col.appendChild(zone); board.appendChild(col);
+      });
 
-    if (!data || data.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'kvt-empty';
-      empty.innerHTML = 'Selecciona un <strong>Cliente</strong> o un <strong>Proceso</strong> para ver candidatos.';
-      board.prepend(empty);
-    }
-
-    data.forEach(c=>{
-      const zone = el('.kvt-dropzone[data-status="'+(c.status||'')+'"]') || el('.kvt-dropzone');
-      if (zone) {
-        const card = cardTemplate(c);
-        zone.appendChild(card);
+      if (!data || data.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'kvt-empty';
+        empty.innerHTML = 'Selecciona un <strong>Cliente</strong> o un <strong>Proceso</strong> para ver candidatos.';
+        board.prepend(empty);
       }
-    });
 
-    if (!CLIENT_VIEW) enableDnD();
+      data.forEach(c=>{
+        const zone = el('.kvt-dropzone[data-status="'+(c.status||'')+'"]') || el('.kvt-dropzone');
+        if (zone) {
+          const card = cardTemplate(c);
+          zone.appendChild(card);
+        }
+      });
+
+      if (!CLIENT_VIEW) enableDnD();
+    }
     allRows = Array.isArray(data) ? data : [];
     filterTable();
-    renderActivity(allRows);
-    renderOverview(allRows);
-    populateTaskCandidates();
   }
 
   function renderTable(rows){
     if(!tHead || !tBody) return;
-    tHead.innerHTML = '<th>Applicant</th><th>Stages</th>';
-    tBody.innerHTML = rows.map(r=>{
-      const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
-      const icons=[];
-      const comments=Array.isArray(r.meta.client_comments)?r.meta.client_comments:[];
-      if(comments.length && (!CLIENT_VIEW || ALLOW_COMMENTS)){
-        const cm=comments[comments.length-1];
-        icons.push('<span class="kvt-name-icon kvt-alert" title="'+escAttr(cm.comment)+'">!</span>');
-      }
-      if(r.meta.next_action && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('next_action'))){
-        const parts=r.meta.next_action.split('-');
-        let overdue=false;
-        if(parts.length===3){
-          const d=new Date(parts[2],parts[1]-1,parts[0]);
-          const today=new Date();today.setHours(0,0,0,0);
-          overdue=d<=today;
-        }
-        const note=r.meta.next_action_note? ' — '+r.meta.next_action_note:'';
-        icons.push('<span class="kvt-name-icon dashicons dashicons-clock'+(overdue?' overdue':'')+'" title="'+escAttr(r.meta.next_action+note)+'"></span>');
-      }
-      const noteSrc = (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) ? r.meta.notes : (ALLOWED_FIELDS.includes('public_notes') ? r.meta.public_notes : '');
-      const snip = lastNoteSnippet(noteSrc);
-      if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
-      const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+icons.join('');
-      const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
-      let cidx = stepStatuses.indexOf(r.status||'');
-      if((r.status||'') === 'Descartados') cidx = stepStatuses.length;
-      const parts = stepStatuses.map((s,idx)=>{
-        let cls = 'kvt-stage-step';
-        if(idx < cidx) cls += ' done';
-        else if(idx === cidx) cls += ' current';
-        const label = idx < cidx ? '&#10003;' : esc(s);
-        return '<button type="button" class="'+cls+'" data-id="'+escAttr(r.id)+'" data-status="'+escAttr(s)+'" title="'+escAttr(s)+'">'+label+'</button>';
+    const baseMode = !selClient.value && !selProcess.value;
+    if(baseMode){
+      tHead.innerHTML = '<th>Candidato</th><th>Current role</th>';
+      tBody.innerHTML = rows.map(r=>{
+        const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
+        const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>';
+        const stageInfo = r.status ? r.status + (r.meta.process ? ' - '+r.meta.process : '') : '';
+        const infoParts = ['Candidate'];
+        if(stageInfo) infoParts.push(stageInfo);
+        if(r.meta.cv_uploaded) infoParts.push(r.meta.cv_uploaded);
+        const infoLine = '<em>'+infoParts.map(p=>esc(p)).join(' / ')+'</em>';
+        return '<tr><td>'+name+'<br>'+infoLine+'</td><td>'+esc(r.meta.current_role||'')+'</td></tr>';
       }).join('');
-      return '<tr><td>'+name+'</td><td class="kvt-stage-cell">'+parts+'</td></tr>';
-    }).join('');
+    } else {
+      tHead.innerHTML = '<th>Applicant</th><th>Stages</th>';
+      tBody.innerHTML = rows.map(r=>{
+        const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
+        const icons=[];
+        const comments=Array.isArray(r.meta.client_comments)?r.meta.client_comments:[];
+        if(comments.length && (!CLIENT_VIEW || ALLOW_COMMENTS)){
+          const cm=comments[comments.length-1];
+          icons.push('<span class="kvt-name-icon kvt-alert" title="'+escAttr(cm.comment)+'">!</span>');
+        }
+        if(r.meta.next_action && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('next_action'))){
+          const parts=r.meta.next_action.split('-');
+          let overdue=false;
+          if(parts.length===3){
+            const d=new Date(parts[2],parts[1]-1,parts[0]);
+            const today=new Date();today.setHours(0,0,0,0);
+            overdue=d<=today;
+          }
+          const note=r.meta.next_action_note? ' — '+r.meta.next_action_note:'';
+          icons.push('<span class="kvt-name-icon dashicons dashicons-clock'+(overdue?' overdue':'')+'" title="'+escAttr(r.meta.next_action+note)+'"></span>');
+        }
+        const noteSrc = (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) ? r.meta.notes : (ALLOWED_FIELDS.includes('public_notes') ? r.meta.public_notes : '');
+        const snip = lastNoteSnippet(noteSrc);
+        if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
+        const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+icons.join('');
+        const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
+        let cidx = stepStatuses.indexOf(r.status||'');
+        if((r.status||'') === 'Descartados') cidx = stepStatuses.length;
+        const parts = stepStatuses.map((s,idx)=>{
+          let cls = 'kvt-stage-step';
+          if(idx < cidx) cls += ' done';
+          else if(idx === cidx) cls += ' current';
+          const label = idx < cidx ? '&#10003;' : esc(s);
+          return '<button type="button" class="'+cls+'" data-id="'+escAttr(r.id)+'" data-status="'+escAttr(s)+'" title="'+escAttr(s)+'">'+label+'</button>';
+        }).join('');
+        return '<tr><td>'+name+'</td><td class="kvt-stage-cell">'+parts+'</td></tr>';
+      }).join('');
+    }
   }
 
   function renderActivity(rows){
@@ -2188,6 +2272,25 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
 
+  function renderActivityDashboard(data){
+    if(!activityDue || !activityUpcoming || !activityNotify) return;
+    const due = (data.overdue||[]).map(c=>{
+      const note = c.note ? ' — '+esc(c.note) : '';
+      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(c.date)+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+    });
+    const upcoming = (data.upcoming||[]).map(c=>{
+      const note = c.note ? ' — '+esc(c.note) : '';
+      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(c.date)+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+    });
+    const notifs = (data.comments||[]).map(c=>{
+      return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> — '+esc(c.comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
+    });
+    activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
+    activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
+    activityNotify.innerHTML = notifs.join('') || '<li>No hay notificaciones</li>';
+    if(activityLog) activityLog.innerHTML = '<li>No hay actividad</li>';
+  }
+
   function renderOverview(rows){
     if(!overview) return;
     const counts = {};
@@ -2214,9 +2317,22 @@ document.addEventListener('DOMContentLoaded', function(){
         return blob.includes(q);
       });
     }
-    const st = stageSelect ? stageSelect.value : '';
+    const st = (!selClient.value && !selProcess.value) ? '' : (stageSelect ? stageSelect.value : '');
     if(st){ rows = rows.filter(r=>r.status===st); }
     renderTable(rows);
+  }
+
+  function updatePager(){
+    if(!tablePager) return;
+    const baseMode = !selClient.value && !selProcess.value;
+    if(!baseMode || totalPages <= 1){
+      tablePager.style.display = 'none';
+      return;
+    }
+    tablePager.style.display = 'flex';
+    if(tablePage) tablePage.textContent = currentPage+' / '+totalPages;
+    if(tablePrev) tablePrev.disabled = currentPage <= 1;
+    if(tableNext) tableNext.disabled = currentPage >= totalPages;
   }
 
   function syncExportHidden(){
@@ -2501,14 +2617,24 @@ document.addEventListener('DOMContentLoaded', function(){
   function refresh(){
     fetchCandidates().then(j=>{
       if(j.success){
-        renderData(j.data);
+        totalPages = j.data.pages || 1;
+        renderData(j.data.items || []);
+        const baseMode = !selClient.value && !selProcess.value;
+        if(baseMode){
+          fetchDashboard().then(d=>{ if(d.success) renderActivityDashboard(d.data); });
+        } else {
+          renderActivity(allRows);
+          renderOverview(allRows);
+        }
+        populateTaskCandidates();
+        updatePager();
       } else {
         alert('Error cargando datos');
       }
     });
   }
-  selClient && selClient.addEventListener('change', ()=>{ filterProcessOptions(); refresh(); updateSelectedInfo(); });
-  selProcess && selProcess.addEventListener('change', ()=>{ refresh(); updateSelectedInfo(); });
+  selClient && selClient.addEventListener('change', ()=>{ currentPage=1; filterProcessOptions(); refresh(); updateSelectedInfo(); });
+  selProcess && selProcess.addEventListener('change', ()=>{ currentPage=1; refresh(); updateSelectedInfo(); });
   btnMail && btnMail.addEventListener('click', ()=>{
     window.open('https://kovacictalent.com/wp-admin/admin.php?page=kt-abm','_blank','noopener');
   });
@@ -2520,6 +2646,20 @@ document.addEventListener('DOMContentLoaded', function(){
     buildShareOptions();
     if(shareModal) shareModal.style.display='flex';
   });
+  btnRoles && btnRoles.addEventListener('click', ()=>{
+    if(!confirm('Generar rol actual para todos los candidatos?')) return;
+    const params = new URLSearchParams();
+    params.set('action','kvt_generate_roles');
+    params.set('_ajax_nonce', KVT_NONCE);
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json()).then(j=>{
+        if(!j.success){ alert('Error generando roles'); return; }
+        alert('Roles generados');
+        refresh();
+      });
+  });
+  tablePrev && tablePrev.addEventListener('click', ()=>{ if(currentPage>1){ currentPage--; refresh(); } });
+  tableNext && tableNext.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage++; refresh(); } });
   shareClose && shareClose.addEventListener('click', ()=>{ shareModal.style.display='none'; });
   shareModal && shareModal.addEventListener('click', e=>{ if(e.target===shareModal) shareModal.style.display='none'; });
   shareFieldsAll && shareFieldsAll.addEventListener('change', ()=>{
@@ -3020,7 +3160,12 @@ document.addEventListener('DOMContentLoaded', function(){
   filterProcessOptions();
   refresh();
   updateSelectedInfo();
-});
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', kvtInit);
+} else {
+  kvtInit();
+}
 JS;
             wp_add_inline_script('kvt-app', $js, 'after');
         }
@@ -3033,40 +3178,43 @@ JS;
         $client_id  = isset($_POST['client'])  ? intval($_POST['client'])  : 0;
         $process_id = isset($_POST['process']) ? intval($_POST['process']) : 0;
         $search     = isset($_POST['search'])  ? trim(sanitize_text_field($_POST['search'])) : '';
+        $page       = isset($_POST['page'])    ? max(1, intval($_POST['page'])) : 1;
 
-        if (!$client_id && !$process_id) {
-            wp_send_json_success([]);
-        }
+        $base_mode = !$client_id && !$process_id;
 
         $tax_query = [];
-        if ($process_id) {
-            $tax_query[] = ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>[$process_id]];
-            if ($client_id) $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
-        } else {
-            if ($client_id) {
-                $proc_terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
-                $proc_ids = [];
-                foreach ($proc_terms as $t) {
-                    $cid = (int) get_term_meta($t->term_id, 'kvt_process_client', true);
-                    if ($cid === $client_id) $proc_ids[] = $t->term_id;
-                }
-                if (!empty($proc_ids)) {
-                    $tax_query = [
-                        'relation' => 'OR',
-                        ['taxonomy'=>self::TAX_CLIENT, 'field'=>'term_id','terms'=>[$client_id]],
-                        ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>$proc_ids],
-                    ];
-                } else {
-                    $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
+        if (!$base_mode) {
+            if ($process_id) {
+                $tax_query[] = ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>[$process_id]];
+                if ($client_id) $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
+            } else {
+                if ($client_id) {
+                    $proc_terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
+                    $proc_ids = [];
+                    foreach ($proc_terms as $t) {
+                        $cid = (int) get_term_meta($t->term_id, 'kvt_process_client', true);
+                        if ($cid === $client_id) $proc_ids[] = $t->term_id;
+                    }
+                    if (!empty($proc_ids)) {
+                        $tax_query = [
+                            'relation' => 'OR',
+                            ['taxonomy'=>self::TAX_CLIENT, 'field'=>'term_id','terms'=>[$client_id]],
+                            ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>$proc_ids],
+                        ];
+                    } else {
+                        $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
+                    }
                 }
             }
         }
 
+        $per_page = $base_mode ? 20 : 999;
         $args = [
             'post_type'      => self::CPT,
             'post_status'    => 'any',
-            'posts_per_page' => 999, // ilimitado práctico
-            'no_found_rows'  => true,
+            'posts_per_page' => $per_page,
+            'paged'          => $page,
+            'no_found_rows'  => $base_mode ? false : true,
         ];
         if (!empty($tax_query)) $args['tax_query'] = $tax_query;
 
@@ -3076,9 +3224,11 @@ JS;
                 ['key'=>'kvt_first_name','value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'kvt_last_name', 'value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'kvt_email',     'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'kvt_current_role','value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'first_name','value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'last_name', 'value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'email',     'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'current_role','value'=>$search,'compare'=>'LIKE'],
             ];
         }
 
@@ -3103,6 +3253,7 @@ JS;
                 'phone'       => $this->meta_get_compat($p->ID,'kvt_phone',['phone']),
                 'country'     => $this->meta_get_compat($p->ID,'kvt_country',['country']),
                 'city'        => $this->meta_get_compat($p->ID,'kvt_city',['city']),
+                'current_role'=> $this->meta_get_compat($p->ID,'kvt_current_role',['current_role']),
                 'cv_url'      => $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']),
                 'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
                 'next_action' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_next_action',['next_action'])),
@@ -3122,7 +3273,8 @@ JS;
                 'meta'   => $meta,
             ];
         }
-        wp_send_json_success($data);
+        $pages = $base_mode ? $q->max_num_pages : 1;
+        wp_send_json_success(['items'=>$data,'pages'=>$pages]);
     }
 
     public function ajax_get_dashboard() {
@@ -3204,6 +3356,22 @@ JS;
         }
         $comments[$idx]['dismissed'] = 1;
         update_post_meta($id, 'kvt_client_comments', $comments);
+        wp_send_json_success(['ok' => true]);
+    }
+
+    public function ajax_generate_roles() {
+        check_ajax_referer('kvt_nonce');
+        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        if (!$key) wp_send_json_error(['msg' => 'Falta la clave'], 400);
+        $posts = get_posts([
+            'post_type'   => self::CPT,
+            'post_status' => 'any',
+            'numberposts' => -1,
+        ]);
+        foreach ($posts as $p) {
+            $this->update_profile_from_cv($p->ID, $key);
+        }
         wp_send_json_success(['ok' => true]);
     }
 
@@ -3394,6 +3562,7 @@ JS;
             'kvt_phone'      => isset($_POST['phone'])      ? sanitize_text_field($_POST['phone'])      : '',
             'kvt_country'    => isset($_POST['country'])    ? sanitize_text_field($_POST['country'])    : '',
             'kvt_city'       => isset($_POST['city'])       ? sanitize_text_field($_POST['city'])       : '',
+            'kvt_current_role'=> isset($_POST['current_role']) ? sanitize_text_field($_POST['current_role']) : '',
             'kvt_tags'       => isset($_POST['tags'])       ? sanitize_text_field($_POST['tags'])       : '',
             'kvt_cv_url'     => isset($_POST['cv_url'])     ? esc_url_raw($_POST['cv_url'])             : '',
             'kvt_cv_uploaded'=> isset($_POST['cv_uploaded'])? sanitize_text_field($_POST['cv_uploaded']): '',
@@ -3470,7 +3639,9 @@ JS;
             $txt_url = get_post_meta($id, 'kvt_cv_text_url', true);
         }
 
-        wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url]);
+        // Extract profile details using AI
+        $fields = $this->update_profile_from_cv($id);
+        wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url,'fields'=>$fields,'current_role'=>($fields['current_role']??'')]);
     }
 
     public function ajax_list_profiles() {
@@ -3516,12 +3687,14 @@ JS;
                 ['key'=>'kvt_country',   'value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'kvt_city',      'value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'kvt_tags',      'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'kvt_current_role','value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'first_name','value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'last_name', 'value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'email',     'value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'country',   'value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'city',      'value'=>$search,'compare'=>'LIKE'],
                 ['key'=>'tags',      'value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'current_role','value'=>$search,'compare'=>'LIKE'],
             ];
         }
 
@@ -3545,6 +3718,7 @@ JS;
                     'phone'       => $this->meta_get_compat($p->ID,'kvt_phone',['phone']),
                     'country'     => $this->meta_get_compat($p->ID,'kvt_country',['country']),
                     'city'        => $this->meta_get_compat($p->ID,'kvt_city',['city']),
+                    'current_role'=> $this->meta_get_compat($p->ID,'kvt_current_role',['current_role']),
                     'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
                     'cv_url'      => $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']),
                     'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
@@ -4045,6 +4219,115 @@ JS;
         }
     }
 
+    private function openai_extract_current_role($key, $cv_text) {
+        $req = [
+            'model' => 'gpt-4o-mini',
+            'messages' => [
+                ['role' => 'system', 'content' => 'Eres un asistente que extrae del CV el puesto y la empresa actuales. Devuelve JSON con las claves "role" y "company". Si no se encuentra, devuelve campos vacíos.'],
+                ['role' => 'user', 'content' => "CV:\n$cv_text"],
+            ],
+            'max_tokens' => 100,
+            'response_format' => ['type' => 'json_object'],
+        ];
+        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => wp_json_encode($req),
+            'timeout' => 60,
+        ]);
+        if (is_wp_error($response)) return '';
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (!isset($body['choices'][0]['message']['content'])) return '';
+        $data = json_decode($body['choices'][0]['message']['content'], true);
+        if (!is_array($data)) return '';
+        $role = isset($data['role']) ? trim($data['role']) : '';
+        $company = isset($data['company']) ? trim($data['company']) : '';
+        if ($role && $company) return $role . ' at ' . $company;
+        if ($role) return $role;
+        if ($company) return $company;
+        return '';
+    }
+
+    private function update_current_role_from_cv($post_id, $key = null) {
+        if (!$key) $key = get_option(self::OPT_OPENAI_KEY, '');
+        if (!$key) return '';
+        $cv_text = $this->get_candidate_cv_text($post_id);
+        if (!$cv_text) return '';
+        $role = $this->openai_extract_current_role($key, $cv_text);
+        if ($role) {
+            update_post_meta($post_id, 'kvt_current_role', $role);
+            update_post_meta($post_id, 'current_role', $role);
+        }
+        return $role;
+    }
+
+    private function openai_extract_profile_fields($key, $cv_text) {
+        $req = [
+            'model' => 'gpt-4o-mini',
+            'messages' => [
+                ['role' => 'system', 'content' => 'Eres un asistente que extrae del CV nombre, apellidos, email, teléfono, país actual, ciudad actual, puesto y empresa actuales. Devuelve JSON con las claves "first_name","last_name","email","phone","country","city","role" y "company". Si falta algún dato devuelve campo vacío.'],
+                ['role' => 'user', 'content' => "CV:\n$cv_text"],
+            ],
+            'max_tokens' => 300,
+            'response_format' => ['type' => 'json_object'],
+        ];
+        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => wp_json_encode($req),
+            'timeout' => 60,
+        ]);
+        if (is_wp_error($response)) return [];
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (!isset($body['choices'][0]['message']['content'])) return [];
+        $data = json_decode($body['choices'][0]['message']['content'], true);
+        return is_array($data) ? $data : [];
+    }
+
+    private function update_profile_from_cv($post_id, $key = null) {
+        if (!$key) $key = get_option(self::OPT_OPENAI_KEY, '');
+        if (!$key) return [];
+        $cv_text = $this->get_candidate_cv_text($post_id);
+        if (!$cv_text) return [];
+        $data = $this->openai_extract_profile_fields($key, $cv_text);
+        if (!is_array($data)) return [];
+
+        $updated = [];
+        $map = [
+            'first_name' => 'kvt_first_name',
+            'last_name'  => 'kvt_last_name',
+            'email'      => 'kvt_email',
+            'phone'      => 'kvt_phone',
+            'country'    => 'kvt_country',
+            'city'       => 'kvt_city',
+        ];
+        foreach ($map as $field => $meta) {
+            $val = isset($data[$field]) ? trim($data[$field]) : '';
+            if ($val === '') continue;
+            if ($this->meta_get_compat($post_id, $meta, [substr($meta,4)]) === '') {
+                update_post_meta($post_id, $meta, $val);
+                update_post_meta($post_id, substr($meta,4), $val);
+                $updated[$field] = $val;
+            }
+        }
+        $role = isset($data['role']) ? trim($data['role']) : '';
+        $company = isset($data['company']) ? trim($data['company']) : '';
+        $role_combined = '';
+        if ($role && $company) $role_combined = $role . ' at ' . $company;
+        elseif ($role) $role_combined = $role;
+        elseif ($company) $role_combined = $company;
+        if ($role_combined && $this->meta_get_compat($post_id, 'kvt_current_role', ['current_role']) === '') {
+            update_post_meta($post_id, 'kvt_current_role', $role_combined);
+            update_post_meta($post_id, 'current_role', $role_combined);
+            $updated['current_role'] = $role_combined;
+        }
+        return $updated;
+    }
+
     private function openai_match_summary($key, $desc, $cv_text) {
         $req = [
             'model' => 'gpt-4o-mini',
@@ -4154,7 +4437,7 @@ JS;
         $q = new WP_Query($args);
 
         // Fixed order export
-        $headers = ['email','first_name','surname','country','city','proceso','cliente','phone','cv_url','next_action','next_action_note'];
+        $headers = ['email','first_name','surname','country','city','current_role','proceso','cliente','phone','cv_url','next_action','next_action_note'];
         $filename = 'pipeline_export_' . date('Ymd_His');
 
         if ($format === 'xls') {
@@ -4176,13 +4459,14 @@ JS;
             $lname   = $this->meta_get_compat($p->ID,'kvt_last_name',['last_name']);
             $country = $this->meta_get_compat($p->ID,'kvt_country',['country']);
             $city    = $this->meta_get_compat($p->ID,'kvt_city',['city']);
+            $current_role = $this->meta_get_compat($p->ID,'kvt_current_role',['current_role']);
             $proc    = $this->get_term_name($p->ID, self::TAX_PROCESS);
             $client  = $this->get_term_name($p->ID, self::TAX_CLIENT);
             $phone   = $this->meta_get_compat($p->ID,'kvt_phone',['phone']);
             $cv      = $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']);
             $next    = $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_next_action',['next_action']));
             $note    = $this->meta_get_compat($p->ID,'kvt_next_action_note',['next_action_note']);
-            fputcsv($out, [$email,$fname,$lname,$country,$city,$proc,$client,$phone,$cv,$next,$note]);
+            fputcsv($out, [$email,$fname,$lname,$country,$city,$current_role,$proc,$client,$phone,$cv,$next,$note]);
         }
         fclose($out);
         exit;
