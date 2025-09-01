@@ -1140,8 +1140,16 @@ JS;
                 'description'   => wp_strip_all_tags($t->description),
             ];
         }, $clients);
-        $countries = $this->get_unique_meta_values(['kvt_country','country']);
-        $cities    = $this->get_unique_meta_values(['kvt_city','city']);
+        $count_obj = wp_count_posts(self::CPT, 'readable');
+        $total_candidates = array_sum((array) $count_obj);
+        $recent_q = new WP_Query([
+            'post_type'      => self::CPT,
+            'post_status'    => 'any',
+            'date_query'     => [ [ 'after' => date('Y-m-d', strtotime('-7 days')) ] ],
+            'fields'         => 'ids',
+            'posts_per_page' => -1,
+        ]);
+        $recent_candidates = $recent_q->found_posts;
 
         ob_start(); ?>
         <div class="kvt-wrapper">
@@ -1362,26 +1370,18 @@ JS;
               <div id="kvt_tab_candidates" class="kvt-tab-panel active kvt-base">
                 <div class="kvt-head">
                   <h3 class="kvt-title">Base de candidatos</h3>
+                  <div class="kvt-stats"><span>Total: <?php echo intval($total_candidates); ?></span><span>Últimos 7 días: <?php echo intval($recent_candidates); ?></span></div>
                   <div class="kvt-toolbar">
-                    <label>País
-                      <select id="kvt_modal_country" multiple size="4">
-                        <option value="">— Todos —</option>
-                        <?php foreach ($countries as $co): ?>
-                          <option value="<?php echo esc_attr($co); ?>"><?php echo esc_html($co); ?></option>
-                        <?php endforeach; ?>
-                      </select>
+                    <label>Nombre
+                      <input type="text" id="kvt_modal_name" placeholder="Nombre">
                     </label>
-                    <label>Ciudad
-                      <select id="kvt_modal_city" multiple size="4">
-                        <option value="">— Todos —</option>
-                        <?php foreach ($cities as $ci): ?>
-                          <option value="<?php echo esc_attr($ci); ?>"><?php echo esc_html($ci); ?></option>
-                        <?php endforeach; ?>
-                      </select>
+                    <label>Rol
+                      <input type="text" id="kvt_modal_role" placeholder="Rol">
                     </label>
-                    <label>Buscar
-                      <input type="text" id="kvt_modal_search" placeholder="Nombre, email, país o tag…">
+                    <label>Ubicación
+                      <input type="text" id="kvt_modal_location" placeholder="País o ciudad">
                     </label>
+                    <button type="button" class="kvt-btn" id="kvt_modal_assign" style="display:none;">Asignar seleccionados</button>
                     <form id="kvt_export_all_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank">
                       <input type="hidden" name="action" value="kvt_export">
                       <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
@@ -1399,11 +1399,11 @@ JS;
                   <button type="button" class="kvt-btn kvt-secondary" id="kvt_modal_next">Siguiente</button>
                 </div>
               </div>
-              <div id="kvt_tab_clients" class="kvt-tab-panel">
-                <div id="kvt_clients_list" class="kvt-modal-list"></div>
+              <div id="kvt_tab_clients" class="kvt-tab-panel kvt-base">
+                <div id="kvt_clients_list" class="kvt-list"></div>
               </div>
-              <div id="kvt_tab_processes" class="kvt-tab-panel">
-                <div id="kvt_processes_list" class="kvt-modal-list"></div>
+              <div id="kvt_tab_processes" class="kvt-tab-panel kvt-base">
+                <div id="kvt_processes_list" class="kvt-list"></div>
               </div>
               <div id="kvt_tab_ai" class="kvt-tab-panel">
                 <div class="kvt-modal-controls">
@@ -1635,18 +1635,20 @@ JS;
           .kvt-base .kvt-title{font-weight:700;font-size:18px;margin:0 0 12px}
           .kvt-base .kvt-toolbar{display:flex;gap:8px;flex-wrap:wrap}
           .kvt-base .kvt-toolbar select,.kvt-base .kvt-toolbar input{padding:8px 10px;border:1px solid var(--line);border-radius:8px}
-          .kvt-base .kvt-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
+          .kvt-base .kvt-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;color:var(--ink)}
           .kvt-base .kvt-btn:hover{box-shadow:var(--shadow)}
           .kvt-base .kvt-list{margin-top:16px;border-top:1px solid var(--line);max-height:420px;overflow:auto}
           #kvt_modal .kvt-base .kvt-list{max-height:calc(90vh - 200px)}
           .kvt-base .kvt-card-mini{border:none;padding:0;border-radius:0}
           .kvt-base .kvt-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+          .kvt-base .kvt-row.with-check{grid-template-columns:28px 1fr auto}
+          .kvt-base .kvt-check{display:flex;align-items:center;justify-content:center}
           .kvt-base .kvt-row:hover{background:rgba(10,33,46,.02)}
           .kvt-base .kvt-name{font-weight:600}
           .kvt-base .kvt-sub{color:var(--muted);font-size:14px;overflow:hidden;text-overflow:ellipsis}
           .kvt-base .kvt-meta{display:flex;align-items:center;gap:10px;white-space:nowrap}
-          .kvt-base .kvt-chip{border:1px solid var(--line);padding:2px 8px;border-radius:999px;font-size:12px;color:var(--ink);background:#fff}
           .kvt-base .kvt-mini-panel{margin:8px 0}
+          .kvt-base .kvt-stats{font-size:14px;color:var(--muted);margin-bottom:8px;display:flex;gap:12px}
           @media(max-width:720px){.kvt-base .kvt-row{grid-template-columns:1fr}.kvt-base .kvt-meta{grid-column:1;justify-content:flex-start;margin-top:4px}}
         ";
         wp_register_style('kvt-style', false);
@@ -1860,12 +1862,13 @@ function kvtInit(){
   const modal      = el('#kvt_modal');
   const modalClose = el('.kvt-modal-close', modal);
   const modalList  = el('#kvt_modal_list', modal);
-  const modalCountry= el('#kvt_modal_country', modal);
-  const modalCity   = el('#kvt_modal_city', modal);
+  const modalName   = el('#kvt_modal_name', modal);
+  const modalRole   = el('#kvt_modal_role', modal);
+  const modalLoc    = el('#kvt_modal_location', modal);
+  const modalAssign = el('#kvt_modal_assign', modal);
   const modalPrev  = el('#kvt_modal_prev', modal);
   const modalNext  = el('#kvt_modal_next', modal);
   const modalPage  = el('#kvt_modal_pageinfo', modal);
-  const modalSearch= el('#kvt_modal_search', modal);
   const tabs = els('.kvt-tab', modal);
   const tabCandidates = el('#kvt_tab_candidates', modal);
   const tabClients = el('#kvt_tab_clients', modal);
@@ -1940,17 +1943,9 @@ function kvtInit(){
 
   function openModal(){
     modal.style.display = 'flex';
-    modalSearch.value = '';
-    if(modalCountry){
-      Array.from(modalCountry.options).forEach(o=>o.selected=false);
-      const allOpt = modalCountry.querySelector('option[value=""]');
-      if(allOpt) allOpt.selected = true;
-    }
-    if(modalCity){
-      Array.from(modalCity.options).forEach(o=>o.selected=false);
-      const allOpt = modalCity.querySelector('option[value=""]');
-      if(allOpt) allOpt.selected = true;
-    }
+    if(modalName) modalName.value = '';
+    if(modalRole) modalRole.value = '';
+    if(modalLoc) modalLoc.value = '';
     switchTab('candidates');
   }
   function closeModal(){ modal.style.display = 'none'; }
@@ -3112,11 +3107,9 @@ function kvtInit(){
     params.set('action','kvt_list_profiles');
     params.set('_ajax_nonce', KVT_NONCE);
     params.set('page', currentPage);
-    params.set('q', modalSearch.value || '');
-    const cvals = modalCountry ? Array.from(modalCountry.selectedOptions).map(o=>o.value).filter(v=>v).join(',') : '';
-    const cityVals = modalCity ? Array.from(modalCity.selectedOptions).map(o=>o.value).filter(v=>v).join(',') : '';
-    params.set('countries', cvals);
-    params.set('cities', cityVals);
+    params.set('name', modalName ? modalName.value : '');
+    params.set('role', modalRole ? modalRole.value : '');
+    params.set('location', modalLoc ? modalLoc.value : '');
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json())
       .then(j=>{
@@ -3125,6 +3118,7 @@ function kvtInit(){
         const procSel = selProcess && selProcess.value;
         const cliSel  = selClient && selClient.value;
         const allowAdd = !!(procSel && (cliSel || getClientIdForProcess(procSel)));
+        const filterActive = (modalName && modalName.value) || (modalRole && modalRole.value) || (modalLoc && modalLoc.value);
         let html = items.map(it=>{
           const m = it.meta||{};
           const name = esc((m.first_name||'')+' '+(m.last_name||''));
@@ -3138,13 +3132,15 @@ function kvtInit(){
           const infoParts = ['Candidato/a'];
           if(date) infoParts.push(date);
           const infoLine = '<em>'+infoParts.join(' / ')+'</em>';
-          const tags = m.tags?m.tags.split(',').map(t=>'<span class="kvt-chip">'+esc(t.trim())+'</span>').join(''):'';
           const cv = m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'';
           const firstLineWithCv = firstLine.replace('</a>', '</a>'+cv);
+          const check = filterActive?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" aria-label="Seleccionar"></div>':'';
+          const addBtn = (!filterActive && allowAdd)?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'';
           return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
-            '<div class="kvt-row">'+
+            '<div class="kvt-row'+(filterActive?' with-check':'')+'">'+
+              check+
               '<div>'+firstLineWithCv+'<br>'+infoLine+'</div>'+
-              '<div class="kvt-meta">'+tags+(allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'')+'<button type="button" class="kvt-delete kvt-mini-delete" data-id="'+it.id+'" aria-label="Eliminar"></button></div>'+
+              '<div class="kvt-meta">'+addBtn+'<button type="button" class="kvt-delete kvt-mini-delete" data-id="'+it.id+'" aria-label="Eliminar"></button></div>'+
             '</div>'+
             '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
@@ -3153,7 +3149,7 @@ function kvtInit(){
         modalPage.textContent = 'Página '+currentPage+' de '+(pages||1);
         if(modalPrev) modalPrev.style.display = pages>1 ? 'inline-block' : 'none';
         if(modalNext) modalNext.style.display = pages>1 ? 'inline-block' : 'none';
-        if(allowAdd){
+        if(!filterActive && allowAdd){
           els('.kvt-mini-add', modalList).forEach(b=>{
             b.addEventListener('click', ()=>{
               const id = b.getAttribute('data-id');
@@ -3177,6 +3173,7 @@ function kvtInit(){
             });
           });
         }
+        if(modalAssign) modalAssign.style.display = (filterActive && allowAdd) ? 'inline-flex' : 'none';
         els('.kvt-mini-view', modalList).forEach(b=>{
           b.addEventListener('click', e=>{
             e.preventDefault();
@@ -3215,20 +3212,28 @@ function kvtInit(){
   }
   modalPrev && modalPrev.addEventListener('click', ()=>{ if(currentPage>1) listProfiles(currentPage-1); });
   modalNext && modalNext.addEventListener('click', ()=>{ listProfiles(currentPage+1); });
-  modalCountry && modalCountry.addEventListener('change', ()=>{
-    if(Array.from(modalCountry.selectedOptions).some(o=>o.value==='')){
-      Array.from(modalCountry.options).forEach(o=>{ o.selected = (o.value===''); });
-    }
-    listProfiles(1);
-  });
-  modalCity && modalCity.addEventListener('change', ()=>{
-    if(Array.from(modalCity.selectedOptions).some(o=>o.value==='')){
-      Array.from(modalCity.options).forEach(o=>{ o.selected = (o.value===''); });
-    }
-    listProfiles(1);
+  modalAssign && modalAssign.addEventListener('click', ()=>{
+    const ids = Array.from(els('.kvt-select:checked', modalList)).map(cb=>cb.value);
+    if(!ids.length){ alert('Seleccione candidatos'); return; }
+    const proc = selProcess && selProcess.value;
+    let cli  = selClient && selClient.value;
+    if(!proc){ alert('Seleccione proceso en el tablero.'); return; }
+    if(!cli) cli = getClientIdForProcess(proc);
+    const assignOne = id => {
+      const p = new URLSearchParams();
+      p.set('action','kvt_assign_candidate');
+      p.set('_ajax_nonce', KVT_NONCE);
+      p.set('candidate_id', id);
+      p.set('process_id', proc);
+      p.set('client_id', cli);
+      return fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()}).then(r=>r.json());
+    };
+    Promise.all(ids.map(assignOne)).then(()=>{ alert('Candidatos asignados.'); closeModal(); refresh(); });
   });
   let mto=null;
-  modalSearch && modalSearch.addEventListener('input', ()=>{ clearTimeout(mto); mto=setTimeout(()=>listProfiles(1), 300); });
+  [modalName, modalRole, modalLoc].forEach(inp=>{
+    inp && inp.addEventListener('input', ()=>{ clearTimeout(mto); mto=setTimeout(()=>listProfiles(1),300); });
+  });
 
   function listClients(){
     const params = new URLSearchParams();
@@ -3252,14 +3257,16 @@ function kvtInit(){
           });
         }
         if(clientsList) clientsList.innerHTML = j.data.items.map(c=>{
-          return '<div class="kvt-card-mini">'+
-            '<h4>'+esc(c.name)+'</h4>'+
-            (c.contact_name?'<p>'+esc(c.contact_name)+(c.contact_email?' ('+esc(c.contact_email)+')':'')+'</p>':'')+
-            (c.contact_phone?'<p>'+esc(c.contact_phone)+'</p>':'')+
-            (c.description?'<p>'+esc(c.description)+'</p>':'')+
-            (c.processes && c.processes.length?'<p>'+esc(c.processes.join(', '))+'</p>':'')+
-            '<p><button type="button" class="kvt-edit-client" data-id="'+escAttr(c.id)+'" data-name="'+escAttr(c.name||'')+'" data-contact-name="'+escAttr(c.contact_name||'')+'" data-contact-email="'+escAttr(c.contact_email||'')+'" data-contact-phone="'+escAttr(c.contact_phone||'')+'" data-desc="'+escAttr(c.description||'')+'">Editar</button></p>'+
-            '</div>';
+          const subs=[];
+          if(c.contact_name) subs.push(esc(c.contact_name)+(c.contact_email?' ('+esc(c.contact_email)+')':''));
+          if(c.contact_phone) subs.push(esc(c.contact_phone));
+          if(c.description) subs.push(esc(c.description));
+          if(c.processes && c.processes.length) subs.push(esc(c.processes.join(', ')));
+          const subHtml = subs.length?'<br><span class="kvt-sub">'+subs.join(' / ')+'</span>':'';
+          return '<div class="kvt-row">'+
+            '<div><span class="kvt-name">'+esc(c.name)+'</span>'+subHtml+'</div>'+
+            '<div class="kvt-meta"><button type="button" class="kvt-btn kvt-edit-client" data-id="'+escAttr(c.id)+'" data-name="'+escAttr(c.name||'')+'" data-contact-name="'+escAttr(c.contact_name||'')+'" data-contact-email="'+escAttr(c.contact_email||'')+'" data-contact-phone="'+escAttr(c.contact_phone||'')+'" data-desc="'+escAttr(c.description||'')+'">Editar</button></div>'+
+          '</div>';
         }).join('');
       });
     }
@@ -3286,13 +3293,15 @@ function kvtInit(){
           });
         }
         if(processesList) processesList.innerHTML = j.data.items.map(p=>{
-          return '<div class="kvt-card-mini">'+
-            '<h4>'+esc(p.name)+'</h4>'+
-            (p.client?'<p>Cliente: '+esc(p.client)+'</p>':'')+
-            (p.contact_name?'<p>'+esc(p.contact_name)+(p.contact_email?' ('+esc(p.contact_email)+')':'')+'</p>':'')+
-            (p.description?'<p>'+esc(p.description)+'</p>':'')+
-            '<p><button type="button" class="kvt-edit-process" data-id="'+escAttr(p.id)+'" data-name="'+escAttr(p.name||'')+'" data-client-id="'+escAttr(p.client_id||'')+'" data-contact-name="'+escAttr(p.contact_name||'')+'" data-contact-email="'+escAttr(p.contact_email||'')+'" data-desc="'+escAttr(p.description||'')+'">Editar</button></p>'+
-            '</div>';
+          const subs=[];
+          if(p.client) subs.push(esc(p.client));
+          if(p.contact_name) subs.push(esc(p.contact_name)+(p.contact_email?' ('+esc(p.contact_email)+')':''));
+          if(p.description) subs.push(esc(p.description));
+          const subHtml = subs.length?'<br><span class="kvt-sub">'+subs.join(' / ')+'</span>':'';
+          return '<div class="kvt-row">'+
+            '<div><span class="kvt-name">'+esc(p.name)+'</span>'+subHtml+'</div>'+
+            '<div class="kvt-meta"><button type="button" class="kvt-btn kvt-edit-process" data-id="'+escAttr(p.id)+'" data-name="'+escAttr(p.name||'')+'" data-client-id="'+escAttr(p.client_id||'')+'" data-contact-name="'+escAttr(p.contact_name||'')+'" data-contact-email="'+escAttr(p.contact_email||'')+'" data-desc="'+escAttr(p.description||'')+'">Editar</button></div>'+
+          '</div>';
         }).join('');
       });
     }
@@ -3617,7 +3626,7 @@ JS;
             }
         }
 
-        $per_page = $base_mode ? 20 : 999;
+        $per_page = $base_mode ? 15 : 999;
         $args = [
             'post_type'      => self::CPT,
             'post_status'    => 'any',
@@ -4056,54 +4065,46 @@ JS;
     public function ajax_list_profiles() {
         check_ajax_referer('kvt_nonce');
 
-        $page   = isset($_POST['page']) ? max(1, intval($_POST['page'])) : 1;
-        $search = isset($_POST['q']) ? sanitize_text_field(trim($_POST['q'])) : '';
-        $countries = isset($_POST['countries']) && $_POST['countries'] !== '' ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['countries']))) : [];
-        $cities    = isset($_POST['cities']) && $_POST['cities'] !== '' ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['cities']))) : [];
+        $page      = isset($_POST['page']) ? max(1, intval($_POST['page'])) : 1;
+        $name      = isset($_POST['name']) ? sanitize_text_field(trim($_POST['name'])) : '';
+        $role      = isset($_POST['role']) ? sanitize_text_field(trim($_POST['role'])) : '';
+        $location  = isset($_POST['location']) ? sanitize_text_field(trim($_POST['location'])) : '';
 
-        // Return all candidates so modal shows complete list
         $args = [
             'post_type'      => self::CPT,
             'post_status'    => 'any',
-            'posts_per_page' => -1,
+            'posts_per_page' => 15,
             'paged'          => $page,
+            'no_found_rows'  => false,
         ];
 
         $meta_query = ['relation' => 'AND'];
 
-        if (!empty($countries)) {
+        if ($name !== '') {
             $meta_query[] = [
                 'relation' => 'OR',
-                ['key'=>'kvt_country','value'=>$countries,'compare'=>'IN'],
-                ['key'=>'country','value'=>$countries,'compare'=>'IN'],
+                ['key'=>'kvt_first_name','value'=>$name,'compare'=>'LIKE'],
+                ['key'=>'kvt_last_name','value'=>$name,'compare'=>'LIKE'],
+                ['key'=>'first_name','value'=>$name,'compare'=>'LIKE'],
+                ['key'=>'last_name','value'=>$name,'compare'=>'LIKE'],
             ];
         }
 
-        if (!empty($cities)) {
+        if ($role !== '') {
             $meta_query[] = [
                 'relation' => 'OR',
-                ['key'=>'kvt_city','value'=>$cities,'compare'=>'IN'],
-                ['key'=>'city','value'=>$cities,'compare'=>'IN'],
+                ['key'=>'kvt_current_role','value'=>$role,'compare'=>'LIKE'],
+                ['key'=>'current_role','value'=>$role,'compare'=>'LIKE'],
             ];
         }
 
-        if ($search !== '') {
+        if ($location !== '') {
             $meta_query[] = [
                 'relation' => 'OR',
-                ['key'=>'kvt_first_name','value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'kvt_last_name', 'value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'kvt_email',     'value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'kvt_country',   'value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'kvt_city',      'value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'kvt_tags',      'value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'kvt_current_role','value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'first_name','value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'last_name', 'value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'email',     'value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'country',   'value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'city',      'value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'tags',      'value'=>$search,'compare'=>'LIKE'],
-                ['key'=>'current_role','value'=>$search,'compare'=>'LIKE'],
+                ['key'=>'kvt_country','value'=>$location,'compare'=>'LIKE'],
+                ['key'=>'kvt_city','value'=>$location,'compare'=>'LIKE'],
+                ['key'=>'country','value'=>$location,'compare'=>'LIKE'],
+                ['key'=>'city','value'=>$location,'compare'=>'LIKE'],
             ];
         }
 
