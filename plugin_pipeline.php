@@ -827,34 +827,39 @@ cv_uploaded|Fecha de subida");
                     </table>
                 </div>
                 <div id="kvt_activity" class="kvt-activity">
-                    <h3>Actividad</h3>
-                    <div class="kvt-activity-group">
-                        <h4>Pendientes</h4>
-                        <ul id="kvt_tasks_due" class="kvt-activity-list"></ul>
+                    <div class="kvt-activity-tabs">
+                        <button type="button" class="kvt-activity-tab active" data-target="tasks">Actividad</button>
+                        <button type="button" class="kvt-activity-tab" data-target="log">Activity</button>
                     </div>
-                    <div class="kvt-activity-group">
-                        <h4>Próximas</h4>
-                        <ul id="kvt_tasks_upcoming" class="kvt-activity-list"></ul>
+                    <div id="kvt_activity_tasks" class="kvt-activity-content">
+                        <div class="kvt-activity-columns">
+                            <div class="kvt-activity-col">
+                                <h4>Próximos eventos</h4>
+                                <ul id="kvt_tasks_due" class="kvt-activity-list"></ul>
+                                <ul id="kvt_tasks_upcoming" class="kvt-activity-list"></ul>
+                                <h4>Añadir tarea</h4>
+                                <form id="kvt_task_form">
+                                    <select id="kvt_task_candidate"></select>
+                                    <input type="date" id="kvt_task_date">
+                                    <input type="text" id="kvt_task_note" placeholder="Nota">
+                                    <button class="kvt-btn" type="submit">Guardar</button>
+                                </form>
+                            </div>
+                            <div class="kvt-activity-col">
+                                <h4>Notificaciones</h4>
+                                <ul id="kvt_notifications" class="kvt-activity-list"></ul>
+                            </div>
+                        </div>
                     </div>
-                    <div class="kvt-activity-group">
-                        <h4>Notificaciones</h4>
-                        <ul id="kvt_notifications" class="kvt-activity-list"></ul>
-                    </div>
-                    <div class="kvt-activity-group">
-                        <h4>Añadir tarea</h4>
-                        <form id="kvt_task_form">
-                            <select id="kvt_task_candidate"></select>
-                            <input type="date" id="kvt_task_date">
-                            <input type="text" id="kvt_task_note" placeholder="Nota">
-                            <button class="kvt-btn" type="submit">Guardar</button>
-                        </form>
+                    <div id="kvt_activity_log" class="kvt-activity-content" style="display:none;">
+                        <ul id="kvt_activity_log_list" class="kvt-activity-list"></ul>
                     </div>
                 </div>
             </div>
 
             <div id="kvt_board_wrap" class="kvt-board-wrap">
-                <button class="kvt-btn" type="button" id="kvt_board_toggle">Ocultar Kanban</button>
-                <div id="kvt_board" class="kvt-board" aria-live="polite"></div>
+                <button class="kvt-btn" type="button" id="kvt_board_toggle">Mostrar Kanban</button>
+                <div id="kvt_board" class="kvt-board" aria-live="polite" style="display:none;margin-top:12px;"></div>
             </div>
         </div>
         <!-- Info Modal -->
@@ -1170,8 +1175,12 @@ cv_uploaded|Fecha de subida");
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
         .kvt-ats-bar{display:flex;gap:8px;align-items:center;padding:8px}
         .kvt-activity{margin-top:16px;flex:1;border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto}
-        .kvt-activity-group{margin-bottom:12px}
-        .kvt-activity-group h4{margin:8px 0;font-size:14px}
+        .kvt-activity-tabs{display:flex;gap:8px;margin-bottom:8px}
+        .kvt-activity-tab{flex:1;padding:6px 8px;border:1px solid #e5e7eb;border-radius:8px;background:#f1f5f9;cursor:pointer}
+        .kvt-activity-tab.active{background:#0A212E;color:#fff}
+        .kvt-activity-columns{display:flex;gap:16px}
+        .kvt-activity-col{flex:1}
+        .kvt-activity-col h4{margin:8px 0;font-size:14px}
         .kvt-activity-list{list-style:none;margin:0;padding-left:16px;font-size:13px}
         .kvt-activity-list li{margin-bottom:4px}
         .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
@@ -1368,6 +1377,9 @@ document.addEventListener('DOMContentLoaded', function(){
   const activityDue = el('#kvt_tasks_due');
   const activityUpcoming = el('#kvt_tasks_upcoming');
   const activityNotify = el('#kvt_notifications');
+  const activityLog = el('#kvt_activity_log_list');
+  const activityTabs = document.querySelectorAll('.kvt-activity-tab');
+  const activityViews = document.querySelectorAll('.kvt-activity-content');
   const overview = el('#kvt_stage_overview');
   const taskForm = el('#kvt_task_form');
   const taskCandidate = el('#kvt_task_candidate');
@@ -2116,7 +2128,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function renderActivity(rows){
     if(!activityDue || !activityUpcoming || !activityNotify) return;
     const today = new Date(); today.setHours(0,0,0,0);
-    const due=[]; const upcoming=[]; const notifs=[];
+    const due=[]; const upcoming=[]; const notifs=[]; const logs=[];
     rows.forEach(r=>{
       const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
       if(r.meta.next_action){
@@ -2136,10 +2148,38 @@ document.addEventListener('DOMContentLoaded', function(){
           }
         });
       }
+      if(Array.isArray(r.meta.activity_log)){
+        r.meta.activity_log.forEach(l=>{
+          let msg='';
+          switch(l.type){
+            case 'status':
+              msg='Estado a '+esc(l.status)+(l.comment?' — '+esc(l.comment):'');
+              break;
+            case 'task_add':
+              msg='Tarea '+esc(l.date)+(l.note?' — '+esc(l.note):'');
+              break;
+            case 'task_done':
+              msg='Tarea completada '+esc(l.date)+(l.comment?' — '+esc(l.comment):'');
+              break;
+            case 'task_deleted':
+              msg='Tarea eliminada '+esc(l.date)+(l.note?' — '+esc(l.note):'');
+              break;
+            default:
+              msg=esc(l.type||'');
+          }
+          const author = esc(l.author||'');
+          const time = esc(l.time||'');
+          logs.push({time,text: nameTxt+' — '+msg+(author?' ('+author+')':'')});
+        });
+      }
     });
     activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
     activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
     activityNotify.innerHTML = notifs.join('') || '<li>No hay notificaciones</li>';
+    if(activityLog){
+      logs.sort((a,b)=>a.time<b.time?1:-1);
+      activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+l.time+' - '+l.text+'</li>').join('') : '<li>No hay actividad</li>';
+    }
   }
 
   function renderOverview(rows){
@@ -2359,6 +2399,16 @@ document.addEventListener('DOMContentLoaded', function(){
     const hidden = board.style.display === 'none';
     board.style.display = hidden ? 'flex' : 'none';
     boardToggle.textContent = hidden ? 'Ocultar Kanban' : 'Mostrar Kanban';
+  });
+
+  activityTabs.forEach(tab=>{
+    tab.addEventListener('click', ()=>{
+      activityTabs.forEach(t=>t.classList.remove('active'));
+      activityViews.forEach(v=>v.style.display='none');
+      tab.classList.add('active');
+      const pane = el('#kvt_activity_'+tab.dataset.target);
+      if(pane) pane.style.display='block';
+    });
   });
 
   taskForm && taskForm.addEventListener('submit', e=>{
