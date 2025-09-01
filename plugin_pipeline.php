@@ -4802,21 +4802,69 @@ JS;
       }
 
       public function company_ats_shortcode($atts = []) {
+        $atts = shortcode_atts(['client' => 0, 'process' => 0], $atts);
+        $client_id  = intval($atts['client']);
+        $process_id = intval($atts['process']);
+
+        $tax_query = [];
+        if ($client_id)  $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
+        if ($process_id) $tax_query[] = ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>[$process_id]];
+
+        $args = [
+          'post_type'      => self::CPT,
+          'post_status'    => 'any',
+          'posts_per_page' => -1,
+        ];
+        if ($tax_query) $args['tax_query'] = $tax_query;
+
+        $q = new \WP_Query($args);
+        $stage_order = ['Sourcing','Long list','Shortlist','Interview','Offer','Placement'];
+        $stage_map = [
+          'Long list'     => 'Long list',
+          'Short list'    => 'Shortlist',
+          'Contactados'   => 'Interview',
+          'Entrevistados' => 'Interview',
+          'En oferta'     => 'Offer',
+          'Incorporado'   => 'Placement',
+        ];
+        $counts = array_fill_keys($stage_order,0);
+        $rows   = '';
+        foreach ($q->posts as $p) {
+          $status = get_post_meta($p->ID,'kvt_status',true);
+          $stage  = isset($stage_map[$status]) ? $stage_map[$status] : 'Sourcing';
+          if (isset($counts[$stage])) $counts[$stage]++;
+
+          $int_no = $this->meta_get_compat($p->ID,'kvt_int_no',['int_no']);
+          $cv     = $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']);
+
+          $rows .= '<tr class="kvt-row" data-current-stage="'.esc_attr($stage).'">'
+               . '<td class="kvt-td"><input type="checkbox" aria-label="Select"></td>'
+               . '<td class="kvt-td"><a href="'.esc_url(get_permalink($p)).'">'.esc_html(get_the_title($p)).'</a></td>'
+               . '<td class="kvt-td">'.esc_html($int_no).'</td>'
+               . '<td class="kvt-td"><div class="kvt-stage">';
+          foreach ($stage_order as $s) {
+            $rows .= '<div class="seg" data-stage="'.$s.'">'.$s.'</div>';
+          }
+          $rows .= '</div></td>'
+               . '<td class="kvt-td">'.($stage==='Offer'||$stage==='Placement'?'✓':'').'</td>'
+               . '<td class="kvt-td">'.($stage==='Placement'?'✓':'').'</td>'
+               . '<td class="kvt-td">'.($cv?'<a href="'.esc_url($cv).'" class="kvt-cv-link" target="_blank">CV</a>':'').'</td>'
+               . '</tr>';
+        }
+
         ob_start();
         ?>
         <div class="kvt">
           <div class="kvt-wrap">
             <div class="kvt-header">
-              <div class="kvt-pill">Long lists<span id="kvt_pill_long"></span></div>
-              <div class="kvt-pill">Applications<span id="kvt_pill_apps"></span></div>
-              <div class="kvt-pill">Interviews<span id="kvt_pill_int"></span></div>
-              <div class="kvt-pill">Placements<span id="kvt_pill_place"></span></div>
+              <div class="kvt-pill">Long lists<span><?php echo intval($counts['Long list']); ?></span></div>
+              <div class="kvt-pill">Shortlists<span><?php echo intval($counts['Shortlist']); ?></span></div>
+              <div class="kvt-pill">Interviews<span><?php echo intval($counts['Interview']); ?></span></div>
+              <div class="kvt-pill">Offers<span><?php echo intval($counts['Offer']); ?></span></div>
+              <div class="kvt-pill">Placements<span><?php echo intval($counts['Placement']); ?></span></div>
             </div>
             <div class="kvt-tabs">
-              <div class="kvt-tab">Details</div>
               <div class="kvt-tab is-active">ATS</div>
-              <div class="kvt-tab">Interview Schedule</div>
-              <div class="kvt-tab">Placements</div>
             </div>
             <div class="kvt-main">
               <div>
@@ -4826,7 +4874,7 @@ JS;
                   <div class="kvt-btn"><input type="checkbox" id="kvt_select_all" aria-label="Select all"></div>
                   <button type="button" class="kvt-btn" id="kvt_refresh">↻</button>
                 </div>
-                <table id="kvt_table" class="kvt-table">
+                <table class="kvt-table">
                   <thead>
                     <tr>
                       <th class="kvt-th"><input type="checkbox" id="kvt_select_all_head" aria-label="Select all"></th>
@@ -4838,7 +4886,7 @@ JS;
                       <th class="kvt-th"></th>
                     </tr>
                   </thead>
-                  <tbody id="kvt_table_body"></tbody>
+                  <tbody><?php echo $rows; ?></tbody>
                 </table>
               </div>
               <aside class="kvt-activity">
@@ -4876,7 +4924,8 @@ JS;
 .kvt-chip{border:1px solid var(--line);border-radius:999px;padding:2px 8px;font-size:12px;color:var(--brand);background:#fff}
 .kvt-stage{display:flex;gap:6px;align-items:center}
 .kvt-stage .seg{height:24px;border-radius:999px;min-width:54px;padding:0 10px;display:flex;align-items:center;justify-content:center;font-size:12px;border:1px solid var(--line);background:#f5f7fb}
-.kvt-stage .seg.done{background:var(--ok); color:#fff; border-color:var(--ok)}
+.kvt-stage .seg.done{background:var(--ok); color:#fff; border-color:var(--ok); position:relative; font-size:0;}
+.kvt-stage .seg.done::before{content:"\2713";font-size:12px;}
 .kvt-stage .seg.current{background:var(--info); color:#fff; border-color:var(--info); font-weight:600}
 .kvt-activity{border:1px solid var(--line);border-radius:var(--radius);padding:12px}
 .kvt-activity-tabs{display:flex;gap:6px;margin-bottom:8px}
