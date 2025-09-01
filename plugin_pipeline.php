@@ -1143,43 +1143,54 @@ JS;
         $cities    = $this->get_unique_meta_values(['kvt_city','city']);
 
         ob_start(); ?>
-        <div class="kvt-wrapper">
+        <div class="kcvf"><div class="kvt-wrapper">
             <?php if ($is_client_board): ?>
             <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
             <?php endif; ?>
             <span class="dashicons dashicons-editor-help kvt-help" title="Haz clic para ver cómo funciona el tablero"></span>
-            <div class="kvt-toolbar">
-                <div class="kvt-filters">
-                    <label>Cliente
-                        <select id="kvt_client">
-                            <option value="">— Todos —</option>
-                            <?php foreach ($clients as $c): ?>
-                              <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </label>
-                    <label>Proceso
-                        <select id="kvt_process">
-                            <option value="">— Todos —</option>
-                            <?php foreach ($processes as $t): ?>
-                              <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </label>
-                    <span id="kvt_client_link" class="kvt-client-link"></span>
-                </div>
-                <div class="kvt-actions">
-                    <button class="kvt-btn" id="kvt_add_profile">Base</button>
-                    <button class="kvt-btn" id="kvt_toggle_table">Tabla</button>
-                    <button class="kvt-btn" type="button" id="kvt_mandar_correos">Mandar correos</button>
-                    <button class="kvt-btn" type="button" id="kvt_share_board">Tablero cliente</button>
-                    <button class="kvt-btn" type="button" id="kvt_generate_roles">Generar roles</button>
-                </div>
+            <header class="kvt-page-header">
+                <h1><?php echo esc_html__('Seguimiento de candidatos', 'kovacic'); ?></h1>
+                <span class="kvt-stage-badge" id="kvt_stage_badge" style="display:none;"></span>
+            </header>
+            <nav class="kvt-tab-bar">
+                <button type="button" class="kvt-tab-btn" data-target="detalles"><?php esc_html_e('Detalles', 'kovacic'); ?></button>
+                <button type="button" class="kvt-tab-btn active" data-target="ats"><?php esc_html_e('ATS', 'kovacic'); ?></button>
+                <button type="button" class="kvt-tab-btn" data-target="agenda"><?php esc_html_e('Agenda de entrevistas', 'kovacic'); ?></button>
+                <button type="button" class="kvt-tab-btn" data-target="colocaciones"><?php esc_html_e('Colocaciones', 'kovacic'); ?></button>
+                <button type="button" class="kvt-tab-btn" data-target="notas"><?php esc_html_e('Notas', 'kovacic'); ?></button>
+                <button type="button" class="kvt-tab-btn" data-target="solicitudes"><?php esc_html_e('Solicitudes', 'kovacic'); ?></button>
+            </nav>
+
+            <div class="kvt-filter-row">
+                <input type="text" id="kvt_search" placeholder="<?php echo esc_attr__('Buscar', 'kovacic'); ?>">
+                <select id="kvt_client">
+                    <option value=""><?php echo esc_html__('Todos los clientes', 'kovacic'); ?></option>
+                    <?php foreach ($clients as $c): ?>
+                      <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select id="kvt_process">
+                    <option value=""><?php echo esc_html__('Todos los procesos', 'kovacic'); ?></option>
+                    <?php foreach ($processes as $t): ?>
+                      <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select id="kvt_stage_filter"><option value=""><?php echo esc_html__('Todas las etapas', 'kovacic'); ?></option></select>
+                <button type="button" class="kvt-btn kvt-secondary" id="kvt_new_filter"><?php esc_html_e('Crear nuevo filtro', 'kovacic'); ?></button>
+                <span id="kvt_client_link" class="kvt-client-link"></span>
             </div>
 
+            <div class="kvt-bulk-toolbar" id="kvt_bulk_toolbar" style="display:none;">
+                <button type="button" class="kvt-btn" id="kvt_bulk_stage"><?php esc_html_e('Mover etapa', 'kovacic'); ?></button>
+                <button type="button" class="kvt-btn" id="kvt_bulk_mail"><?php esc_html_e('Enviar correo', 'kovacic'); ?></button>
+                <button type="button" class="kvt-btn" id="kvt_bulk_export"><?php esc_html_e('Exportar CSV', 'kovacic'); ?></button>
+                <button type="button" class="kvt-btn kvt-secondary" id="kvt_bulk_delete"><?php esc_html_e('Eliminar', 'kovacic'); ?></button>
+            </div>
+
+            <div class="kvt-tab-content active" id="kvt_tab_ats">
             <?php if (!$is_client_board): ?>
             <div id="kvt_selected_info" style="display:none;">
-              <button type="button" class="kvt-btn" id="kvt_selected_toggle">Información de cliente y proceso</button>
+              <button type="button" class="kvt-btn" id="kvt_selected_toggle"><?php esc_html_e('Información de cliente y proceso', 'kovacic'); ?></button>
               <div id="kvt_selected_details" style="display:none;">
                 <p id="kvt_selected_client"></p>
                 <p id="kvt_selected_process"></p>
@@ -1190,33 +1201,20 @@ JS;
 
             <div class="kvt-main">
                 <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:block;">
-                    <div id="kvt_stage_overview" class="kvt-stage-overview"></div>
-                    <div id="kvt_ats_bar" class="kvt-ats-bar">
-                        <input type="text" id="kvt_search" placeholder="Buscar candidato, empresa, ciudad...">
-                        <select id="kvt_stage_filter"><option value="">Todas las etapas</option></select>
-                        <form id="kvt_export_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank" style="display:inline;">
-                            <input type="hidden" name="action" value="kvt_export">
-                            <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
-                            <input type="hidden" name="filter_client"  id="kvt_export_client"  value="">
-                            <input type="hidden" name="filter_process" id="kvt_export_process" value="">
-                            <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
-                            <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
-                        </form>
-                    </div>
                     <table id="kvt_table">
                         <thead><tr id="kvt_table_head"></tr></thead>
                         <tbody id="kvt_table_body"></tbody>
                     </table>
                     <div id="kvt_table_pager" class="kvt-table-pager" style="display:none;">
-                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_table_prev">Anterior</button>
+                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_table_prev"><?php esc_html_e('Anterior', 'kovacic'); ?></button>
                         <span id="kvt_table_pageinfo"></span>
-                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_table_next">Siguiente</button>
+                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_table_next"><?php esc_html_e('Siguiente', 'kovacic'); ?></button>
                     </div>
                 </div>
                 <div id="kvt_activity" class="kvt-activity">
                     <div class="kvt-activity-tabs">
                         <button type="button" class="kvt-activity-tab active" data-target="tasks">Actividad</button>
-                        <button type="button" class="kvt-activity-tab" data-target="log">Activity</button>
+                        <button type="button" class="kvt-activity-tab" data-target="log">Historial</button>
                         <button type="button" class="kvt-activity-tab" data-target="mail">Correos</button>
                     </div>
                     <div id="kvt_activity_tasks" class="kvt-activity-content">
@@ -1252,7 +1250,13 @@ JS;
                 <button class="kvt-btn" type="button" id="kvt_board_toggle">Mostrar Kanban</button>
                 <div id="kvt_board" class="kvt-board" aria-live="polite" style="display:none;margin-top:12px;"></div>
             </div>
-        </div>
+        </div><!-- /#kvt_tab_ats -->
+        <div id="kvt_tab_detalles" class="kvt-tab-content"><?php esc_html_e('Sin contenido.', 'kovacic'); ?></div>
+        <div id="kvt_tab_agenda" class="kvt-tab-content"><?php esc_html_e('Sin contenido.', 'kovacic'); ?></div>
+        <div id="kvt_tab_colocaciones" class="kvt-tab-content"><?php esc_html_e('Sin contenido.', 'kovacic'); ?></div>
+        <div id="kvt_tab_notas" class="kvt-tab-content"><?php esc_html_e('Sin contenido.', 'kovacic'); ?></div>
+        <div id="kvt_tab_solicitudes" class="kvt-tab-content"><?php esc_html_e('Sin contenido.', 'kovacic'); ?></div>
+        </div></div>
         <!-- Info Modal -->
         <div class="kvt-modal" id="kvt_info_modal" style="display:none;">
           <div class="kvt-modal-content">
@@ -1504,14 +1508,15 @@ JS;
         // Styles
         wp_enqueue_style('dashicons');
         $css = "
-        .kvt-wrapper{max-width:1200px;margin:0 auto;padding:16px;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.06);position:relative}
+        .kcvf{--brand:#0A212E;--blue:#0176D3;--green:#2E844A;--amber:#F5821F;--red:#BA0517;--bg:#F3F6F9;--surface:#FFFFFF;--ink:#1F2937;--ink-muted:#6B7280;--divider:#E5E7EB;--shadow:0 2px 6px rgba(0,0,0,.08);--radius:8px;--gap:8px;font-family:'Salesforce Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--ink);}
+        .kvt-wrapper{max-width:1200px;margin:0 auto;padding:16px;background:var(--surface);border-radius:var(--radius);box-shadow:0 10px 30px rgba(0,0,0,.06);position:relative}
         .kvt-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
         .kvt-filters label{margin-right:12px;display:inline-flex;gap:6px;align-items:center;font-weight:600}
-        .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
+        .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid var(--divider);border-radius:var(--radius)}
         .kvt-client-link{margin-left:12px;display:inline-flex;align-items:center;gap:6px;font-weight:600}
         .kvt-logo{display:block;margin:0 auto 12px;max-width:300px}
-        .kvt-help{position:absolute;top:16px;right:16px;font-size:24px;color:#0A212E;cursor:pointer}
-        .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
+        .kvt-help{position:absolute;top:16px;right:16px;font-size:24px;color:var(--brand);cursor:pointer}
+        .kvt-btn{background:var(--brand);color:#fff;border:none;border-radius:var(--radius);padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
         .kvt-btn:hover{opacity:.95}
           .kvt-secondary{background:#475569}
           .kvt-new{position:relative;display:inline-block}
@@ -1622,7 +1627,23 @@ JS;
             .kvt-share-title{font-weight:600;margin-bottom:6px}
           .kvt-config-client{background:none;border:none;cursor:pointer;margin-left:8px}
           .kvt-config-client .dashicons{vertical-align:middle}
+        .kvt-page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--gap)}
+        .kvt-stage-badge{background:var(--blue);color:#fff;padding:4px 8px;border-radius:var(--radius)}
+        .kvt-tab-bar{display:flex;gap:8px;margin-bottom:var(--gap);flex-wrap:wrap}
+        .kvt-tab-btn{padding:8px 12px;border:1px solid var(--divider);background:var(--bg);border-radius:var(--radius);cursor:pointer}
+        .kvt-tab-btn.active{background:var(--blue);color:#fff}
+        .kvt-tab-content{display:none}
+        .kvt-tab-content.active{display:block}
+        .kvt-filter-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:var(--gap);align-items:center}
+        .kvt-filter-row select,.kvt-filter-row input{padding:8px;border:1px solid var(--divider);border-radius:var(--radius)}
+        .kvt-bulk-toolbar{display:flex;gap:8px;margin-bottom:var(--gap)}
+        .kvt-pill{background:var(--bg);border:1px solid var(--divider);padding:4px 8px;border-radius:var(--radius);font-size:13px}
+        .kvt-progress-pill{display:inline-flex;gap:4px}
+        .kvt-progress-step{width:16px;height:16px;border-radius:50%;background:var(--divider);display:flex;align-items:center;justify-content:center;font-size:10px}
+        .kvt-progress-step.done{background:var(--blue);color:#fff}
+        .kvt-pill-rejected{background:var(--divider);color:var(--ink-muted);padding:2px 6px;border-radius:var(--radius)}
         ";
+        $css = preg_replace('/(^|\n)\s*\.kvt/','${1}.kcvf .kvt',$css);
         wp_register_style('kvt-style', false);
         wp_enqueue_style('kvt-style');
         wp_add_inline_style('kvt-style', $css);
@@ -1774,9 +1795,12 @@ function kvtInit(){
   const activityLog = el('#kvt_activity_log_list');
   const activityTabs = document.querySelectorAll('.kvt-activity-tab');
   const activityViews = document.querySelectorAll('.kvt-activity-content');
+  const tabs = document.querySelectorAll('.kvt-tab-btn');
+  const tabViews = document.querySelectorAll('.kvt-tab-content');
   const correoFrame = el('#kvt_correo_iframe');
-  const overview = el('#kvt_stage_overview');
-  const atsBar   = el('#kvt_ats_bar');
+  const overview = el('#kvt_stat_pills');
+  const bulkToolbar = el('#kvt_bulk_toolbar');
+  const stageBadge = el('#kvt_stage_badge');
   const taskForm = el('#kvt_task_form');
   const taskCandidate = el('#kvt_task_candidate');
   const taskDate = el('#kvt_task_date');
@@ -1787,6 +1811,23 @@ function kvtInit(){
   const stageComment = el('#kvt_stage_comment');
   let stageId = '';
   let stageNext = '';
+
+  function toggleBulkToolbar(){
+    if(!bulkToolbar) return;
+    const any = els('.kvt-row-select').some(cb=>cb.checked);
+    bulkToolbar.style.display = any ? 'flex' : 'none';
+  }
+
+  tabs.forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const tgt = btn.dataset.target;
+      tabs.forEach(b=>b.classList.remove('active'));
+      tabViews.forEach(v=>v.classList.remove('active'));
+      btn.classList.add('active');
+      const view = el('#kvt_tab_'+tgt);
+      view && view.classList.add('active');
+    });
+  });
 
   const selClient  = el('#kvt_client');
   const selProcess = el('#kvt_process');
@@ -2487,7 +2528,6 @@ function kvtInit(){
   function renderData(data){
     const baseMode = !selClient.value && !selProcess.value;
     if(overview) overview.style.display = baseMode ? 'none' : 'block';
-    if(atsBar) atsBar.style.display = baseMode ? 'none' : 'flex';
     board.innerHTML = '';
     if(!baseMode){
       KVT_STATUSES.forEach(st=>{
@@ -2519,59 +2559,36 @@ function kvtInit(){
     filterTable();
   }
 
+  function progressPill(status){
+    const s = String(status||'').toLowerCase();
+    const step1 = ['ident','contact','long'];
+    const step2 = ['interview','short'];
+    const step3 = ['offer','placement'];
+    let step = 0;
+    if(step1.some(w=>s.includes(w))) step = 1;
+    else if(step2.some(w=>s.includes(w))) step = 2;
+    else if(step3.some(w=>s.includes(w))) step = 3;
+    if(s.includes('rechaz') || s.includes('decline') || s.includes('descart')) return '<span class="kvt-pill kvt-pill-rejected">Rechazado</span>';
+    let html = '<span class="kvt-progress-pill">';
+    for(let i=1;i<=3;i++){ html += '<span class="kvt-progress-step'+(i<=step?' done':'')+'"></span>'; }
+    return html+'</span>';
+  }
+
   function renderTable(rows){
     if(!tHead || !tBody) return;
-    const baseMode = !selClient.value && !selProcess.value;
-    if(baseMode){
-      tHead.innerHTML = '<th>Candidato</th><th>Current role</th>';
-      tBody.innerHTML = rows.map(r=>{
+    tHead.innerHTML = '<th><input type="checkbox" id="kvt_select_all"></th><th>Candidato</th><th>Int. No.</th><th>Etapa actual</th><th>Acciones</th>';
+    tBody.innerHTML = rows.map(r=>{
+        const id = escAttr(r.id);
         const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
-        const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>';
-        const stageInfo = r.status ? r.status + (r.meta.process ? ' - '+r.meta.process : '') : '';
-        const infoParts = ['Candidate'];
-        if(stageInfo) infoParts.push(stageInfo);
-        if(r.meta.cv_uploaded) infoParts.push(r.meta.cv_uploaded);
-        const infoLine = '<em>'+infoParts.map(p=>esc(p)).join(' / ')+'</em>';
-        return '<tr><td>'+name+'<br>'+infoLine+'</td><td>'+esc(r.meta.current_role||'')+'</td></tr>';
-      }).join('');
-    } else {
-      tHead.innerHTML = '<th>Applicant</th><th>Stages</th>';
-      tBody.innerHTML = rows.map(r=>{
-        const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
-        const icons=[];
-        const comments=Array.isArray(r.meta.client_comments)?r.meta.client_comments:[];
-        if(comments.length && (!CLIENT_VIEW || ALLOW_COMMENTS)){
-          const cm=comments[comments.length-1];
-          icons.push('<span class="kvt-name-icon kvt-alert" title="'+escAttr(cm.comment)+'">!</span>');
-        }
-        if(r.meta.next_action && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('next_action'))){
-          const parts=r.meta.next_action.split('-');
-          let overdue=false;
-          if(parts.length===3){
-            const d=new Date(parts[2],parts[1]-1,parts[0]);
-            const today=new Date();today.setHours(0,0,0,0);
-            overdue=d<=today;
-          }
-          const note=r.meta.next_action_note? ' — '+r.meta.next_action_note:'';
-          icons.push('<span class="kvt-name-icon dashicons dashicons-clock'+(overdue?' overdue':'')+'" title="'+escAttr(r.meta.next_action+note)+'"></span>');
-        }
-        const noteSrc = (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) ? r.meta.notes : (ALLOWED_FIELDS.includes('public_notes') ? r.meta.public_notes : '');
-        const snip = lastNoteSnippet(noteSrc);
-        if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
-        const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+icons.join('');
-        const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
-        let cidx = stepStatuses.indexOf(r.status||'');
-        if((r.status||'') === 'Descartados') cidx = stepStatuses.length;
-        const parts = stepStatuses.map((s,idx)=>{
-          let cls = 'kvt-stage-step';
-          if(idx < cidx) cls += ' done';
-          else if(idx === cidx) cls += ' current';
-          const label = idx < cidx ? '&#10003;' : esc(s);
-          return '<button type="button" class="'+cls+'" data-id="'+escAttr(r.id)+'" data-status="'+escAttr(s)+'" title="'+escAttr(s)+'">'+label+'</button>';
-        }).join('');
-        return '<tr><td>'+name+'</td><td class="kvt-stage-cell">'+parts+'</td></tr>';
-      }).join('');
-    }
+        const name = '<a href="#" class="kvt-row-view" data-id="'+id+'">'+nameTxt+'</a>';
+        const interviews = esc(r.meta.interviews || r.meta.int_no || '');
+        const stage = progressPill(r.status||'');
+        const actions = '<button type="button" class="kvt-row-view" data-id="'+id+'">👁</button>';
+        return '<tr data-id="'+id+'"><td><input type="checkbox" class="kvt-row-select" value="'+id+'"></td><td>'+name+'</td><td>'+interviews+'</td><td>'+stage+'</td><td>'+actions+'</td></tr>';
+    }).join('');
+    toggleBulkToolbar();
+    const selAll = el('#kvt_select_all');
+    selAll && selAll.addEventListener('change', ()=>{ els('.kvt-row-select').forEach(cb=>cb.checked = selAll.checked); toggleBulkToolbar(); });
   }
 
   function renderActivity(rows){
@@ -2656,7 +2673,7 @@ function kvtInit(){
     const sts = KVT_STATUSES.filter(s=>s !== 'Descartados');
     sts.forEach(s=>counts[s]=0);
     rows.forEach(r=>{ if(counts.hasOwnProperty(r.status)) counts[r.status]++; });
-    overview.innerHTML = sts.map(s=>esc(s)+': '+(counts[s]||0)).join(' | ');
+    overview.innerHTML = sts.map(s=>'<span class=\"kvt-pill\">'+esc(s)+': '+(counts[s]||0)+'</span>').join('');
   }
 
   function populateTaskCandidates(){
@@ -2679,6 +2696,10 @@ function kvtInit(){
     const st = (!selClient.value && !selProcess.value) ? '' : (stageSelect ? stageSelect.value : '');
     if(st){ rows = rows.filter(r=>r.status===st); }
     renderTable(rows);
+    if(stageBadge){
+      stageBadge.textContent = st;
+      stageBadge.style.display = st ? 'inline-block' : 'none';
+    }
   }
 
   function updatePager(){
@@ -2861,6 +2882,9 @@ function kvtInit(){
       if(stageModal) stageModal.style.display='flex';
     }
   });
+  tBody && tBody.addEventListener('change', e=>{
+    if(e.target.classList.contains('kvt-row-select')) toggleBulkToolbar();
+  });
 
   stageClose && stageClose.addEventListener('click', ()=>{ if(stageModal) stageModal.style.display='none'; });
   stageModal && stageModal.addEventListener('click', e=>{ if(e.target===stageModal) stageModal.style.display='none'; });
@@ -3016,6 +3040,26 @@ function kvtInit(){
         alert('Roles generados');
         refresh();
       });
+  });
+  const bulkExport = el('#kvt_bulk_export');
+  bulkExport && bulkExport.addEventListener('click', ()=>{ el('#kvt_export_format').value='csv'; syncExportHidden(); exportForm.submit(); });
+  const bulkMail = el('#kvt_bulk_mail');
+  bulkMail && bulkMail.addEventListener('click', ()=>{ btnMail && btnMail.click(); });
+  const bulkStage = el('#kvt_bulk_stage');
+  bulkStage && bulkStage.addEventListener('click', ()=>{ alert('Mover etapa no implementado'); });
+  const bulkDelete = el('#kvt_bulk_delete');
+  bulkDelete && bulkDelete.addEventListener('click', ()=>{
+    const ids = els('.kvt-row-select').filter(cb=>cb.checked).map(cb=>cb.value);
+    if(!ids.length) return;
+    if(!confirm('¿Enviar a la papelera los candidatos seleccionados?')) return;
+    ids.forEach(id=>{
+      const p=new URLSearchParams();
+      p.set('action','kvt_delete_candidate');
+      p.set('_ajax_nonce', KVT_NONCE);
+      p.set('id', id);
+      fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()});
+    });
+    refresh();
   });
   tablePrev && tablePrev.addEventListener('click', ()=>{ if(currentPage>1){ currentPage--; refresh(); } });
   tableNext && tableNext.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage++; refresh(); } });
