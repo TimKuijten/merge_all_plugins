@@ -1337,7 +1337,7 @@ cv_uploaded|Fecha de subida");
 
             // App JS
             $js = <<<'JS'
-document.addEventListener('DOMContentLoaded', function(){
+function kvtInit(){
   const el = (sel, root=document)=>root.querySelector(sel);
   const els = (sel, root=document)=>Array.from(root.querySelectorAll(sel));
   const esc = (s)=>String(s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m]));
@@ -3162,7 +3162,12 @@ document.addEventListener('DOMContentLoaded', function(){
   filterProcessOptions();
   refresh();
   updateSelectedInfo();
-});
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', kvtInit);
+} else {
+  kvtInit();
+}
 JS;
             wp_add_inline_script('kvt-app', $js, 'after');
         }
