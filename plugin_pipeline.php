@@ -1143,11 +1143,13 @@ JS;
         $cities    = $this->get_unique_meta_values(['kvt_city','city']);
 
         ob_start(); ?>
-        <div class="kvt-wrapper">
+        <div class="kvt-wrapper kvt">
             <?php if ($is_client_board): ?>
             <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
             <?php endif; ?>
             <span class="dashicons dashicons-editor-help kvt-help" title="Haz clic para ver cómo funciona el tablero"></span>
+            <div class="kvt-head">
+            <h2 class="kvt-title">Pipeline</h2>
             <div class="kvt-toolbar">
                 <div class="kvt-filters">
                     <label>Cliente
@@ -1176,6 +1178,7 @@ JS;
                     <button class="kvt-btn" type="button" id="kvt_generate_roles">Generar roles</button>
                 </div>
             </div>
+            </div>
 
             <?php if (!$is_client_board): ?>
             <div id="kvt_selected_info" style="display:none;">
@@ -1203,10 +1206,8 @@ JS;
                             <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                         </form>
                     </div>
-                    <table id="kvt_table">
-                        <thead><tr id="kvt_table_head"></tr></thead>
-                        <tbody id="kvt_table_body"></tbody>
-                    </table>
+                    <div id="kvt_table_head" class="kvt-list-head"></div>
+                    <div id="kvt_table_body" class="kvt-list"></div>
                     <div id="kvt_table_pager" class="kvt-table-pager" style="display:none;">
                         <button type="button" class="kvt-btn kvt-secondary" id="kvt_table_prev">Anterior</button>
                         <span id="kvt_table_pageinfo"></span>
@@ -1622,6 +1623,28 @@ JS;
             .kvt-share-title{font-weight:600;margin-bottom:6px}
           .kvt-config-client{background:none;border:none;cursor:pointer;margin-left:8px}
           .kvt-config-client .dashicons{vertical-align:middle}
+        :root{--ink:#0A212E;--muted:#6B7280;--line:#E5E7EB;--bg:#FFFFFF;--accent:#0A212E;--radius:8px;--shadow:0 6px 20px rgba(10,33,46,.06)}
+        .kvt *{box-sizing:border-box}
+        .kvt{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;color:var(--ink);background:var(--bg)}
+        .kvt a{color:var(--accent);text-decoration:none}
+        .kvt a:hover{text-decoration:underline}
+        .kvt-head{position:sticky;top:0;background:#fff;z-index:10;padding:12px 0 16px;border-bottom:1px solid var(--line)}
+        .kvt-title{font-weight:700;font-size:18px;margin:0 0 12px}
+        .kvt-toolbar{display:flex;gap:8px;flex-wrap:wrap}
+        .kvt-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
+        .kvt-btn:hover{box-shadow:var(--shadow)}
+        .kvt-list{margin-top:16px;border-top:1px solid var(--line)}
+        .kvt-row{display:grid;grid-template-columns:28px 1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+        .kvt-row:hover{background:rgba(10,33,46,.02)}
+        .kvt-check{display:flex;align-items:center;justify-content:center}
+        .kvt-name{font-weight:600}
+        .kvt-sub{color:var(--muted);font-size:14px}
+        .kvt-meta{display:flex;align-items:center;gap:10px;white-space:nowrap}
+        .kvt-chip{border:1px solid var(--line);padding:2px 8px;border-radius:999px;font-size:12px;color:var(--ink);background:#fff}
+        .kvt-row.is-selected{background:rgba(10,33,46,.05)}
+        .kvt-list-head{border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+        .kvt-list-head .kvt-row{background:#f9fafb;font-size:14px;font-weight:600;padding:8px 0}
+        @media (max-width:720px){.kvt-row{grid-template-columns:28px 1fr}.kvt-meta{grid-column:2;justify-content:flex-start;margin-top:4px}}
         ";
         wp_register_style('kvt-style', false);
         wp_enqueue_style('kvt-style');
@@ -2520,58 +2543,17 @@ function kvtInit(){
   }
 
   function renderTable(rows){
-    if(!tHead || !tBody) return;
-    const baseMode = !selClient.value && !selProcess.value;
-    if(baseMode){
-      tHead.innerHTML = '<th>Candidato</th><th>Current role</th>';
-      tBody.innerHTML = rows.map(r=>{
-        const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
-        const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>';
-        const stageInfo = r.status ? r.status + (r.meta.process ? ' - '+r.meta.process : '') : '';
-        const infoParts = ['Candidate'];
-        if(stageInfo) infoParts.push(stageInfo);
-        if(r.meta.cv_uploaded) infoParts.push(r.meta.cv_uploaded);
-        const infoLine = '<em>'+infoParts.map(p=>esc(p)).join(' / ')+'</em>';
-        return '<tr><td>'+name+'<br>'+infoLine+'</td><td>'+esc(r.meta.current_role||'')+'</td></tr>';
-      }).join('');
-    } else {
-      tHead.innerHTML = '<th>Applicant</th><th>Stages</th>';
-      tBody.innerHTML = rows.map(r=>{
-        const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
-        const icons=[];
-        const comments=Array.isArray(r.meta.client_comments)?r.meta.client_comments:[];
-        if(comments.length && (!CLIENT_VIEW || ALLOW_COMMENTS)){
-          const cm=comments[comments.length-1];
-          icons.push('<span class="kvt-name-icon kvt-alert" title="'+escAttr(cm.comment)+'">!</span>');
-        }
-        if(r.meta.next_action && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('next_action'))){
-          const parts=r.meta.next_action.split('-');
-          let overdue=false;
-          if(parts.length===3){
-            const d=new Date(parts[2],parts[1]-1,parts[0]);
-            const today=new Date();today.setHours(0,0,0,0);
-            overdue=d<=today;
-          }
-          const note=r.meta.next_action_note? ' — '+r.meta.next_action_note:'';
-          icons.push('<span class="kvt-name-icon dashicons dashicons-clock'+(overdue?' overdue':'')+'" title="'+escAttr(r.meta.next_action+note)+'"></span>');
-        }
-        const noteSrc = (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) ? r.meta.notes : (ALLOWED_FIELDS.includes('public_notes') ? r.meta.public_notes : '');
-        const snip = lastNoteSnippet(noteSrc);
-        if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
-        const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+icons.join('');
-        const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
-        let cidx = stepStatuses.indexOf(r.status||'');
-        if((r.status||'') === 'Descartados') cidx = stepStatuses.length;
-        const parts = stepStatuses.map((s,idx)=>{
-          let cls = 'kvt-stage-step';
-          if(idx < cidx) cls += ' done';
-          else if(idx === cidx) cls += ' current';
-          const label = idx < cidx ? '&#10003;' : esc(s);
-          return '<button type="button" class="'+cls+'" data-id="'+escAttr(r.id)+'" data-status="'+escAttr(s)+'" title="'+escAttr(s)+'">'+label+'</button>';
-        }).join('');
-        return '<tr><td>'+name+'</td><td class="kvt-stage-cell">'+parts+'</td></tr>';
-      }).join('');
+    if(!tBody) return;
+    if(tHead){
+      tHead.innerHTML = '<div class="kvt-row"><div class="kvt-check"><input type="checkbox" id="kvt_select_all" aria-label="Seleccionar todos"></div><div>Nombre</div><div class="kvt-meta">Estado</div></div>';
     }
+    tBody.innerHTML = rows.map(r=>{
+      const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
+      const companyRole = [r.client||'', r.meta.current_role||''].filter(Boolean).join(' — ');
+      const status = r.status ? '<span class="kvt-chip">'+esc(r.status)+'</span>' : '';
+      const date = r.meta.cv_uploaded ? '<span class="kvt-date">'+esc(r.meta.cv_uploaded)+'</span>' : '';
+      return '<div class="kvt-row" data-id="'+escAttr(r.id)+'"><div class="kvt-check"><input type="checkbox" class="kvt-select" aria-label="Seleccionar '+escAttr(nameTxt)+'"></div><div><a href="#" class="kvt-name kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+(companyRole?'<div class="kvt-sub">'+esc(companyRole)+'</div>':'')+'</div><div class="kvt-meta">'+status+date+'</div></div>';
+    }).join('');
   }
 
   function renderActivity(rows){
@@ -2862,6 +2844,21 @@ function kvtInit(){
     }
   });
 
+  tBody && tBody.addEventListener('change', e=>{
+    if(e.target.classList.contains('kvt-select')){
+      const row = e.target.closest('.kvt-row');
+      if(row) row.classList.toggle('is-selected', e.target.checked);
+    }
+  });
+  document.addEventListener('change', e=>{
+    if(e.target.id==='kvt_select_all'){
+      els('.kvt-select', tBody).forEach(cb=>{
+        cb.checked = e.target.checked;
+        cb.dispatchEvent(new Event('change'));
+      });
+    }
+  });
+
   stageClose && stageClose.addEventListener('click', ()=>{ if(stageModal) stageModal.style.display='none'; });
   stageModal && stageModal.addEventListener('click', e=>{ if(e.target===stageModal) stageModal.style.display='none'; });
   stageForm && stageForm.addEventListener('submit', e=>{
@@ -2992,8 +2989,19 @@ function kvtInit(){
       }
     });
   }
-  selClient && selClient.addEventListener('change', ()=>{ currentPage=1; filterProcessOptions(); refresh(); updateSelectedInfo(); });
-  selProcess && selProcess.addEventListener('change', ()=>{ currentPage=1; refresh(); updateSelectedInfo(); });
+  selClient && selClient.addEventListener('change', ()=>{
+    currentPage=1;
+    filterProcessOptions();
+    refresh();
+    updateSelectedInfo();
+    if(tableWrap) tableWrap.style.display='block';
+  });
+  selProcess && selProcess.addEventListener('change', ()=>{
+    currentPage=1;
+    refresh();
+    updateSelectedInfo();
+    if(tableWrap) tableWrap.style.display='block';
+  });
   btnMail && btnMail.addEventListener('click', ()=>{
     window.open('https://kovacictalent.com/wp-admin/admin.php?page=kt-abm','_blank','noopener');
   });
