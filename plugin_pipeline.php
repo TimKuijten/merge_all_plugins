@@ -847,6 +847,7 @@ cv_uploaded|Fecha de subida");
                             <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                         </form>
                     </div>
+                    <h2 class="kvt-table-title">Base de candidatos</h2>
                     <div id="kvt_table_head" class="kvt-list-head"></div>
                     <div id="kvt_table_body" class="kvt-list"></div>
                     <div id="kvt_table_pager" class="kvt-table-pager" style="display:none;">
@@ -1275,9 +1276,8 @@ cv_uploaded|Fecha de subida");
         .kvt-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
         .kvt-btn:hover{box-shadow:var(--shadow)}
         .kvt-list{margin-top:16px;border-top:1px solid var(--line)}
-        .kvt-row{display:grid;grid-template-columns:28px 1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+        .kvt-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
         .kvt-row:hover{background:rgba(10,33,46,.02)}
-        .kvt-check{display:flex;align-items:center;justify-content:center}
         .kvt-name{font-weight:600}
         .kvt-sub{color:var(--muted);font-size:14px}
         .kvt-meta{display:flex;align-items:center;gap:10px;white-space:nowrap}
@@ -1285,7 +1285,7 @@ cv_uploaded|Fecha de subida");
         .kvt-row.is-selected{background:rgba(10,33,46,.05)}
         .kvt-list-head{border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
         .kvt-list-head .kvt-row{background:#f9fafb;font-size:14px;font-weight:600;padding:8px 0}
-        @media (max-width:720px){.kvt-row{grid-template-columns:28px 1fr}.kvt-meta{grid-column:2;justify-content:flex-start;margin-top:4px}}
+        @media (max-width:720px){.kvt-row{grid-template-columns:1fr}.kvt-meta{grid-column:1;justify-content:flex-start;margin-top:4px}}
         ";
         wp_register_style('kvt-style', false);
         wp_enqueue_style('kvt-style');
@@ -2186,14 +2186,26 @@ function kvtInit(){
   function renderTable(rows){
     if(!tBody) return;
     if(tHead){
-      tHead.innerHTML = '<div class="kvt-row"><div class="kvt-check"><input type="checkbox" id="kvt_select_all" aria-label="Seleccionar todos"></div><div>Nombre</div><div class="kvt-meta">Estado</div></div>';
+      tHead.innerHTML = '<div class="kvt-row"><div>Candidato</div><div class="kvt-meta">Estado</div></div>';
     }
     tBody.innerHTML = rows.map(r=>{
       const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
-      const companyRole = [r.client||'', r.meta.current_role||''].filter(Boolean).join(' — ');
+      const roleCompanyArr = [r.meta.current_role||'', r.meta.current_company||''].filter(Boolean).map(esc);
+      const roleCompany = roleCompanyArr.length ? '('+roleCompanyArr.join(' + ')+')' : '';
+      const locationArr = [r.meta.country||'', r.meta.city||''].filter(Boolean).map(esc);
+      const location = locationArr.length ? locationArr.join(', ') : '';
+      const line1Parts = ['<a href="#" class="kvt-name kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'];
+      if(roleCompany) line1Parts.push(roleCompany);
+      if(location) line1Parts.push(location);
+      const line1 = line1Parts.join(' / ')+' /';
+      const clientProcessArr = [r.client||'', r.process||''].filter(Boolean).map(esc);
+      const line2Parts = ['Candidate'];
+      if(clientProcessArr.length) line2Parts.push(clientProcessArr.join(' + '));
+      if(r.status) line2Parts.push(esc(r.status));
+      if(r.meta.cv_uploaded) line2Parts.push(esc(r.meta.cv_uploaded));
+      const line2 = '<div class="kvt-sub"><em>'+line2Parts.join(' / ')+'</em></div>';
       const status = r.status ? '<span class="kvt-chip">'+esc(r.status)+'</span>' : '';
-      const date = r.meta.cv_uploaded ? '<span class="kvt-date">'+esc(r.meta.cv_uploaded)+'</span>' : '';
-      return '<div class="kvt-row" data-id="'+escAttr(r.id)+'"><div class="kvt-check"><input type="checkbox" class="kvt-select" aria-label="Seleccionar '+escAttr(nameTxt)+'"></div><div><a href="#" class="kvt-name kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+(companyRole?'<div class="kvt-sub">'+esc(companyRole)+'</div>':'')+'</div><div class="kvt-meta">'+status+date+'</div></div>';
+      return '<div class="kvt-row" data-id="'+escAttr(r.id)+'"><div>'+line1+line2+'</div><div class="kvt-meta">'+status+'</div></div>';
     }).join('');
   }
 
