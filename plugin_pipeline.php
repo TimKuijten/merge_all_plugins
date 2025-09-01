@@ -2630,8 +2630,19 @@ function kvtInit(){
       }
     });
   }
-  selClient && selClient.addEventListener('change', ()=>{ currentPage=1; filterProcessOptions(); refresh(); updateSelectedInfo(); });
-  selProcess && selProcess.addEventListener('change', ()=>{ currentPage=1; refresh(); updateSelectedInfo(); });
+  selClient && selClient.addEventListener('change', ()=>{
+    currentPage=1;
+    filterProcessOptions();
+    refresh();
+    updateSelectedInfo();
+    if(tableWrap) tableWrap.style.display='block';
+  });
+  selProcess && selProcess.addEventListener('change', ()=>{
+    currentPage=1;
+    refresh();
+    updateSelectedInfo();
+    if(tableWrap) tableWrap.style.display='block';
+  });
   btnMail && btnMail.addEventListener('click', ()=>{
     window.open('https://kovacictalent.com/wp-admin/admin.php?page=kt-abm','_blank','noopener');
   });
