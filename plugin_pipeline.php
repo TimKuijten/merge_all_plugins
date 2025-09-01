@@ -1597,7 +1597,7 @@ JS;
         .kvt-board-wrap{margin-top:40px}
         .kvt-modal{position:fixed;inset:0;background:rgba(2,6,23,.5);display:flex;align-items:center;justify-content:center;z-index:9999}
         .kvt-modal-content{background:#fff;max-width:980px;width:95%;border-radius:12px;box-shadow:0 15px 40px rgba(0,0,0,.2)}
-        #kvt_modal .kvt-modal-content{width:95vw;height:90vh;max-width:95vw;max-height:95vh;resize:both;overflow:auto}
+        #kvt_modal .kvt-modal-content{width:80vw;height:80vh;max-width:80vw;max-height:80vh;resize:both;overflow:auto}
         #kvt_info_modal .kvt-modal-content{max-height:90vh;overflow:auto}
         .kvt-modal-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb}
         .kvt-modal-body{padding:12px 16px}
@@ -1610,11 +1610,12 @@ JS;
         .kvt-modal-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
         .kvt-modal-controls select,.kvt-modal-controls input{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-modal-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;max-height:420px;overflow:auto}
-        #kvt_modal .kvt-modal-list{max-height:calc(90vh - 200px)}
+        #kvt_modal .kvt-modal-list{max-height:calc(80vh - 200px)}
         .kvt-card-mini{border:1px solid #e5e7eb;border-radius:10px;padding:10px}
           .kvt-card-mini h4{margin:0 0 6px}
           .kvt-mini-panel{display:none;margin-top:8px;border-top:1px dashed #e2e8f0;padding-top:8px}
           .kvt-mini-actions{display:flex;gap:8px;margin-top:8px}
+        .kvt-ai-meta{margin:.2em 0;color:var(--muted);font-style:italic}
         .kvt-ai-summary{margin:.2em 0;color:#64748b}
         .kvt-loading{display:flex;align-items:center;gap:8px;color:#475569}
           .kvt-loading:before{content:'';width:16px;height:16px;border:2px solid #e5e7eb;border-top-color:#0A212E;border-radius:50%;animation:kvt-spin 1s linear infinite}
@@ -2863,8 +2864,12 @@ function kvtInit(){
         if(!items.length){ aiResults.innerHTML = '<p>No hay coincidencias reales.</p>'; return; }
         aiResults.innerHTML = items.map(it=>{
           const m = it.meta||{};
+          const name = esc((m.first_name||'')+' '+(m.last_name||''));
+          const cv = m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'';
+          const roleLoc = [m.current_role||'', [m.country||'', m.city||''].map(s=>s.trim()).filter(Boolean).join(', ')].filter(Boolean).join(' / ');
           return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
-            '<h4>'+esc((m.first_name||'')+' '+(m.last_name||''))+(m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'')+'</h4>'+
+            '<h4>'+name+cv+'</h4>'+
+            (roleLoc?'<p class="kvt-ai-meta">'+esc(roleLoc)+'</p>':'')+
             '<p class="kvt-ai-summary">'+esc(it.summary||'')+'</p>'+
             '<div class="kvt-mini-actions"><button type="button" class="kvt-btn kvt-secondary kvt-mini-view">Ver perfil</button></div>'+
             '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
@@ -3135,12 +3140,13 @@ function kvtInit(){
           const cv = m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'';
           const firstLineWithCv = firstLine.replace('</a>', '</a>'+cv);
           const check = filterActive?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" aria-label="Seleccionar"></div>':'';
-          const addBtn = (!filterActive && allowAdd)?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'';
+          const addBtn = allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'';
+          const editBtn = '<button type="button" class="kvt-btn kvt-mini-view kvt-mini-edit" data-id="'+it.id+'" data-label="Editar perfil">Editar perfil</button>';
           return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
             '<div class="kvt-row'+(filterActive?' with-check':'')+'">'+
               check+
               '<div>'+firstLineWithCv+'<br>'+infoLine+'</div>'+
-              '<div class="kvt-meta">'+addBtn+'<button type="button" class="kvt-delete kvt-mini-delete" data-id="'+it.id+'" aria-label="Eliminar"></button></div>'+
+              '<div class="kvt-meta"><button type="button" class="kvt-delete kvt-mini-delete" data-id="'+it.id+'" aria-label="Eliminar"></button>'+editBtn+addBtn+'</div>'+
             '</div>'+
             '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
@@ -3149,7 +3155,7 @@ function kvtInit(){
         modalPage.textContent = 'Página '+currentPage+' de '+(pages||1);
         if(modalPrev) modalPrev.style.display = pages>1 ? 'inline-block' : 'none';
         if(modalNext) modalNext.style.display = pages>1 ? 'inline-block' : 'none';
-        if(!filterActive && allowAdd){
+        if(allowAdd){
           els('.kvt-mini-add', modalList).forEach(b=>{
             b.addEventListener('click', ()=>{
               const id = b.getAttribute('data-id');
@@ -3181,7 +3187,10 @@ function kvtInit(){
             const panel = card.querySelector('.kvt-mini-panel');
             const show = panel.style.display==='block';
             panel.style.display = show?'none':'block';
-            if(!b.classList.contains('kvt-name')) b.textContent = show?'Ver perfil':'Ocultar';
+            if(!b.classList.contains('kvt-name')){
+              const label = b.dataset.label || 'Ver perfil';
+              b.textContent = show ? label : 'Ocultar';
+            }
           });
         });
         els('.kvt-mini-delete', modalList).forEach(b=>{
@@ -3307,6 +3316,7 @@ function kvtInit(){
     }
 
   btnAdd && btnAdd.addEventListener('click', openModal);
+  openModal();
   // Create candidate modal
     const cmodal = el('#kvt_create_modal');
   const cclose = el('#kvt_create_close');
@@ -3626,7 +3636,7 @@ JS;
             }
         }
 
-        $per_page = $base_mode ? 15 : 999;
+        $per_page = $base_mode ? 10 : 999;
         $args = [
             'post_type'      => self::CPT,
             'post_status'    => 'any',
@@ -4073,7 +4083,7 @@ JS;
         $args = [
             'post_type'      => self::CPT,
             'post_status'    => 'any',
-            'posts_per_page' => 15,
+            'posts_per_page' => 10,
             'paged'          => $page,
             'no_found_rows'  => false,
         ];
