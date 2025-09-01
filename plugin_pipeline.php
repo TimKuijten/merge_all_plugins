@@ -46,6 +46,7 @@ class Kovacic_Pipeline_Visualizer {
         // Frontend UI
         add_shortcode('kvt_pipeline',            [$this, 'shortcode']);
         add_shortcode('kovacic_pipeline',        [$this, 'shortcode']); // Backwards compatibility
+        add_shortcode('kvt_company_ats',         [$this, 'company_ats_shortcode']);
         add_action('wp_enqueue_scripts',         [$this, 'enqueue_assets']);
 
         // AJAX
@@ -4798,6 +4799,114 @@ JS;
           if ($process_id) wp_remove_object_terms($id, [$process_id], self::TAX_PROCESS);
 
           wp_send_json_success(['id'=>$id]);
+      }
+
+      public function company_ats_shortcode($atts = []) {
+        ob_start();
+        ?>
+        <div class="kvt">
+          <div class="kvt-wrap">
+            <div class="kvt-header">
+              <div class="kvt-pill">Long lists<span id="kvt_pill_long"></span></div>
+              <div class="kvt-pill">Applications<span id="kvt_pill_apps"></span></div>
+              <div class="kvt-pill">Interviews<span id="kvt_pill_int"></span></div>
+              <div class="kvt-pill">Placements<span id="kvt_pill_place"></span></div>
+            </div>
+            <div class="kvt-tabs">
+              <div class="kvt-tab">Details</div>
+              <div class="kvt-tab is-active">ATS</div>
+              <div class="kvt-tab">Interview Schedule</div>
+              <div class="kvt-tab">Placements</div>
+            </div>
+            <div class="kvt-main">
+              <div>
+                <div class="kvt-toolbar">
+                  <select aria-label="Filter records"><option>All records</option></select>
+                  <button type="button" class="kvt-btn">Create new filter</button>
+                  <div class="kvt-btn"><input type="checkbox" id="kvt_select_all" aria-label="Select all"></div>
+                  <button type="button" class="kvt-btn" id="kvt_refresh">↻</button>
+                </div>
+                <table id="kvt_table" class="kvt-table">
+                  <thead>
+                    <tr>
+                      <th class="kvt-th"><input type="checkbox" id="kvt_select_all_head" aria-label="Select all"></th>
+                      <th class="kvt-th">Applicant</th>
+                      <th class="kvt-th">Int No.</th>
+                      <th class="kvt-th">Current Stage</th>
+                      <th class="kvt-th">Offer</th>
+                      <th class="kvt-th">Placement</th>
+                      <th class="kvt-th"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="kvt_table_body"></tbody>
+                </table>
+              </div>
+              <aside class="kvt-activity">
+                <div class="kvt-activity-tabs">
+                  <button class="kvt-btn" type="button">Log a Call</button>
+                  <button class="kvt-btn" type="button">Email</button>
+                  <button class="kvt-btn" type="button">New Event</button>
+                  <button class="kvt-btn" type="button">New Task</button>
+                </div>
+                <ul class="kvt-activity-list" aria-label="Upcoming &amp; Overdue"></ul>
+              </aside>
+            </div>
+          </div>
+        </div>
+        <style>
+:root{
+  --brand:#0A212E; --muted:#6B7280; --line:#E5E7EB;
+  --ok:#22C55E; --info:#2563EB; --bg:#FFFFFF;
+  --radius:10px; --shadow:0 8px 24px rgba(10,33,46,.08);
+}
+.kvt{font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--brand); background:var(--bg)}
+.kvt a{color:var(--brand); text-decoration:none} .kvt a:hover{text-decoration:underline}
+.kvt-wrap{max-width:1200px;margin:0 auto;padding:20px}
+.kvt-header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.kvt-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12px;color:var(--brand);background:#fff}
+.kvt-tabs{display:flex;gap:12px;border-bottom:1px solid var(--line);margin:8px 0 12px}
+.kvt-tab{padding:8px 10px;border-radius:8px} .kvt-tab.is-active{background:#eef2ff;color:var(--brand);font-weight:600}
+.kvt-main{display:grid;grid-template-columns:1fr 340px;gap:16px}
+.kvt-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 10px}
+.kvt-btn{border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:#fff;cursor:pointer}
+.kvt-table{width:100%;border-collapse:separate;border-spacing:0;margin-top:4px}
+.kvt-th,.kvt-td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.kvt-th{background:#0a212e; color:#fff; font-weight:700}
+.kvt-row:hover{background:rgba(10,33,46,.03)}
+.kvt-chip{border:1px solid var(--line);border-radius:999px;padding:2px 8px;font-size:12px;color:var(--brand);background:#fff}
+.kvt-stage{display:flex;gap:6px;align-items:center}
+.kvt-stage .seg{height:24px;border-radius:999px;min-width:54px;padding:0 10px;display:flex;align-items:center;justify-content:center;font-size:12px;border:1px solid var(--line);background:#f5f7fb}
+.kvt-stage .seg.done{background:var(--ok); color:#fff; border-color:var(--ok)}
+.kvt-stage .seg.current{background:var(--info); color:#fff; border-color:var(--info); font-weight:600}
+.kvt-activity{border:1px solid var(--line);border-radius:var(--radius);padding:12px}
+.kvt-activity-tabs{display:flex;gap:6px;margin-bottom:8px}
+.kvt-activity li{border-bottom:1px solid var(--line);padding:8px 0}
+@media (max-width:980px){ .kvt-main{grid-template-columns:1fr} }
+        </style>
+        <script>
+// Select all, row select state
+const root=document.querySelector('.kvt');
+if(root){
+  const selAll=root.querySelector('#kvt_select_all');
+  const boxes=[...root.querySelectorAll('.kvt-row input[type=checkbox]')];
+  selAll?.addEventListener('change',e=>boxes.forEach(b=>{b.checked=e.target.checked; b.closest('tr').classList.toggle('is-selected', b.checked)}));
+  boxes.forEach(b=>b.addEventListener('change',()=>b.closest('tr').classList.toggle('is-selected', b.checked)));
+
+  function paintStages(row,current){
+    const order=['Sourcing','Long list','Shortlist','Interview','Offer','Placement'];
+    [...row.querySelectorAll('.seg')].forEach(seg=>{
+      const idx=order.indexOf(seg.dataset.stage);
+      const cur=order.indexOf(current);
+      seg.classList.toggle('done', idx>=0 && idx<cur);
+      seg.classList.toggle('current', idx===cur);
+    });
+  }
+  root.querySelectorAll('tr.kvt-row').forEach(tr=>paintStages(tr, tr.dataset.currentStage||'Sourcing'));
+}
+// Re-bind your existing click handlers (CV, profile, comments, export) to the new selectors here.
+        </script>
+        <?php
+        return ob_get_clean();
       }
 
       /* Export */
