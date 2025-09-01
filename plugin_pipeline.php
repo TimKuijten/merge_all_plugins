@@ -471,11 +471,24 @@ cv_uploaded|Fecha de subida");
                             if(!j.success){ alert(j.data && j.data.msg ? j.data.msg : 'Error al subir CV'); return; }
                             if(urlFld) urlFld.value = j.data.url || '';
                             if(dateFld && !dateFld.value) dateFld.value = j.data.date || '';
+                            if(j.data.fields){
+                                const f = j.data.fields;
+                                const map = {
+                                    first_name: document.querySelector('input[name="kvt_first_name"]'),
+                                    last_name: document.querySelector('input[name="kvt_last_name"]'),
+                                    email: document.querySelector('input[name="kvt_email"]'),
+                                    phone: document.querySelector('input[name="kvt_phone"]'),
+                                    country: document.querySelector('input[name="kvt_country"]'),
+                                    city: document.querySelector('input[name="kvt_city"]'),
+                                    current_role: document.querySelector('input[name="kvt_current_role"]'),
+                                };
+                                Object.keys(map).forEach(k=>{ if(map[k] && f[k]) map[k].value = f[k]; });
+                            }
                             label.textContent = 'Ningún archivo seleccionado';
                             input.value = '';
                             alert('CV subido y guardado.');
-                        })
-                        .catch(()=>{ upload.disabled = false; alert('Error de red.'); });
+                            })
+                            .catch(()=>{ upload.disabled = false; alert('Error de red.'); });
                 });
             }
         });
@@ -1200,7 +1213,7 @@ cv_uploaded|Fecha de subida");
         .kvt-activity-list li{margin-bottom:4px}
         .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-stage-cell{display:flex;align-items:center;font-size:12px;flex-wrap:nowrap}
-        .kvt-stage-step{display:inline-flex;align-items:center;justify-content:center;width:120px;padding:4px 12px;background:#e5e7eb;color:#6b7280;white-space:nowrap;box-sizing:border-box;border:none;cursor:pointer}
+        .kvt-stage-step{display:inline-flex;align-items:center;justify-content:center;width:120px;flex:0 0 120px;padding:4px 12px;background:#e5e7eb;color:#6b7280;white-space:nowrap;box-sizing:border-box;border:none;cursor:pointer}
         .kvt-stage-step.done{background:#22c55e;color:#fff}
         .kvt-stage-step.current{background:#3b82f6;color:#fff}
         .kvt-stage-overview{margin:8px;padding:0 8px;font-size:14px}
@@ -1971,8 +1984,16 @@ document.addEventListener('DOMContentLoaded', function(){
       if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo subir el CV.');
       if (urlInput) urlInput.value = j.data.url || '';
       if (dateInput) dateInput.value = j.data.date || '';
-      const roleInput = card.querySelectorAll('dl .kvt-input')[6];
-      if(roleInput && j.data.current_role) roleInput.value = j.data.current_role;
+      if(j.data.fields){
+        const inputs = card.querySelectorAll('dl .kvt-input');
+        if(inputs[0] && j.data.fields.first_name) inputs[0].value = j.data.fields.first_name;
+        if(inputs[1] && j.data.fields.last_name) inputs[1].value = j.data.fields.last_name;
+        if(inputs[2] && j.data.fields.email) inputs[2].value = j.data.fields.email;
+        if(inputs[3] && j.data.fields.phone) inputs[3].value = j.data.fields.phone;
+        if(inputs[4] && j.data.fields.country) inputs[4].value = j.data.fields.country;
+        if(inputs[5] && j.data.fields.city) inputs[5].value = j.data.fields.city;
+        if(inputs[6] && j.data.fields.current_role) inputs[6].value = j.data.fields.current_role;
+      }
       alert('CV subido y guardado.');
       refresh();
     });
@@ -3267,7 +3288,7 @@ JS;
             'numberposts' => -1,
         ]);
         foreach ($posts as $p) {
-            $this->update_current_role_from_cv($p->ID, $key);
+            $this->update_profile_from_cv($p->ID, $key);
         }
         wp_send_json_success(['ok' => true]);
     }
@@ -3536,9 +3557,9 @@ JS;
             $txt_url = get_post_meta($id, 'kvt_cv_text_url', true);
         }
 
-        // Extract current role using AI
-        $role = $this->update_current_role_from_cv($id);
-        wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url,'current_role'=>$role]);
+        // Extract profile details using AI
+        $fields = $this->update_profile_from_cv($id);
+        wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url,'fields'=>$fields,'current_role'=>($fields['current_role']??'')]);
     }
 
     public function ajax_list_profiles() {
@@ -4158,6 +4179,71 @@ JS;
             update_post_meta($post_id, 'current_role', $role);
         }
         return $role;
+    }
+
+    private function openai_extract_profile_fields($key, $cv_text) {
+        $req = [
+            'model' => 'gpt-4o-mini',
+            'messages' => [
+                ['role' => 'system', 'content' => 'Eres un asistente que extrae del CV nombre, apellidos, email, teléfono, país actual, ciudad actual, puesto y empresa actuales. Devuelve JSON con las claves "first_name","last_name","email","phone","country","city","role" y "company". Si falta algún dato devuelve campo vacío.'],
+                ['role' => 'user', 'content' => "CV:\n$cv_text"],
+            ],
+            'max_tokens' => 300,
+            'response_format' => ['type' => 'json_object'],
+        ];
+        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => wp_json_encode($req),
+            'timeout' => 60,
+        ]);
+        if (is_wp_error($response)) return [];
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (!isset($body['choices'][0]['message']['content'])) return [];
+        $data = json_decode($body['choices'][0]['message']['content'], true);
+        return is_array($data) ? $data : [];
+    }
+
+    private function update_profile_from_cv($post_id, $key = null) {
+        if (!$key) $key = get_option(self::OPT_OPENAI_KEY, '');
+        if (!$key) return [];
+        $cv_text = $this->get_candidate_cv_text($post_id);
+        if (!$cv_text) return [];
+        $data = $this->openai_extract_profile_fields($key, $cv_text);
+        if (!is_array($data)) return [];
+
+        $updated = [];
+        $map = [
+            'first_name' => 'kvt_first_name',
+            'last_name'  => 'kvt_last_name',
+            'email'      => 'kvt_email',
+            'phone'      => 'kvt_phone',
+            'country'    => 'kvt_country',
+            'city'       => 'kvt_city',
+        ];
+        foreach ($map as $field => $meta) {
+            $val = isset($data[$field]) ? trim($data[$field]) : '';
+            if ($val === '') continue;
+            if ($this->meta_get_compat($post_id, $meta, [substr($meta,4)]) === '') {
+                update_post_meta($post_id, $meta, $val);
+                update_post_meta($post_id, substr($meta,4), $val);
+                $updated[$field] = $val;
+            }
+        }
+        $role = isset($data['role']) ? trim($data['role']) : '';
+        $company = isset($data['company']) ? trim($data['company']) : '';
+        $role_combined = '';
+        if ($role && $company) $role_combined = $role . ' at ' . $company;
+        elseif ($role) $role_combined = $role;
+        elseif ($company) $role_combined = $company;
+        if ($role_combined && $this->meta_get_compat($post_id, 'kvt_current_role', ['current_role']) === '') {
+            update_post_meta($post_id, 'kvt_current_role', $role_combined);
+            update_post_meta($post_id, 'current_role', $role_combined);
+            $updated['current_role'] = $role_combined;
+        }
+        return $updated;
     }
 
     private function openai_match_summary($key, $desc, $cv_text) {
