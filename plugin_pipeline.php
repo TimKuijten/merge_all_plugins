@@ -837,6 +837,10 @@ cv_uploaded|Fecha de subida");
                         <ul id="kvt_tasks_upcoming" class="kvt-activity-list"></ul>
                     </div>
                     <div class="kvt-activity-group">
+                        <h4>Notificaciones</h4>
+                        <ul id="kvt_notifications" class="kvt-activity-list"></ul>
+                    </div>
+                    <div class="kvt-activity-group">
                         <h4>Añadir tarea</h4>
                         <form id="kvt_task_form">
                             <select id="kvt_task_candidate"></select>
@@ -1136,7 +1140,7 @@ cv_uploaded|Fecha de subida");
         .kvt-card .kvt-meta{display:none}
         .kvt-card .kvt-expand{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
         .kvt-card .kvt-expand button{background:#eef2f7;color:#0A212E;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;font-weight:600}
-        .kvt-card .kvt-panel{display:none;margin-top:8px;border-top:1px dashed #e2e8f0;padding-top:8px}
+        .kvt-card .kvt-panel{display:none;margin-top:8px;border-top:1px dashed #e2e8f0;padding-top:8px;max-height:70vh;overflow:auto}
         .kvt-card .kvt-panel dl{display:grid;grid-template-columns:140px 1fr;gap:6px 10px;font-size:13px}
         .kvt-card .kvt-panel dt{font-weight:700;color:#0A212E}
           .kvt-card .kvt-panel dd{margin:0}
@@ -1177,18 +1181,19 @@ cv_uploaded|Fecha de subida");
         .kvt-stage-step.current{background:#3b82f6;color:#fff}
         .kvt-stage-overview{margin:8px;padding:0 8px;font-size:14px}
         .kvt-name-icon{margin-left:4px;font-size:14px;vertical-align:middle;cursor:default}
-        .kvt-name-icon.kvt-alert{color:#f59e0b;font-weight:700;font-size:18px}
+        .kvt-name-icon.kvt-alert{color:#dc2626;font-weight:700;font-size:18px}
         .kvt-name-icon.dashicons-clock{color:#000}
         .kvt-name-icon.dashicons-clock.overdue{color:#dc2626}
         .kvt-task-done,.kvt-task-delete{margin-left:8px;cursor:pointer}
         .kvt-task-done{color:#16a34a}
         .kvt-task-delete{color:#dc2626}
-        .kvt-profile-activity{margin-top:16px;font-size:13px}
+        .kvt-profile-activity{margin-bottom:16px;font-size:13px}
         .kvt-profile-activity ul{list-style:disc;margin-left:20px}
         .kvt-board-wrap{margin-top:40px}
         .kvt-modal{position:fixed;inset:0;background:rgba(2,6,23,.5);display:flex;align-items:center;justify-content:center;z-index:9999}
         .kvt-modal-content{background:#fff;max-width:980px;width:95%;border-radius:12px;box-shadow:0 15px 40px rgba(0,0,0,.2)}
         #kvt_modal .kvt-modal-content{width:95vw;height:90vh;max-width:95vw;max-height:95vh;resize:both;overflow:auto}
+        #kvt_info_modal .kvt-modal-content{max-height:90vh;overflow:auto}
         .kvt-modal-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb}
         .kvt-modal-body{padding:12px 16px}
         .kvt-modal-close{background:none;border:none;cursor:pointer}
@@ -1362,6 +1367,7 @@ document.addEventListener('DOMContentLoaded', function(){
   const stageSelect = el('#kvt_stage_filter');
   const activityDue = el('#kvt_tasks_due');
   const activityUpcoming = el('#kvt_tasks_upcoming');
+  const activityNotify = el('#kvt_notifications');
   const overview = el('#kvt_stage_overview');
   const taskForm = el('#kvt_task_form');
   const taskCandidate = el('#kvt_task_candidate');
@@ -1796,7 +1802,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
     const saveBtn = '<button type="button" class="kvt-save-profile">Guardar perfil</button>';
 
-    return '<dl>'+dl+'</dl>'+notes+publicNotes+saveBtn+logSection;
+    return logSection+'<dl>'+dl+'</dl>'+notes+publicNotes+saveBtn;
   }
 
   function enableProfileEditHandlers(card, id){
@@ -2108,9 +2114,9 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   function renderActivity(rows){
-    if(!activityDue || !activityUpcoming) return;
+    if(!activityDue || !activityUpcoming || !activityNotify) return;
     const today = new Date(); today.setHours(0,0,0,0);
-    const due=[]; const upcoming=[];
+    const due=[]; const upcoming=[]; const notifs=[];
     rows.forEach(r=>{
       const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
       if(r.meta.next_action){
@@ -2122,9 +2128,18 @@ document.addEventListener('DOMContentLoaded', function(){
           (d <= today ? due : upcoming).push(item);
         }
       }
+      if(Array.isArray(r.meta.client_comments)){
+        r.meta.client_comments.forEach((cc,idx)=>{
+          if(!cc.dismissed){
+            const item = '<li data-id="'+escAttr(r.id)+'" data-index="'+idx+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a> — '+esc(cc.comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
+            notifs.push(item);
+          }
+        });
+      }
     });
     activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
     activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
+    activityNotify.innerHTML = notifs.join('') || '<li>No hay notificaciones</li>';
   }
 
   function renderOverview(rows){
@@ -2389,8 +2404,20 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
 
+  function handleNotificationClick(e){
+    const li = e.target.closest('li');
+    if(!li) return;
+    if(e.target.classList.contains('kvt-comment-dismiss')){
+      const id = li.dataset.id;
+      const idx = li.dataset.index;
+      dismissComment(id, idx);
+      refresh();
+    }
+  }
+
   activityDue && activityDue.addEventListener('click', handleTaskClick);
   activityUpcoming && activityUpcoming.addEventListener('click', handleTaskClick);
+  activityNotify && activityNotify.addEventListener('click', handleNotificationClick);
 
   searchInput && searchInput.addEventListener('input', filterTable);
   stageSelect && stageSelect.addEventListener('change', filterTable);
