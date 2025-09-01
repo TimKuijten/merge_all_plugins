@@ -1361,7 +1361,7 @@ JS;
               </div>
               <div id="kvt_tab_candidates" class="kvt-tab-panel active kvt-base">
                 <div class="kvt-head">
-                  <h3 class="kvt-title">Candidatos</h3>
+                  <h3 class="kvt-title">Base de candidatos</h3>
                   <div class="kvt-toolbar">
                     <label>País
                       <select id="kvt_modal_country" multiple size="4">
@@ -1640,17 +1640,14 @@ JS;
           .kvt-base .kvt-list{margin-top:16px;border-top:1px solid var(--line);max-height:420px;overflow:auto}
           #kvt_modal .kvt-base .kvt-list{max-height:calc(90vh - 200px)}
           .kvt-base .kvt-card-mini{border:none;padding:0;border-radius:0}
-          .kvt-base .kvt-row{display:grid;grid-template-columns:28px 1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+          .kvt-base .kvt-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
           .kvt-base .kvt-row:hover{background:rgba(10,33,46,.02)}
-          .kvt-base .kvt-row-head{background:var(--bg);color:var(--muted);font-size:14px}
-          .kvt-base .kvt-check{display:flex;align-items:center;justify-content:center}
           .kvt-base .kvt-name{font-weight:600}
           .kvt-base .kvt-sub{color:var(--muted);font-size:14px;overflow:hidden;text-overflow:ellipsis}
           .kvt-base .kvt-meta{display:flex;align-items:center;gap:10px;white-space:nowrap}
           .kvt-base .kvt-chip{border:1px solid var(--line);padding:2px 8px;border-radius:999px;font-size:12px;color:var(--ink);background:#fff}
-          .kvt-base .kvt-row.is-selected{background:rgba(10,33,46,.05)}
-          .kvt-base .kvt-mini-panel{margin:8px 0 8px 40px}
-          @media(max-width:720px){.kvt-base .kvt-row{grid-template-columns:28px 1fr}.kvt-base .kvt-meta{grid-column:2;justify-content:flex-start;margin-top:4px}}
+          .kvt-base .kvt-mini-panel{margin:8px 0}
+          @media(max-width:720px){.kvt-base .kvt-row{grid-template-columns:1fr}.kvt-base .kvt-meta{grid-column:1;justify-content:flex-start;margin-top:4px}}
         ";
         wp_register_style('kvt-style', false);
         wp_enqueue_style('kvt-style');
@@ -2515,7 +2512,10 @@ function kvtInit(){
 
   function renderData(data){
     const baseMode = !selClient.value && !selProcess.value;
-    if(overview) overview.style.display = baseMode ? 'none' : 'block';
+    if(overview){
+      overview.style.display = 'block';
+      overview.innerHTML = baseMode ? '<h3 class="kvt-title">Base de candidatos</h3>' : '';
+    }
     if(atsBar) atsBar.style.display = baseMode ? 'none' : 'flex';
     board.innerHTML = '';
     if(!baseMode){
@@ -2552,16 +2552,25 @@ function kvtInit(){
     if(!tHead || !tBody) return;
     const baseMode = !selClient.value && !selProcess.value;
     if(baseMode){
-      tHead.innerHTML = '<th>Candidato</th><th>Current role</th>';
+      tHead.innerHTML = '<th>Candidato / Puesto actual / Ubicación</th>';
       tBody.innerHTML = rows.map(r=>{
-        const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
+        const m = r.meta || {};
+        const nameTxt = esc(((m.first_name||'')+' '+(m.last_name||'')).trim());
         const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>';
-        const stageInfo = r.status ? r.status + (r.meta.process ? ' - '+r.meta.process : '') : '';
-        const infoParts = ['Candidate'];
-        if(stageInfo) infoParts.push(stageInfo);
-        if(r.meta.cv_uploaded) infoParts.push(r.meta.cv_uploaded);
-        const infoLine = '<em>'+infoParts.map(p=>esc(p)).join(' / ')+'</em>';
-        return '<tr><td>'+name+'<br>'+infoLine+'</td><td>'+esc(r.meta.current_role||'')+'</td></tr>';
+        const firstParts = [name];
+        if(m.current_role) firstParts.push('('+esc(m.current_role)+')');
+        const loc = [m.country, m.city].filter(Boolean).map(esc).join(', ');
+        if(loc) firstParts.push(loc);
+        const firstLine = firstParts.join(' / ');
+        const infoParts = ['Candidato/a'];
+        if(m.client || m.process){
+          const cp = [m.client, m.process].filter(Boolean).map(esc).join(' + ');
+          if(cp) infoParts.push(cp);
+        }
+        if(r.status) infoParts.push(esc(r.status));
+        if(m.cv_uploaded) infoParts.push(esc(m.cv_uploaded));
+        const infoLine = '<em>'+infoParts.join(' / ')+'</em>';
+        return '<tr><td>'+firstLine+'<br>'+infoLine+'</td></tr>';
       }).join('');
     } else {
       tHead.innerHTML = '<th>Applicant</th><th>Stages</th>';
@@ -3116,19 +3125,26 @@ function kvtInit(){
         const procSel = selProcess && selProcess.value;
         const cliSel  = selClient && selClient.value;
         const allowAdd = !!(procSel && (cliSel || getClientIdForProcess(procSel)));
-        let html = '<div class="kvt-row kvt-row-head"><div class="kvt-check"><input type="checkbox" id="kvt_modal_select_all" aria-label="Seleccionar todos"></div><div></div><div class="kvt-meta"></div></div>';
-        html += items.map(it=>{
+        let html = items.map(it=>{
           const m = it.meta||{};
           const name = esc((m.first_name||'')+' '+(m.last_name||''));
           const role = esc(m.current_role||'');
-          const tags = m.tags?m.tags.split(',').map(t=>'<span class="kvt-chip">'+esc(t.trim())+'</span>').join(''):'';
+          const loc = [m.country||'', m.city||''].map(s=>s.trim()).filter(Boolean).map(esc).join(', ');
+          const firstParts = ['<a href="#" class="kvt-name kvt-mini-view" data-id="'+it.id+'">'+name+'</a>'];
+          if(role) firstParts.push('('+role+')');
+          if(loc) firstParts.push(loc);
+          const firstLine = firstParts.join(' / ');
           const date = esc(m.cv_uploaded||'');
+          const infoParts = ['Candidato/a'];
+          if(date) infoParts.push(date);
+          const infoLine = '<em>'+infoParts.join(' / ')+'</em>';
+          const tags = m.tags?m.tags.split(',').map(t=>'<span class="kvt-chip">'+esc(t.trim())+'</span>').join(''):'';
           const cv = m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'';
+          const firstLineWithCv = firstLine.replace('</a>', '</a>'+cv);
           return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
             '<div class="kvt-row">'+
-              '<div class="kvt-check"><input type="checkbox" class="kvt-row-select" aria-label="Seleccionar"></div>'+
-              '<div><a href="#" class="kvt-name kvt-mini-view" data-id="'+it.id+'">'+name+'</a>'+cv+(role?'<div class="kvt-sub">'+role+'</div>':'')+'</div>'+
-              '<div class="kvt-meta">'+tags+(date?'<span class="kvt-date">'+date+'</span>':'')+(allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'')+'<button type="button" class="kvt-delete kvt-mini-delete" data-id="'+it.id+'" aria-label="Eliminar"></button>'+'</div>'+
+              '<div>'+firstLineWithCv+'<br>'+infoLine+'</div>'+
+              '<div class="kvt-meta">'+tags+(allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'')+'<button type="button" class="kvt-delete kvt-mini-delete" data-id="'+it.id+'" aria-label="Eliminar"></button></div>'+
             '</div>'+
             '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
@@ -3137,23 +3153,6 @@ function kvtInit(){
         modalPage.textContent = 'Página '+currentPage+' de '+(pages||1);
         if(modalPrev) modalPrev.style.display = pages>1 ? 'inline-block' : 'none';
         if(modalNext) modalNext.style.display = pages>1 ? 'inline-block' : 'none';
-        const selectAll = el('#kvt_modal_select_all', modalList);
-        const rowChecks = els('.kvt-row-select', modalList);
-        if(selectAll){
-          selectAll.addEventListener('change', ()=>{
-            rowChecks.forEach(cb=>{
-              cb.checked = selectAll.checked;
-              const row = cb.closest('.kvt-row');
-              if(row) row.classList.toggle('is-selected', cb.checked);
-            });
-          });
-        }
-        rowChecks.forEach(cb=>{
-          cb.addEventListener('change', ()=>{
-            const row = cb.closest('.kvt-row');
-            if(row) row.classList.toggle('is-selected', cb.checked);
-          });
-        });
         if(allowAdd){
           els('.kvt-mini-add', modalList).forEach(b=>{
             b.addEventListener('click', ()=>{
