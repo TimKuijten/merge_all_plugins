@@ -21,6 +21,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('init',                       [$this, 'register_types']);
         add_action('admin_init',                 [$this, 'register_settings']);
         add_action('admin_menu',                 [$this, 'admin_menu']);
+        add_action('admin_enqueue_scripts',      [$this, 'admin_assets']);
 
         // Term meta: Proceso -> Cliente
         add_action(self::TAX_PROCESS . '_add_form_fields',  [$this, 'process_add_fields']);
@@ -173,7 +174,26 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_OPENAI_KEY);
     }
     public function admin_menu() {
-        add_options_page('Kovacic Pipeline','Kovacic Pipeline','manage_options','kvt-settings',[$this,'settings_page']);
+        global $admin_page_hooks;
+        if (!isset($admin_page_hooks['kovacic'])) {
+            add_menu_page('Kovacic', 'Kovacic', 'manage_options', 'kovacic', '__return_null', 'dashicons-businessman', 3);
+        }
+        add_submenu_page('kovacic', __('ATS', 'kovacic'), __('ATS', 'kovacic'), 'manage_options', 'kvt-tracker', [$this, 'tracker_page']);
+        add_submenu_page('kovacic', __('Ajustes', 'kovacic'), __('Ajustes', 'kovacic'), 'manage_options', 'kvt-settings', [$this, 'settings_page']);
+    }
+
+    public function tracker_page() {
+        require __DIR__ . '/page-tracker.php';
+    }
+
+    public function admin_assets($hook) {
+        if (strpos($hook, 'kvt-tracker') === false) return;
+        wp_enqueue_style('kvt-tracker', plugin_dir_url(__FILE__) . 'css/tracker.css', [], '1.0');
+        wp_enqueue_script('kvt-tracker', plugin_dir_url(__FILE__) . 'js/tracker.js', [], '1.0', true);
+        wp_localize_script('kvt-tracker', 'KVT', [
+            'ajaxurl' => admin_url('admin-ajax.php'),
+            'nonce'   => wp_create_nonce('kvt_nonce'),
+        ]);
     }
     public function settings_page() {
         $statuses = get_option(self::OPT_STATUSES, "");
