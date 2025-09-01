@@ -14,6 +14,7 @@ class KT_AIBulkMailer_ES {
     const ACCENT       = '#0A212E';
     const DEFAULT_FROM = 'timkuijten@kovacictalent.com';
     const SENT_LOG     = 'kt_abm_sent_log';
+    const CAPABILITY   = 'edit_posts';
 
     public function __construct() {
         add_action('admin_menu',               [$this, 'menu']);
@@ -29,7 +30,7 @@ class KT_AIBulkMailer_ES {
         add_menu_page(
             __('Correo con IA', 'kt-abm'),
             __('Correo con IA', 'kt-abm'),
-            'manage_options',
+            self::CAPABILITY,
             'kt-abm',
             [$this, 'page'],
             'dashicons-email-alt2',
@@ -40,7 +41,7 @@ class KT_AIBulkMailer_ES {
             'kt-abm',
             __('Correos enviados', 'kt-abm'),
             __('Correos enviados', 'kt-abm'),
-            'manage_options',
+            self::CAPABILITY,
             'kt-abm-sent',
             [$this, 'sent_page']
         );
@@ -115,8 +116,9 @@ class KT_AIBulkMailer_ES {
         .kt-cols-4{grid-template-columns:2fr 1fr 1fr 1fr}
         .kt-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
         .kt-input, .kt-textarea{width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px}
-        .kt-table{width:100%;border-collapse:separate;border-spacing:0}
-        .kt-table th, .kt-table td{padding:8px 10px;border-bottom:1px solid #eef0f3;text-align:left}
+        .kt-table-wrap{width:100%;overflow-x:auto}
+        .kt-table{width:max-content;border-collapse:separate;border-spacing:0;min-width:1000px}
+        .kt-table th, .kt-table td{padding:8px 10px;border-bottom:1px solid #eef0f3;text-align:left;white-space:nowrap}
         .kt-muted{color:#6b7280}
         .kt-tag{display:inline-block;padding:6px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#f3f4f6}
         .kt-preview{white-space:pre-wrap;border:1px dashed #e5e7eb;border-radius:12px;padding:12px;background:#fcfcfd;min-height:100px}
@@ -680,7 +682,7 @@ function ktDownloadEMLZip(){
     }
 
     public function page() {
-        if (!current_user_can('manage_options')) return;
+        if (!current_user_can(self::CAPABILITY)) return;
         $o = get_option(self::OPTION_KEY, []);
         $smtp_options = get_option('smtp_helper_options', []);
         $from_default = $smtp_options['from_email'] ?? ($o['from_email'] ?? self::DEFAULT_FROM);
@@ -835,14 +837,16 @@ function ktDownloadEMLZip(){
                         <button class="kt-btn" style="margin-left:8px" onclick="ktSelectAll(false)">Limpiar</button>
                         <span class="kt-muted" id="ktSel" style="margin-left:8px">0 seleccionados</span>
                     </div>
-                    <table class="kt-table">
-                        <thead>
-                            <tr>
-                                <th></th><th>Email</th><th>Nombre</th><th>Apellido</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody id="ktTbody"></tbody>
-                    </table>
+                    <div class="kt-table-wrap">
+                        <table class="kt-table">
+                            <thead>
+                                <tr>
+                                    <th></th><th>Email</th><th>Nombre</th><th>Apellido</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ktTbody"></tbody>
+                        </table>
+                    </div>
                     <div class="kt-row" style="margin-top:10px">
                         <button class="kt-btn" onclick="ktPrevPage()">Anterior</button>
                         <button class="kt-btn" style="margin-left:8px" onclick="ktNextPage()">Siguiente</button>
@@ -878,7 +882,7 @@ function ktDownloadEMLZip(){
     // ---------- AJAX: IA template ----------
     public function ajax_generate() {
         check_ajax_referer(self::NONCE_KEY);
-        if (!current_user_can('manage_options')) wp_send_json_error(['error' => 'No autorizado'], 403);
+        if (!current_user_can(self::CAPABILITY)) wp_send_json_error(['error' => 'No autorizado'], 403);
 
         $prompt = isset($_POST['prompt']) ? wp_unslash($_POST['prompt']) : '';
         if (!$prompt) wp_send_json_error(['error' => 'Falta el prompt'], 400);
@@ -940,7 +944,7 @@ function ktDownloadEMLZip(){
     }
 
     public function sent_page() {
-        if (!current_user_can('manage_options')) return;
+        if (!current_user_can(self::CAPABILITY)) return;
         $log = get_option(self::SENT_LOG, []);
         if (!is_array($log)) $log = [];
         $log = array_reverse($log);
@@ -951,7 +955,7 @@ function ktDownloadEMLZip(){
 
         echo '<div class="wrap">';
         echo '<h1 class="kt-title">'.esc_html__('Correos enviados', 'kt-abm').'</h1>';
-        echo '<table class="kt-table"><thead><tr>';
+        echo '<div class="kt-table-wrap"><table class="kt-table"><thead><tr>';
         echo '<th>'.esc_html__('Fecha', 'kt-abm').'</th>';
         echo '<th>'.esc_html__('Para', 'kt-abm').'</th>';
         echo '<th>'.esc_html__('Asunto', 'kt-abm').'</th>';
@@ -967,7 +971,7 @@ function ktDownloadEMLZip(){
         } else {
             echo '<tr><td colspan="3">'.esc_html__('No hay correos enviados todavía.', 'kt-abm').'</td></tr>';
         }
-        echo '</tbody></table>';
+        echo '</tbody></table></div>';
 
         $total_pages = ceil($total / $per_page);
         if ($total_pages > 1) {
@@ -989,7 +993,7 @@ function ktDownloadEMLZip(){
     // ---------- AJAX: Send emails ----------
     public function ajax_send() {
         check_ajax_referer(self::NONCE_KEY);
-        if (!current_user_can('manage_options')) wp_send_json_error(['error' => 'No autorizado'], 403);
+        if (!current_user_can(self::CAPABILITY)) wp_send_json_error(['error' => 'No autorizado'], 403);
 
         $payload_json = isset($_POST['payload']) ? wp_unslash($_POST['payload']) : '';
         if (!$payload_json) wp_send_json_error(['error' => 'Falta el payload'], 400);
@@ -1085,7 +1089,7 @@ function ktDownloadEMLZip(){
     // ---------- AJAX: Generate EML ZIP ----------
     public function ajax_eml_zip() {
         check_ajax_referer(self::NONCE_KEY);
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can(self::CAPABILITY)) {
             status_header(403);
             echo 'No autorizado';
             exit;
@@ -1163,7 +1167,7 @@ function ktDownloadEMLZip(){
     // ---------- AJAX: Import Candidate Base ----------
     public function ajax_import_candidates() {
         check_ajax_referer(self::NONCE_KEY);
-        if (!current_user_can('manage_options')) wp_send_json_error(['error' => 'No autorizado'], 403);
+        if (!current_user_can(self::CAPABILITY)) wp_send_json_error(['error' => 'No autorizado'], 403);
 
         $q = new WP_Query([
             'post_type'      => 'kvt_candidate',
