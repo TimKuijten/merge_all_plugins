@@ -183,17 +183,344 @@ cv_uploaded|Fecha de subida");
     }
 
     public function tracker_page() {
-        require __DIR__ . '/page-tracker.php';
+        ?>
+        <div class="wrap kcvf">
+          <header class="k-header">
+            <div>
+              <h1 class="k-title"><?php esc_html_e('Seguimiento de Candidatos', 'kovacic'); ?></h1>
+              <span class="k-pill k-pill--blue"><?php esc_html_e('Etapa actual', 'kovacic'); ?></span>
+            </div>
+            <div class="k-badges">
+              <span class="k-pill"><?php esc_html_e('Lista larga', 'kovacic'); ?>: <span id="stat-long">0</span></span>
+              <span class="k-pill k-pill--green"><?php esc_html_e('Entrevistas', 'kovacic'); ?>: <span id="stat-interviews">0</span></span>
+              <span class="k-pill k-pill--blue"><?php esc_html_e('Ofertas', 'kovacic'); ?>: <span id="stat-offers">0</span></span>
+            </div>
+          </header>
+          <nav class="k-tabs" role="tablist">
+            <div class="k-tab" aria-selected="false"><?php esc_html_e('Detalles', 'kovacic'); ?></div>
+            <div class="k-tab" aria-selected="true"><?php esc_html_e('ATS', 'kovacic'); ?></div>
+            <div class="k-tab" aria-selected="false"><?php esc_html_e('Agenda de entrevistas', 'kovacic'); ?></div>
+            <div class="k-tab" aria-selected="false"><?php esc_html_e('Contrataciones', 'kovacic'); ?></div>
+            <div class="k-tab" aria-selected="false"><?php esc_html_e('Notas', 'kovacic'); ?></div>
+            <div class="k-tab" aria-selected="false"><?php esc_html_e('Candidaturas', 'kovacic'); ?></div>
+          </nav>
+          <section class="k-tabpanel">
+            <div class="k-filters">
+              <input type="search" id="k-search" class="k-input" placeholder="<?php esc_attr_e('Buscar', 'kovacic'); ?>">
+              <select id="k-filter-client" class="k-select"><option value=""><?php esc_html_e('Cliente', 'kovacic'); ?></option></select>
+              <select id="k-filter-process" class="k-select"><option value=""><?php esc_html_e('Proceso', 'kovacic'); ?></option></select>
+              <select id="k-filter-stage" class="k-select"><option value=""><?php esc_html_e('Etapa', 'kovacic'); ?></option></select>
+              <button class="btn btn--ghost" id="k-add-filter"><?php esc_html_e('Crear nuevo filtro', 'kovacic'); ?></button>
+              <button class="btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
+            </div>
+            <div class="k-bulkbar" id="k-bulkbar" hidden>
+              <div class="k-bulkactions">
+                <button class="btn"><?php esc_html_e('Mover etapa', 'kovacic'); ?></button>
+                <button class="btn"><?php esc_html_e('Enviar correo', 'kovacic'); ?></button>
+                <button class="btn"><?php esc_html_e('Exportar CSV', 'kovacic'); ?></button>
+                <button class="btn"><?php esc_html_e('Eliminar', 'kovacic'); ?></button>
+              </div>
+            </div>
+            <div class="k-layout">
+              <div>
+                <div class="k-tablewrap">
+                  <table class="k-table" aria-describedby="k-page">
+                    <thead>
+                      <tr>
+                        <th class="checkbox"><input type="checkbox" id="k-select-all" aria-label="<?php esc_attr_e('Seleccionar todos', 'kovacic'); ?>"></th>
+                        <th class="sortable" data-sort="candidate" aria-sort="none"><?php esc_html_e('Candidato', 'kovacic'); ?></th>
+                        <th class="sortable" data-sort="int_no" aria-sort="none"><?php esc_html_e('No. Ent.', 'kovacic'); ?></th>
+                        <th><?php esc_html_e('Etapa actual', 'kovacic'); ?></th>
+                        <th><?php esc_html_e('Acciones', 'kovacic'); ?></th>
+                      </tr>
+                    </thead>
+                    <tbody id="k-rows"></tbody>
+                  </table>
+                </div>
+                <div class="k-pager">
+                  <button class="btn" id="k-prev"><?php esc_html_e('Anterior', 'kovacic'); ?></button>
+                  <span id="k-page"></span>
+                  <button class="btn" id="k-next"><?php esc_html_e('Siguiente', 'kovacic'); ?></button>
+                </div>
+              </div>
+              <aside class="k-sidebar" id="k-sidebar">
+                <div class="k-sidehead"><?php esc_html_e('Actividad', 'kovacic'); ?></div>
+                <div class="k-activity" id="k-activity-feed"></div>
+                <div class="k-sideactions">
+                  <button class="btn btn--primary" id="k-log-call"><?php esc_html_e('Registrar llamada', 'kovacic'); ?></button>
+                  <button class="btn" id="k-new-event"><?php esc_html_e('Nuevo evento', 'kovacic'); ?></button>
+                  <button class="btn" id="k-new-task"><?php esc_html_e('Nueva tarea', 'kovacic'); ?></button>
+                </div>
+              </aside>
+            </div>
+          </section>
+        </div>
+        <?php
     }
 
     public function admin_assets($hook) {
         if (strpos($hook, 'kvt-tracker') === false) return;
-        wp_enqueue_style('kvt-tracker', plugin_dir_url(__FILE__) . 'css/tracker.css', [], '1.0');
-        wp_enqueue_script('kvt-tracker', plugin_dir_url(__FILE__) . 'js/tracker.js', [], '1.0', true);
+
+        $css = <<<'CSS'
+/* Kovacic ATS UI – namespaced to avoid bleed */
+:root{
+  --brand:#0A212E;           /* ink/brand */
+  --blue:#0176D3;            /* primary action */
+  --green:#2E844A;           /* success */
+  --amber:#F5821F;           /* warning */
+  --red:#BA0517;             /* danger */
+  --bg:#F3F6F9;              /* app background */
+  --surface:#FFFFFF;         /* cards/tables */
+  --ink:#1F2937;             /* body text */
+  --ink-muted:#6B7280;       /* secondary text */
+  --divider:#E5E7EB;         /* borders */
+  --shadow:0 2px 6px rgba(0,0,0,.08);
+  --radius:8px;
+  --gap:8px;                 /* 8px spacing grid */
+}
+
+.kcvf *{box-sizing:border-box}
+.kcvf{
+  font-family: "Salesforce Sans", -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  color:var(--ink);
+  background:var(--bg);
+  line-height:1.5;
+  font-size:14px;
+}
+
+/* Page shell */
+.kcvf .wrap{
+  max-width:1200px;
+  margin:0 auto;
+  padding:calc(var(--gap)*3);
+}
+
+/* Top header */
+.kcvf .k-header{
+  background:var(--surface);
+  border:1px solid var(--divider);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  padding:calc(var(--gap)*2);
+  margin-bottom:calc(var(--gap)*2);
+  display:grid;
+  grid-template-columns: 1fr auto;
+  gap:calc(var(--gap)*2);
+}
+.kcvf .k-title{font-size:18px;font-weight:600}
+.kcvf .k-badges{display:flex;flex-wrap:wrap;gap:var(--gap)}
+.kcvf .k-pill{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:999px;border:1px solid var(--divider);
+  background:#fafafa;font-weight:500
+}
+.kcvf .k-pill--blue{background:rgba(1,118,211,.08);border-color:rgba(1,118,211,.25);color:#045FA3}
+.kcvf .k-pill--green{background:rgba(46,132,74,.10);border-color:rgba(46,132,74,.25);color:#1E5C38}
+
+/* Tabs */
+.kcvf .k-tabs{display:flex;gap:2px;margin-bottom:calc(var(--gap)*2)}
+.kcvf .k-tab{
+  background:var(--surface);padding:10px 14px;border:1px solid var(--divider);
+  border-bottom:none;border-top-left-radius:var(--radius);border-top-right-radius:var(--radius);
+  color:var(--ink-muted);cursor:pointer
+}
+.kcvf .k-tab[aria-selected="true"]{color:var(--brand);font-weight:600;box-shadow:inset 0 -3px 0 var(--blue)}
+.kcvf .k-tabpanel{
+  background:var(--surface);border:1px solid var(--divider);border-radius:0 0 var(--radius) var(--radius);
+  box-shadow:var(--shadow);padding:calc(var(--gap)*2)
+}
+
+/* Filters */
+.kcvf .k-filters{
+  display:flex;flex-wrap:wrap;gap:var(--gap);margin-bottom:calc(var(--gap)*2)
+}
+.kcvf .k-input,.kcvf .k-select{
+  height:36px;padding:0 10px;border:1px solid var(--divider);border-radius:6px;background:#fff
+}
+
+/* Bulk bar */
+.kcvf .k-bulkbar{
+  display:flex;align-items:center;gap:var(--gap);justify-content:space-between;
+  padding:8px 12px;background:#fff;border:1px solid var(--divider);
+  border-radius:6px;margin-bottom:calc(var(--gap)*1.5)
+}
+
+/* Table */
+.kcvf .k-tablewrap{position:relative;overflow:auto;border:1px solid var(--divider);border-radius:var(--radius);box-shadow:var(--shadow)}
+.kcvf table{width:100%;border-collapse:separate;border-spacing:0;background:var(--surface)}
+.kcvf thead th{
+  position:sticky;top:0;background:#f9fbfd;border-bottom:1px solid var(--divider);
+  text-align:left;font-weight:600;padding:12px
+}
+.kcvf tbody td{border-top:1px solid var(--divider);padding:12px;vertical-align:middle}
+.kcvf .sortable{cursor:pointer}
+.kcvf .checkbox{width:36px;text-align:center}
+
+/* Progress pill (3 steps) */
+.kcvf .k-progress{display:inline-flex;gap:4px;align-items:center}
+.kcvf .k-step{
+  width:18px;height:8px;border-radius:999px;background:#E5E7EB
+}
+.kcvf .k-step.is-done{background:var(--green)}
+.kcvf .k-step.is-current{background:var(--blue)}
+
+/* Buttons */
+.kcvf .btn{
+  display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 12px;border-radius:8px;border:1px solid var(--divider);
+  background:#fff;cursor:pointer;font-weight:600
+}
+.kcvf .btn--primary{background:var(--blue);border-color:transparent;color:#fff}
+.kcvf .btn--ghost{background:#fff;color:var(--brand)}
+.kcvf .btn:focus{outline:2px solid rgba(1,118,211,.35);outline-offset:2px}
+
+/* Sidebar */
+.kcvf .k-layout{display:grid;grid-template-columns:1fr 300px;gap:calc(var(--gap)*2)}
+.kcvf .k-sidebar{
+  background:var(--surface);border:1px solid var(--divider);border-radius:var(--radius);box-shadow:var(--shadow);
+  padding:calc(var(--gap)*2)
+}
+.kcvf .k-sidehead{font-weight:700;margin-bottom:var(--gap)}
+.kcvf .k-activity{display:grid;gap:10px;max-height:520px;overflow:auto}
+.kcvf .k-activity-toggle{display:none}
+
+/* Pagination */
+.kcvf .k-pager{display:flex;justify-content:space-between;align-items:center;margin-top:calc(var(--gap)*2)}
+
+/* Chips (statuses) */
+.kcvf .chip{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--divider);gap:6px}
+.kcvf .chip--rejected{background:#F3F4F6;color:#374151}
+
+/* Modal (quick view) */
+.kcvf .k-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:1000}
+.kcvf .k-modal.is-open{display:flex}
+.kcvf .k-dialog{width:min(720px,92vw);background:#fff;border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.25);padding:20px}
+
+/* Responsive */
+@media (max-width: 960px){
+  .kcvf .k-layout{grid-template-columns:1fr}
+  .kcvf .k-activity-toggle{display:block;margin-bottom:calc(var(--gap)*2)}
+  .kcvf .k-sidebar{order:-1;display:none}
+  .kcvf .k-sidebar.is-open{display:block}
+  .kcvf thead{display:none}
+  .kcvf table,.kcvf tbody,.kcvf tr,.kcvf td{display:block;width:100%}
+  .kcvf tbody tr{border-top:1px solid var(--divider);padding:8px 12px}
+  .kcvf tbody td{border:none;padding:6px 0}
+  .kcvf .checkbox{position:absolute;right:12px;top:12px}
+}
+CSS;
+        wp_register_style('kvt-tracker', false);
+        wp_enqueue_style('kvt-tracker');
+        wp_add_inline_style('kvt-tracker', $css);
+
+        $js = <<<'JS'
+(function(){
+  const state = {page:1, search:'', client:'', process:'', stage:''};
+  const tbody = document.getElementById('k-rows');
+  const pager = document.getElementById('k-page');
+
+  function statusStep(status){
+    if(!status) return 1;
+    status = status.toLowerCase();
+    if(status.includes('reject')) return 'rejected';
+    const step1 = ['identificado','contactado','lista larga','long list'];
+    const step2 = ['entrevista','shortlist'];
+    const step3 = ['oferta','placement','colocado'];
+    if(step3.some(s=>status.includes(s))) return 3;
+    if(step2.some(s=>status.includes(s))) return 2;
+    return 1;
+  }
+
+  function renderRows(items){
+    tbody.innerHTML='';
+    items.forEach(item=>{
+      const tr=document.createElement('tr');
+      const cb=document.createElement('td');
+      cb.className='checkbox';
+      cb.innerHTML='<input type="checkbox" class="k-rowcheck" value="'+item.id+'">';
+      const name=document.createElement('td');
+      name.innerHTML='<a href="#" class="k-candidate" data-id="'+item.id+'">'+item.meta.first_name+' '+item.meta.last_name+'</a>';
+      const intNo=document.createElement('td');
+      intNo.textContent=item.meta.int_no||'';
+      const stage=document.createElement('td');
+      const step=statusStep(item.status);
+      if(step==='rejected'){
+        stage.innerHTML='<span class="chip chip--rejected">Rechazado</span>';
+      }else{
+        stage.innerHTML='<span class="k-progress">'
+          +'<span class="k-step'+(step>=1?' is-done':'')+'"></span>'
+          +'<span class="k-step'+(step>=2?' is-done':'')+(step===2?' is-current':'')+'"></span>'
+          +'<span class="k-step'+(step>=3?' is-done':'')+(step===3?' is-current':'')+'"></span>'
+          +'</span>';
+      }
+      const actions=document.createElement('td');
+      actions.innerHTML='<button class="btn btn--ghost">Ver</button>';
+      tr.append(cb,name,intNo,stage,actions);
+      tbody.appendChild(tr);
+    });
+  }
+
+  function fetchData(){
+    const params=new URLSearchParams({
+      action:'kvt_get_candidates',
+      _ajax_nonce:KVT.nonce,
+      search:state.search,
+      client:state.client,
+      process:state.process,
+      stage:state.stage,
+      page:state.page
+    });
+    fetch(KVT.ajaxurl,{method:'POST',body:params}).then(r=>r.json()).then(res=>{
+      if(res.success){
+        renderRows(res.data.items);
+        pager.textContent=state.page+' / '+res.data.pages;
+      }
+    });
+  }
+
+  let to;
+  const searchInput=document.getElementById('k-search');
+  if(searchInput){
+    searchInput.addEventListener('input',e=>{
+      state.search=e.target.value;
+      clearTimeout(to);
+      to=setTimeout(()=>{state.page=1;fetchData();},300);
+    });
+  }
+
+  document.getElementById('k-prev').addEventListener('click',()=>{
+    if(state.page>1){state.page--;fetchData();}
+  });
+  document.getElementById('k-next').addEventListener('click',()=>{
+    state.page++;fetchData();
+  });
+
+  ['k-filter-client','k-filter-process','k-filter-stage'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){
+      el.addEventListener('change',e=>{
+        state[id.replace('k-filter-','')] = e.target.value;
+        state.page=1;fetchData();
+      });
+    }
+  });
+
+  const toggle=document.getElementById('k-toggle-activity');
+  if(toggle){
+    toggle.addEventListener('click',()=>{
+      document.getElementById('k-sidebar').classList.toggle('is-open');
+    });
+  }
+
+  fetchData();
+})();
+JS;
+        wp_register_script('kvt-tracker', '', [], false, true);
+        wp_enqueue_script('kvt-tracker');
         wp_localize_script('kvt-tracker', 'KVT', [
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('kvt_nonce'),
         ]);
+        wp_add_inline_script('kvt-tracker', $js);
     }
     public function settings_page() {
         $statuses = get_option(self::OPT_STATUSES, "");
