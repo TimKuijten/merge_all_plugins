@@ -137,6 +137,18 @@ cv_uploaded|Fecha de subida");
         }
     }
 
+    public static function activate() {
+        if (!get_page_by_path('base')) {
+            wp_insert_post([
+                'post_title'   => 'Base',
+                'post_name'    => 'base',
+                'post_content' => '[kovacic_pipeline]',
+                'post_status'  => 'publish',
+                'post_type'    => 'page',
+            ]);
+        }
+    }
+
     /* Types & Taxonomies */
     public function register_types() {
         register_post_type(self::CPT, [
@@ -4820,4 +4832,5 @@ JS;
     }
 }
 
+register_activation_hook(__FILE__, ['Kovacic_Pipeline_Visualizer', 'activate']);
 new Kovacic_Pipeline_Visualizer();
