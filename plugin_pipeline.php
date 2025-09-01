@@ -1303,7 +1303,7 @@ cv_uploaded|Fecha de subida");
             wp_add_inline_script('kvt-app', 'const KVT_CLIENT_ID='.$cid.';', 'before');
             wp_add_inline_script('kvt-app', 'const KVT_PROCESS_ID='.$pid.';', 'before');
         }
-        wp_add_inline_script('kvt-app', 'const KVT_BULKREADER_URL="'.esc_url(admin_url('admin.php?page=bulkreader')).'";', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_BULKREADER_URL="'.esc_url(admin_url('admin.php?page=kt-abm')).'";', 'before');
 
             // App JS
             $js = <<<'JS'
