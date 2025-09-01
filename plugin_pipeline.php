@@ -848,6 +848,11 @@ cv_uploaded|Fecha de subida");
                         <thead><tr id="kvt_table_head"></tr></thead>
                         <tbody id="kvt_table_body"></tbody>
                     </table>
+                    <div id="kvt_table_pager" class="kvt-table-pager" style="display:none;">
+                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_table_prev">Anterior</button>
+                        <span id="kvt_table_pageinfo"></span>
+                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_table_next">Siguiente</button>
+                    </div>
                 </div>
                 <div id="kvt_activity" class="kvt-activity">
                     <div class="kvt-activity-tabs">
@@ -1252,6 +1257,7 @@ cv_uploaded|Fecha de subida");
           .kvt-loading:before{content:'';width:16px;height:16px;border:2px solid #e5e7eb;border-top-color:#0A212E;border-radius:50%;animation:kvt-spin 1s linear infinite}
           @keyframes kvt-spin{to{transform:rotate(360deg)}}
           .kvt-modal-pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px}
+          .kvt-table-pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;padding:8px}
           .kvt-share-grid{display:flex;gap:20px}
             .kvt-share-grid>div{flex:1}
             .kvt-share-title{font-weight:600;margin-bottom:6px}
@@ -1411,6 +1417,7 @@ document.addEventListener('DOMContentLoaded', function(){
   const activityViews = document.querySelectorAll('.kvt-activity-content');
   const correoFrame = el('#kvt_correo_iframe');
   const overview = el('#kvt_stage_overview');
+  const atsBar   = el('#kvt_ats_bar');
   const taskForm = el('#kvt_task_form');
   const taskCandidate = el('#kvt_task_candidate');
   const taskDate = el('#kvt_task_date');
@@ -1448,8 +1455,14 @@ document.addEventListener('DOMContentLoaded', function(){
     const selDetails = el('#kvt_selected_details');
     const selClientInfo = el('#kvt_selected_client');
     const selProcessInfo = el('#kvt_selected_process');
-    const selBoardInfo = el('#kvt_selected_board');
-    const clientLink   = el('#kvt_client_link');
+  const selBoardInfo = el('#kvt_selected_board');
+  const clientLink   = el('#kvt_client_link');
+  const tablePager = el('#kvt_table_pager');
+  const tablePrev  = el('#kvt_table_prev');
+  const tableNext  = el('#kvt_table_next');
+  const tablePage  = el('#kvt_table_pageinfo');
+  let currentPage = 1;
+  let totalPages = 1;
   let allRows = [];
 
   if(stageSelect){
@@ -2019,6 +2032,7 @@ document.addEventListener('DOMContentLoaded', function(){
     params.set('_ajax_nonce', KVT_NONCE);
     params.set('client', selClient ? selClient.value : '');
     params.set('process', selProcess ? selProcess.value : '');
+    params.set('page', currentPage);
     return fetch(KVT_AJAX, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params.toString() }).then(r=>r.json());
   }
 
@@ -2114,76 +2128,93 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   function renderData(data){
+    const baseMode = !selClient.value && !selProcess.value;
+    if(overview) overview.style.display = baseMode ? 'none' : 'block';
+    if(atsBar) atsBar.style.display = baseMode ? 'none' : 'flex';
     board.innerHTML = '';
-    KVT_STATUSES.forEach(st=>{
-      const col = document.createElement('div');
-      col.className = 'kvt-col'; col.dataset.status = st;
-      const h = document.createElement('h3'); h.textContent = st;
-      const zone = document.createElement('div'); zone.className = 'kvt-dropzone'; zone.dataset.status = st;
-      col.appendChild(h); col.appendChild(zone); board.appendChild(col);
-    });
+    if(!baseMode){
+      KVT_STATUSES.forEach(st=>{
+        const col = document.createElement('div');
+        col.className = 'kvt-col'; col.dataset.status = st;
+        const h = document.createElement('h3'); h.textContent = st;
+        const zone = document.createElement('div'); zone.className = 'kvt-dropzone'; zone.dataset.status = st;
+        col.appendChild(h); col.appendChild(zone); board.appendChild(col);
+      });
 
-    if (!data || data.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'kvt-empty';
-      empty.innerHTML = 'Selecciona un <strong>Cliente</strong> o un <strong>Proceso</strong> para ver candidatos.';
-      board.prepend(empty);
-    }
-
-    data.forEach(c=>{
-      const zone = el('.kvt-dropzone[data-status="'+(c.status||'')+'"]') || el('.kvt-dropzone');
-      if (zone) {
-        const card = cardTemplate(c);
-        zone.appendChild(card);
+      if (!data || data.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'kvt-empty';
+        empty.innerHTML = 'Selecciona un <strong>Cliente</strong> o un <strong>Proceso</strong> para ver candidatos.';
+        board.prepend(empty);
       }
-    });
 
-    if (!CLIENT_VIEW) enableDnD();
+      data.forEach(c=>{
+        const zone = el('.kvt-dropzone[data-status="'+(c.status||'')+'"]') || el('.kvt-dropzone');
+        if (zone) {
+          const card = cardTemplate(c);
+          zone.appendChild(card);
+        }
+      });
+
+      if (!CLIENT_VIEW) enableDnD();
+    }
     allRows = Array.isArray(data) ? data : [];
     filterTable();
-    renderActivity(allRows);
-    renderOverview(allRows);
-    populateTaskCandidates();
   }
 
   function renderTable(rows){
     if(!tHead || !tBody) return;
-    tHead.innerHTML = '<th>Applicant</th><th>Stages</th>';
-    tBody.innerHTML = rows.map(r=>{
-      const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
-      const icons=[];
-      const comments=Array.isArray(r.meta.client_comments)?r.meta.client_comments:[];
-      if(comments.length && (!CLIENT_VIEW || ALLOW_COMMENTS)){
-        const cm=comments[comments.length-1];
-        icons.push('<span class="kvt-name-icon kvt-alert" title="'+escAttr(cm.comment)+'">!</span>');
-      }
-      if(r.meta.next_action && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('next_action'))){
-        const parts=r.meta.next_action.split('-');
-        let overdue=false;
-        if(parts.length===3){
-          const d=new Date(parts[2],parts[1]-1,parts[0]);
-          const today=new Date();today.setHours(0,0,0,0);
-          overdue=d<=today;
-        }
-        const note=r.meta.next_action_note? ' — '+r.meta.next_action_note:'';
-        icons.push('<span class="kvt-name-icon dashicons dashicons-clock'+(overdue?' overdue':'')+'" title="'+escAttr(r.meta.next_action+note)+'"></span>');
-      }
-      const noteSrc = (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) ? r.meta.notes : (ALLOWED_FIELDS.includes('public_notes') ? r.meta.public_notes : '');
-      const snip = lastNoteSnippet(noteSrc);
-      if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
-      const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+icons.join('');
-      const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
-      let cidx = stepStatuses.indexOf(r.status||'');
-      if((r.status||'') === 'Descartados') cidx = stepStatuses.length;
-      const parts = stepStatuses.map((s,idx)=>{
-        let cls = 'kvt-stage-step';
-        if(idx < cidx) cls += ' done';
-        else if(idx === cidx) cls += ' current';
-        const label = idx < cidx ? '&#10003;' : esc(s);
-        return '<button type="button" class="'+cls+'" data-id="'+escAttr(r.id)+'" data-status="'+escAttr(s)+'" title="'+escAttr(s)+'">'+label+'</button>';
+    const baseMode = !selClient.value && !selProcess.value;
+    if(baseMode){
+      tHead.innerHTML = '<th>Candidato</th><th>Current role</th>';
+      tBody.innerHTML = rows.map(r=>{
+        const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
+        const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>';
+        const stageInfo = r.status ? r.status + (r.meta.process ? ' - '+r.meta.process : '') : '';
+        const infoParts = ['Candidate'];
+        if(stageInfo) infoParts.push(stageInfo);
+        if(r.meta.cv_uploaded) infoParts.push(r.meta.cv_uploaded);
+        const infoLine = '<em>'+infoParts.map(p=>esc(p)).join(' / ')+'</em>';
+        return '<tr><td>'+name+'<br>'+infoLine+'</td><td>'+esc(r.meta.current_role||'')+'</td></tr>';
       }).join('');
-      return '<tr><td>'+name+'</td><td class="kvt-stage-cell">'+parts+'</td></tr>';
-    }).join('');
+    } else {
+      tHead.innerHTML = '<th>Applicant</th><th>Stages</th>';
+      tBody.innerHTML = rows.map(r=>{
+        const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
+        const icons=[];
+        const comments=Array.isArray(r.meta.client_comments)?r.meta.client_comments:[];
+        if(comments.length && (!CLIENT_VIEW || ALLOW_COMMENTS)){
+          const cm=comments[comments.length-1];
+          icons.push('<span class="kvt-name-icon kvt-alert" title="'+escAttr(cm.comment)+'">!</span>');
+        }
+        if(r.meta.next_action && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('next_action'))){
+          const parts=r.meta.next_action.split('-');
+          let overdue=false;
+          if(parts.length===3){
+            const d=new Date(parts[2],parts[1]-1,parts[0]);
+            const today=new Date();today.setHours(0,0,0,0);
+            overdue=d<=today;
+          }
+          const note=r.meta.next_action_note? ' — '+r.meta.next_action_note:'';
+          icons.push('<span class="kvt-name-icon dashicons dashicons-clock'+(overdue?' overdue':'')+'" title="'+escAttr(r.meta.next_action+note)+'"></span>');
+        }
+        const noteSrc = (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) ? r.meta.notes : (ALLOWED_FIELDS.includes('public_notes') ? r.meta.public_notes : '');
+        const snip = lastNoteSnippet(noteSrc);
+        if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
+        const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+icons.join('');
+        const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
+        let cidx = stepStatuses.indexOf(r.status||'');
+        if((r.status||'') === 'Descartados') cidx = stepStatuses.length;
+        const parts = stepStatuses.map((s,idx)=>{
+          let cls = 'kvt-stage-step';
+          if(idx < cidx) cls += ' done';
+          else if(idx === cidx) cls += ' current';
+          const label = idx < cidx ? '&#10003;' : esc(s);
+          return '<button type="button" class="'+cls+'" data-id="'+escAttr(r.id)+'" data-status="'+escAttr(s)+'" title="'+escAttr(s)+'">'+label+'</button>';
+        }).join('');
+        return '<tr><td>'+name+'</td><td class="kvt-stage-cell">'+parts+'</td></tr>';
+      }).join('');
+    }
   }
 
   function renderActivity(rows){
@@ -2243,6 +2274,25 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
 
+  function renderActivityDashboard(data){
+    if(!activityDue || !activityUpcoming || !activityNotify) return;
+    const due = (data.overdue||[]).map(c=>{
+      const note = c.note ? ' — '+esc(c.note) : '';
+      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(c.date)+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+    });
+    const upcoming = (data.upcoming||[]).map(c=>{
+      const note = c.note ? ' — '+esc(c.note) : '';
+      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(c.date)+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+    });
+    const notifs = (data.comments||[]).map(c=>{
+      return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> — '+esc(c.comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
+    });
+    activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
+    activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
+    activityNotify.innerHTML = notifs.join('') || '<li>No hay notificaciones</li>';
+    if(activityLog) activityLog.innerHTML = '<li>No hay actividad</li>';
+  }
+
   function renderOverview(rows){
     if(!overview) return;
     const counts = {};
@@ -2269,9 +2319,22 @@ document.addEventListener('DOMContentLoaded', function(){
         return blob.includes(q);
       });
     }
-    const st = stageSelect ? stageSelect.value : '';
+    const st = (!selClient.value && !selProcess.value) ? '' : (stageSelect ? stageSelect.value : '');
     if(st){ rows = rows.filter(r=>r.status===st); }
     renderTable(rows);
+  }
+
+  function updatePager(){
+    if(!tablePager) return;
+    const baseMode = !selClient.value && !selProcess.value;
+    if(!baseMode || totalPages <= 1){
+      tablePager.style.display = 'none';
+      return;
+    }
+    tablePager.style.display = 'flex';
+    if(tablePage) tablePage.textContent = currentPage+' / '+totalPages;
+    if(tablePrev) tablePrev.disabled = currentPage <= 1;
+    if(tableNext) tableNext.disabled = currentPage >= totalPages;
   }
 
   function syncExportHidden(){
@@ -2556,14 +2619,24 @@ document.addEventListener('DOMContentLoaded', function(){
   function refresh(){
     fetchCandidates().then(j=>{
       if(j.success){
-        renderData(j.data);
+        totalPages = j.data.pages || 1;
+        renderData(j.data.items || []);
+        const baseMode = !selClient.value && !selProcess.value;
+        if(baseMode){
+          fetchDashboard().then(d=>{ if(d.success) renderActivityDashboard(d.data); });
+        } else {
+          renderActivity(allRows);
+          renderOverview(allRows);
+        }
+        populateTaskCandidates();
+        updatePager();
       } else {
         alert('Error cargando datos');
       }
     });
   }
-  selClient && selClient.addEventListener('change', ()=>{ filterProcessOptions(); refresh(); updateSelectedInfo(); });
-  selProcess && selProcess.addEventListener('change', ()=>{ refresh(); updateSelectedInfo(); });
+  selClient && selClient.addEventListener('change', ()=>{ currentPage=1; filterProcessOptions(); refresh(); updateSelectedInfo(); });
+  selProcess && selProcess.addEventListener('change', ()=>{ currentPage=1; refresh(); updateSelectedInfo(); });
   btnMail && btnMail.addEventListener('click', ()=>{
     window.open('https://kovacictalent.com/wp-admin/admin.php?page=kt-abm','_blank','noopener');
   });
@@ -2587,6 +2660,8 @@ document.addEventListener('DOMContentLoaded', function(){
         refresh();
       });
   });
+  tablePrev && tablePrev.addEventListener('click', ()=>{ if(currentPage>1){ currentPage--; refresh(); } });
+  tableNext && tableNext.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage++; refresh(); } });
   shareClose && shareClose.addEventListener('click', ()=>{ shareModal.style.display='none'; });
   shareModal && shareModal.addEventListener('click', e=>{ if(e.target===shareModal) shareModal.style.display='none'; });
   shareFieldsAll && shareFieldsAll.addEventListener('change', ()=>{
@@ -3100,40 +3175,43 @@ JS;
         $client_id  = isset($_POST['client'])  ? intval($_POST['client'])  : 0;
         $process_id = isset($_POST['process']) ? intval($_POST['process']) : 0;
         $search     = isset($_POST['search'])  ? trim(sanitize_text_field($_POST['search'])) : '';
+        $page       = isset($_POST['page'])    ? max(1, intval($_POST['page'])) : 1;
 
-        if (!$client_id && !$process_id) {
-            wp_send_json_success([]);
-        }
+        $base_mode = !$client_id && !$process_id;
 
         $tax_query = [];
-        if ($process_id) {
-            $tax_query[] = ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>[$process_id]];
-            if ($client_id) $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
-        } else {
-            if ($client_id) {
-                $proc_terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
-                $proc_ids = [];
-                foreach ($proc_terms as $t) {
-                    $cid = (int) get_term_meta($t->term_id, 'kvt_process_client', true);
-                    if ($cid === $client_id) $proc_ids[] = $t->term_id;
-                }
-                if (!empty($proc_ids)) {
-                    $tax_query = [
-                        'relation' => 'OR',
-                        ['taxonomy'=>self::TAX_CLIENT, 'field'=>'term_id','terms'=>[$client_id]],
-                        ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>$proc_ids],
-                    ];
-                } else {
-                    $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
+        if (!$base_mode) {
+            if ($process_id) {
+                $tax_query[] = ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>[$process_id]];
+                if ($client_id) $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
+            } else {
+                if ($client_id) {
+                    $proc_terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
+                    $proc_ids = [];
+                    foreach ($proc_terms as $t) {
+                        $cid = (int) get_term_meta($t->term_id, 'kvt_process_client', true);
+                        if ($cid === $client_id) $proc_ids[] = $t->term_id;
+                    }
+                    if (!empty($proc_ids)) {
+                        $tax_query = [
+                            'relation' => 'OR',
+                            ['taxonomy'=>self::TAX_CLIENT, 'field'=>'term_id','terms'=>[$client_id]],
+                            ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>$proc_ids],
+                        ];
+                    } else {
+                        $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
+                    }
                 }
             }
         }
 
+        $per_page = $base_mode ? 20 : 999;
         $args = [
             'post_type'      => self::CPT,
             'post_status'    => 'any',
-            'posts_per_page' => 999, // ilimitado práctico
-            'no_found_rows'  => true,
+            'posts_per_page' => $per_page,
+            'paged'          => $page,
+            'no_found_rows'  => $base_mode ? false : true,
         ];
         if (!empty($tax_query)) $args['tax_query'] = $tax_query;
 
@@ -3192,7 +3270,8 @@ JS;
                 'meta'   => $meta,
             ];
         }
-        wp_send_json_success($data);
+        $pages = $base_mode ? $q->max_num_pages : 1;
+        wp_send_json_success(['items'=>$data,'pages'=>$pages]);
     }
 
     public function ajax_get_dashboard() {
