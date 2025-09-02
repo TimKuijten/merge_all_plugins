@@ -1331,12 +1331,10 @@ JS;
                         <button type="button" class="kvt-btn kvt-secondary" id="kvt_table_next">Siguiente</button>
                     </div>
                 </div>
-                <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
                 <div id="kvt_activity" class="kvt-activity">
                     <div class="kvt-activity-tabs">
                         <button type="button" class="kvt-activity-tab active" data-target="tasks">Actividad</button>
                         <button type="button" class="kvt-activity-tab" data-target="log">Activity</button>
-                        <button type="button" class="kvt-activity-tab" data-target="mail">Correos</button>
                     </div>
                     <div id="kvt_activity_tasks" class="kvt-activity-content">
                         <div class="kvt-activity-columns">
@@ -1355,17 +1353,43 @@ JS;
                     <div id="kvt_activity_log" class="kvt-activity-content" style="display:none;">
                         <ul id="kvt_activity_log_list" class="kvt-activity-list"></ul>
                     </div>
-                    <div id="kvt_activity_mail" class="kvt-activity-content" style="display:none;">
-                        <iframe id="kvt_correo_iframe" style="width:100%;border:0;min-height:600px;"></iframe>
+                </div>
+                <div id="kvt_detalles_calendar" class="kvt-calendar">
+                    <h4 id="kvt_calendar_month"></h4>
+                    <ul id="kvt_calendar_events" class="kvt-activity-list"></ul>
+                    <div class="kvt-calendar-form">
+                        <input type="text" id="kvt_new_event" class="kvt-input" placeholder="Nuevo evento">
+                        <button type="button" class="kvt-btn" id="kvt_add_event">Añadir evento</button>
                     </div>
                 </div>
             </div>
-
-            <div id="kvt_board_wrap" class="kvt-board-wrap">
-                <button class="kvt-btn" type="button" id="kvt_board_toggle">Mostrar Kanban</button>
-                <div id="kvt_board" class="kvt-board" aria-live="polite" style="display:none;margin-top:12px;"></div>
-            </div>
         </div>
+        <script>
+        document.addEventListener('DOMContentLoaded', function(){
+            const monthEl = document.getElementById('kvt_calendar_month');
+            if(monthEl){
+                const now = new Date();
+                monthEl.textContent = now.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+            }
+            const list = document.getElementById('kvt_calendar_events');
+            const input = document.getElementById('kvt_new_event');
+            const addBtn = document.getElementById('kvt_add_event');
+            if(addBtn && list && input){
+                addBtn.addEventListener('click', function(){
+                    const text = input.value.trim();
+                    if(!text) return;
+                    const li = document.createElement('li');
+                    const chk = document.createElement('input');
+                    chk.type = 'checkbox';
+                    chk.addEventListener('change', ()=>{ li.classList.toggle('done', chk.checked); });
+                    li.appendChild(chk);
+                    li.appendChild(document.createTextNode(' '+text));
+                    list.appendChild(li);
+                    input.value = '';
+                });
+            }
+        });
+        </script>
         <!-- Info Modal -->
         <div class="kvt-modal" id="kvt_info_modal" style="display:none;">
           <div class="kvt-modal-content">

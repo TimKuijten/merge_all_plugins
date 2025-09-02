@@ -140,3 +140,9 @@
   .kcvf tbody td{border:none;padding:6px 0}
   .kcvf .checkbox{position:absolute;right:12px;top:12px}
 }
+
+/* Detalles view calendar and separation */
+.kvt-activity-columns{display:flex;gap:16px}
+.kvt-activity-col + .kvt-activity-col{border-left:1px solid var(--divider);padding-left:16px}
+#kvt_detalles_calendar{margin-top:16px}
+#kvt_calendar_events li.done{text-decoration:line-through;color:var(--ink-muted)}
