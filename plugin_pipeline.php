@@ -2675,79 +2675,43 @@ function kvtInit(){
       overview.style.display = baseMode ? 'none' : 'block';
       overview.innerHTML = '';
     }
-    if(atsBar) atsBar.style.display = baseMode ? 'none' : 'flex';
+    if(atsBar) atsBar.style.display = 'flex';
     board.innerHTML = '';
-    if(baseMode){
-      if(boardBase) boardBase.style.display='block';
-      const tbl = el('#kvt_table');
-      if(tbl) tbl.style.display='none';
-      if(tHead) tHead.innerHTML='';
-      if(tBody) tBody.innerHTML='';
-      const pager = el('#kvt_table_pager');
-      if(pager) pager.style.display='none';
-      if(typeof switchBoardTab==='function') switchBoardTab('candidates');
-      listProfiles(1, boardCtx);
-      return;
-    } else {
-      if(boardBase) boardBase.style.display='none';
-      const tbl = el('#kvt_table');
-      if(tbl) tbl.style.display='table';
-      KVT_STATUSES.forEach(st=>{
-        const col = document.createElement('div');
-        col.className = 'kvt-col'; col.dataset.status = st;
-        const h = document.createElement('h3'); h.textContent = st;
-        const zone = document.createElement('div'); zone.className = 'kvt-dropzone'; zone.dataset.status = st;
-        col.appendChild(h); col.appendChild(zone); board.appendChild(col);
-      });
+    if(boardBase) boardBase.style.display='none';
+    const tbl = el('#kvt_table');
+    if(tbl) tbl.style.display='table';
+    KVT_STATUSES.forEach(st=>{
+      const col = document.createElement('div');
+      col.className = 'kvt-col'; col.dataset.status = st;
+      const h = document.createElement('h3'); h.textContent = st;
+      const zone = document.createElement('div'); zone.className = 'kvt-dropzone'; zone.dataset.status = st;
+      col.appendChild(h); col.appendChild(zone); board.appendChild(col);
+    });
 
-      if (!data || data.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'kvt-empty';
-        empty.innerHTML = 'Selecciona un <strong>Cliente</strong> o un <strong>Proceso</strong> para ver candidatos.';
-        board.prepend(empty);
-      }
-
-      data.forEach(c=>{
-        const zone = el('.kvt-dropzone[data-status="'+(c.status||'')+'"]') || el('.kvt-dropzone');
-        if (zone) {
-          const card = cardTemplate(c);
-          zone.appendChild(card);
-        }
-      });
-
-      if (!CLIENT_VIEW) enableDnD();
+    if (!data || data.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'kvt-empty';
+      empty.innerHTML = 'Selecciona un <strong>Cliente</strong> o un <strong>Proceso</strong> para ver candidatos.';
+      board.prepend(empty);
     }
+
+    data.forEach(c=>{
+      const zone = el('.kvt-dropzone[data-status="'+(c.status||'')+'"]') || el('.kvt-dropzone');
+      if (zone) {
+        const card = cardTemplate(c);
+        zone.appendChild(card);
+      }
+    });
+
+    if (!CLIENT_VIEW) enableDnD();
     allRows = Array.isArray(data) ? data : [];
     filterTable();
   }
 
   function renderTable(rows){
     if(!tHead || !tBody) return;
-    const baseMode = !selClient.value && !selProcess.value;
-    if(baseMode){
-      tHead.innerHTML = '<th>Candidato / Puesto actual / Ubicación</th>';
-      tBody.innerHTML = rows.map(r=>{
-        const m = r.meta || {};
-        const nameTxt = esc(((m.first_name||'')+' '+(m.last_name||'')).trim());
-        const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>';
-        const firstParts = [name];
-        if(m.current_role) firstParts.push('('+esc(m.current_role)+')');
-        const loc = [m.country, m.city].filter(Boolean).map(esc).join(', ');
-        if(loc) firstParts.push(loc);
-        const firstLine = firstParts.join(' / ');
-        const infoParts = ['Candidato/a'];
-        if(m.client || m.process){
-          const cp = [m.client, m.process].filter(Boolean).map(esc).join(' + ');
-          if(cp) infoParts.push(cp);
-        }
-        if(r.status) infoParts.push(esc(r.status));
-        if(m.cv_uploaded) infoParts.push(esc(m.cv_uploaded));
-        const infoLine = '<em>'+infoParts.join(' / ')+'</em>';
-        return '<tr><td>'+firstLine+'<br>'+infoLine+'</td></tr>';
-      }).join('');
-    } else {
-      tHead.innerHTML = '<th>Candidato/a</th><th>Etapas</th>';
-      tBody.innerHTML = rows.map(r=>{
+    tHead.innerHTML = '<th>Candidato/a</th><th>Etapas</th>';
+    tBody.innerHTML = rows.map(r=>{
         const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
         const icons=[];
         const comments=Array.isArray(r.meta.client_comments)?r.meta.client_comments:[];
@@ -2782,7 +2746,6 @@ function kvtInit(){
         }).join('');
         return '<tr><td>'+name+'</td><td class="kvt-stage-cell">'+parts+'</td></tr>';
       }).join('');
-    }
   }
 
   function renderActivity(rows){
