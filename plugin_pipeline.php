@@ -1227,12 +1227,9 @@ JS;
 
             <?php if (!$is_client_board): ?>
             <div id="kvt_selected_info" style="display:none;">
-              <button type="button" class="kvt-btn" id="kvt_selected_toggle">Información de cliente y proceso</button>
-              <div id="kvt_selected_details" style="display:none;">
-                <p id="kvt_selected_client"></p>
-                <p id="kvt_selected_process"></p>
-                <p id="kvt_selected_board"></p>
-              </div>
+              <p id="kvt_selected_client"></p>
+              <p id="kvt_selected_process"></p>
+              <p id="kvt_selected_board"></p>
             </div>
             <?php endif; ?>
 
@@ -1986,13 +1983,11 @@ function kvtInit(){
     const shareStepsAll   = el('#kvt_share_steps_all');
     const shareGenerate   = el('#kvt_share_generate');
     const shareComments   = el('#kvt_share_comments');
-    const selInfo    = el('#kvt_selected_info');
-    const selToggle  = el('#kvt_selected_toggle');
-    const selDetails = el('#kvt_selected_details');
-    const selClientInfo = el('#kvt_selected_client');
+    const selInfo        = el('#kvt_selected_info');
+    const selClientInfo  = el('#kvt_selected_client');
     const selProcessInfo = el('#kvt_selected_process');
-  const selBoardInfo = el('#kvt_selected_board');
-  const clientLink   = el('#kvt_client_link');
+    const selBoardInfo   = el('#kvt_selected_board');
+    const clientLink     = el('#kvt_client_link');
   const tablePager = el('#kvt_table_pager');
   const tablePrev  = el('#kvt_table_prev');
   const tableNext  = el('#kvt_table_next');
@@ -2956,8 +2951,6 @@ function kvtInit(){
     }
     if(!cid && !pid){ selInfo.style.display='none'; if(clientLink) clientLink.innerHTML=''; return; }
     selInfo.style.display='block';
-    selToggle.style.display = 'inline-block';
-    selDetails.style.display = 'none';
     let clientDet='';
     if(cid && Array.isArray(window.KVT_CLIENT_MAP)){
       const c = window.KVT_CLIENT_MAP.find(x=>String(x.id)===cid);
@@ -2996,18 +2989,18 @@ function kvtInit(){
       }
     }
     selProcessInfo.innerHTML = procDet;
-      let boardDet='';
-      if(cid && pid){
-        const key = cid+'|'+pid;
-        const slug = CLIENT_LINKS[key];
-        if(slug){
-          const url = KVT_HOME + slug;
-          boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a>';
-        }
+    let boardDet='';
+    if(cid && pid){
+      const key = cid+'|'+pid;
+      const slug = CLIENT_LINKS[key];
+      if(slug){
+        const url = KVT_HOME + slug;
+        boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a>';
       }
-      if(selBoardInfo) selBoardInfo.innerHTML = boardDet;
-      if(clientLink) clientLink.innerHTML = boardDet;
     }
+    if(selBoardInfo) selBoardInfo.innerHTML = boardDet;
+    if(clientLink) clientLink.innerHTML = boardDet;
+  }
 
   const exportForm = el('#kvt_export_form');
   btnXLS && btnXLS.addEventListener('click', ()=>{ el('#kvt_export_format').value='xls'; syncExportHidden(); exportForm.submit(); });
@@ -3015,39 +3008,6 @@ function kvtInit(){
   boardExportXls && boardExportXls.addEventListener('click', ()=>{ boardExportFormat.value='xls'; boardExportAllForm && boardExportAllForm.submit(); });
   infoClose && infoClose.addEventListener('click', ()=>{ infoModal.style.display='none'; });
   infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
-  selToggle && selToggle.addEventListener('click', ()=>{
-    updateSelectedInfo();
-    const cid = selClient && selClient.value ? selClient.value : '';
-    const pid = selProcess && selProcess.value ? selProcess.value : '';
-    let html = '';
-    if(pid && Array.isArray(window.KVT_PROCESS_MAP)){
-      const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
-      if(p){
-        const cl = getClientById(p.client_id);
-        const clientName = cl ? cl.name||'' : (p.client||'');
-        let block = '<strong>'+((clientName?esc(clientName)+' + ':'')+esc(p.name||''))+'</strong>';
-        if(p.creator) block += '<br><em>Registrado por:</em> '+esc(p.creator);
-        const contact = p.contact_name || (cl?cl.contact_name:'');
-        if(contact) block += '<br><em>Persona de contacto:</em> '+esc(contact);
-        if(p.job_stage) block += '<br><em>Etapa:</em> '+esc(p.job_stage);
-        if(p.created){
-          const cd = new Date(p.created);
-          if(!isNaN(cd)) block += '<br><em>Días abierto:</em> '+Math.floor((Date.now()-cd.getTime())/86400000);
-        }
-        if(p.description) block += '<br><em>Descripción:</em> '+esc(p.description);
-        block += ' <button type="button" class="kvt-edit-process-inline" data-id="'+pid+'">Editar</button>';
-        html += '<p>'+block+'</p>';
-      }
-    }
-    const key = cid+'|'+pid;
-    const slug = CLIENT_LINKS[key];
-    if(slug){
-      const url = KVT_HOME + slug;
-      html += '<p><strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a></p>';
-    }
-    infoBody.innerHTML = html || '<p>No hay información disponible.</p>';
-    infoModal.style.display='flex';
-  });
   aiBtn && aiBtn.addEventListener('click', ()=>{
     const desc = (aiInput.value||'').trim();
     if(!desc) return;
