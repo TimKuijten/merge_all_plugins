@@ -618,6 +618,12 @@ JS;
                 delete_term_meta($term_id, 'kvt_process_client');
             }
         }
+        if (!get_term_meta($term_id, 'kvt_process_creator', true)) {
+            update_term_meta($term_id, 'kvt_process_creator', get_current_user_id());
+        }
+        if (!get_term_meta($term_id, 'kvt_process_created', true)) {
+            update_term_meta($term_id, 'kvt_process_created', current_time('Y-m-d'));
+        }
     }
 
     /* Cliente contact meta */
@@ -1057,6 +1063,8 @@ JS;
                 'description' => wp_strip_all_tags($t->description),
                 'contact_name'  => get_term_meta($t->term_id, 'contact_name', true),
                 'contact_email' => get_term_meta($t->term_id, 'contact_email', true),
+                'creator'       => get_the_author_meta('display_name', (int) get_term_meta($t->term_id, 'kvt_process_creator', true)),
+                'created'       => get_term_meta($t->term_id, 'kvt_process_created', true),
             ];
         }
         return $out;
@@ -1180,9 +1188,9 @@ JS;
                 <div class="kvt-actions">
                     <button class="kvt-btn" id="kvt_add_profile">Base</button>
                     <button class="kvt-btn" id="kvt_toggle_table">Tabla</button>
-                    <button class="kvt-btn" type="button" id="kvt_mandar_correos">Mandar correos</button>
-                    <button class="kvt-btn" type="button" id="kvt_share_board">Tablero cliente</button>
-                    <button class="kvt-btn" type="button" id="kvt_generate_roles">Generar roles</button>
+                    <button class="kvt-btn" type="button" id="kvt_mandar_correos">Correos</button>
+                    <button class="kvt-btn" type="button" id="kvt_share_board">Tablero Cliente</button>
+                    <button class="kvt-btn" type="button" id="kvt_open_processes">Procesos</button>
                 </div>
             </div>
 
@@ -1886,7 +1894,7 @@ function kvtInit(){
   const exportAllFormat = el('#kvt_export_all_format');
   const btnMail    = el('#kvt_mandar_correos');
   const btnShare   = el('#kvt_share_board');
-  const btnRoles   = el('#kvt_generate_roles');
+  const btnProcesses = el('#kvt_open_processes');
   const shareModal = el('#kvt_share_modal');
   const shareClose = el('#kvt_share_close');
   const shareFieldsWrap = el('#kvt_share_fields');
@@ -2659,7 +2667,7 @@ function kvtInit(){
         return '<tr><td>'+firstLine+'<br>'+infoLine+'</td></tr>';
       }).join('');
     } else {
-      tHead.innerHTML = '<th>Applicant</th><th>Stages</th>';
+      tHead.innerHTML = '<th>Candidato/a</th><th>Etapas</th>';
       tBody.innerHTML = rows.map(r=>{
         const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
         const icons=[];
@@ -2777,11 +2785,29 @@ function kvtInit(){
 
   function renderOverview(rows){
     if(!overview) return;
-    const counts = {};
+    const pid = selProcess ? selProcess.value : '';
+    if(!pid){ overview.style.display='none'; overview.innerHTML=''; return; }
+    const p = getProcessById(pid);
+    if(!p){ overview.style.display='none'; overview.innerHTML=''; return; }
+    const creator = p.creator || '—';
+    let days = '';
+    if(p.created){
+      const parts = p.created.split('-');
+      if(parts.length>=3){
+        const d = new Date(parts[0],parts[1]-1,parts[2]);
+        const today = new Date(); today.setHours(0,0,0,0);
+        days = Math.max(0, Math.floor((today-d)/86400000));
+      }
+    }
+    const count = rows.length;
     const sts = KVT_STATUSES.filter(s=>s !== 'Descartados');
-    sts.forEach(s=>counts[s]=0);
-    rows.forEach(r=>{ if(counts.hasOwnProperty(r.status)) counts[r.status]++; });
-    overview.innerHTML = sts.map(s=>esc(s)+': '+(counts[s]||0)).join(' | ');
+    let maxIdx = -1; let maxStage = '—';
+    rows.forEach(r=>{
+      const idx = sts.indexOf(r.status||'');
+      if(idx>maxIdx){ maxIdx=idx; maxStage=r.status||'—'; }
+    });
+    overview.style.display='block';
+    overview.innerHTML = '<strong>Creado por:</strong> '+esc(creator)+' | <strong>Abierto hace:</strong> '+(days!==''?days:0)+' días | <strong>Candidatos vinculados:</strong> '+count+' | <strong>Etapa más avanzada:</strong> '+esc(maxStage);
   }
 
   function populateTaskCandidates(){
@@ -3126,17 +3152,9 @@ function kvtInit(){
     buildShareOptions();
     if(shareModal) shareModal.style.display='flex';
   });
-  btnRoles && btnRoles.addEventListener('click', ()=>{
-    if(!confirm('Generar rol actual para todos los candidatos?')) return;
-    const params = new URLSearchParams();
-    params.set('action','kvt_generate_roles');
-    params.set('_ajax_nonce', KVT_NONCE);
-    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
-      .then(r=>r.json()).then(j=>{
-        if(!j.success){ alert('Error generando roles'); return; }
-        alert('Roles generados');
-        refresh();
-      });
+  btnProcesses && btnProcesses.addEventListener('click', ()=>{
+    openModal();
+    switchTab('processes');
   });
   tablePrev && tablePrev.addEventListener('click', ()=>{ if(currentPage>1){ currentPage--; refresh(); } });
   tableNext && tableNext.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage++; refresh(); } });
