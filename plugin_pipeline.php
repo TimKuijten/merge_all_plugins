@@ -1213,35 +1213,48 @@ JS;
                         </form>
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
-                      <div class="kvt-head">
-                        <h3 class="kvt-title">Base de candidatos</h3>
-                        <div class="kvt-stats"><span>Total: <?php echo intval($total_candidates); ?></span><span>Últimos 7 días: <?php echo intval($recent_candidates); ?></span></div>
-                        <div class="kvt-toolbar">
-                          <label>Nombre
-                            <input type="text" id="kvt_board_name" placeholder="Nombre">
-                          </label>
-                          <label>Rol
-                            <input type="text" id="kvt_board_role" placeholder="Rol">
-                          </label>
-                          <label>Ubicación
-                            <input type="text" id="kvt_board_location" placeholder="País o ciudad">
-                          </label>
-                          <button type="button" class="kvt-btn" id="kvt_board_assign" style="display:none;">Asignar seleccionados</button>
-                          <form id="kvt_board_export_all_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank">
-                            <input type="hidden" name="action" value="kvt_export">
-                            <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
-                            <input type="hidden" name="filter_client" value="">
-                            <input type="hidden" name="filter_process" value="">
-                            <input type="hidden" name="format" id="kvt_board_export_all_format" value="xls">
-                            <button type="button" class="kvt-btn" id="kvt_board_export_all_xls">Exportar Excel</button>
-                          </form>
+                      <div class="kvt-tabs" id="kvt_board_tabs">
+                        <button type="button" class="kvt-tab active" data-target="candidates">Candidatos</button>
+                        <button type="button" class="kvt-tab" data-target="clients">Clientes</button>
+                        <button type="button" class="kvt-tab" data-target="processes">Procesos</button>
+                      </div>
+                      <div id="kvt_board_tab_candidates" class="kvt-tab-panel active">
+                        <div class="kvt-head">
+                          <h3 class="kvt-title">Base de candidatos</h3>
+                          <div class="kvt-stats"><span>Total: <?php echo intval($total_candidates); ?></span><span>Últimos 7 días: <?php echo intval($recent_candidates); ?></span></div>
+                          <div class="kvt-toolbar">
+                            <label>Nombre
+                              <input type="text" id="kvt_board_name" placeholder="Nombre">
+                            </label>
+                            <label>Rol
+                              <input type="text" id="kvt_board_role" placeholder="Rol">
+                            </label>
+                            <label>Ubicación
+                              <input type="text" id="kvt_board_location" placeholder="País o ciudad">
+                            </label>
+                            <button type="button" class="kvt-btn" id="kvt_board_assign" style="display:none;">Asignar seleccionados</button>
+                            <form id="kvt_board_export_all_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank">
+                              <input type="hidden" name="action" value="kvt_export">
+                              <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
+                              <input type="hidden" name="filter_client" value="">
+                              <input type="hidden" name="filter_process" value="">
+                              <input type="hidden" name="format" id="kvt_board_export_all_format" value="xls">
+                              <button type="button" class="kvt-btn" id="kvt_board_export_all_xls">Exportar Excel</button>
+                            </form>
+                          </div>
+                        </div>
+                        <div id="kvt_board_list" class="kvt-list"></div>
+                        <div class="kvt-modal-pager">
+                          <button type="button" class="kvt-btn kvt-secondary" id="kvt_board_prev">Anterior</button>
+                          <span id="kvt_board_pageinfo"></span>
+                          <button type="button" class="kvt-btn kvt-secondary" id="kvt_board_next">Siguiente</button>
                         </div>
                       </div>
-                      <div id="kvt_board_list" class="kvt-list"></div>
-                      <div class="kvt-modal-pager">
-                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_board_prev">Anterior</button>
-                        <span id="kvt_board_pageinfo"></span>
-                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_board_next">Siguiente</button>
+                      <div id="kvt_board_tab_clients" class="kvt-tab-panel">
+                        <div id="kvt_board_clients_list" class="kvt-list"></div>
+                      </div>
+                      <div id="kvt_board_tab_processes" class="kvt-tab-panel">
+                        <div id="kvt_board_processes_list" class="kvt-list"></div>
                       </div>
                     </div>
                     <table id="kvt_table">
@@ -1923,6 +1936,12 @@ function kvtInit(){
   const tabAI = el('#kvt_tab_ai', modal);
   const clientsList = el('#kvt_clients_list', modal);
   const processesList = el('#kvt_processes_list', modal);
+  const boardTabs = els('#kvt_board_tabs .kvt-tab');
+  const boardTabCandidates = el('#kvt_board_tab_candidates');
+  const boardTabClients = el('#kvt_board_tab_clients');
+  const boardTabProcesses = el('#kvt_board_tab_processes');
+  const boardClientsList = el('#kvt_board_clients_list');
+  const boardProcessesList = el('#kvt_board_processes_list');
   const aiInput = el('#kvt_ai_input', modal);
   const aiBtn = el('#kvt_ai_search', modal);
   const aiResults = el('#kvt_ai_results', modal);
@@ -1987,6 +2006,17 @@ function kvtInit(){
     if(target==='candidates') listProfiles(1, modalCtx);
   }
   tabs.forEach(b=>b.addEventListener('click', ()=>switchTab(b.dataset.target)));
+
+  function switchBoardTab(target){
+    if(boardTabCandidates) boardTabCandidates.classList.toggle('active', target==='candidates');
+    if(boardTabClients) boardTabClients.classList.toggle('active', target==='clients');
+    if(boardTabProcesses) boardTabProcesses.classList.toggle('active', target==='processes');
+    boardTabs.forEach(b=>b.classList.toggle('active', b.dataset.target===target));
+    if(target==='clients') listClients(boardClientsList);
+    if(target==='processes') listProcesses(boardProcessesList);
+    if(target==='candidates') listProfiles(1, boardCtx);
+  }
+  boardTabs.forEach(b=>b.addEventListener('click', ()=>switchBoardTab(b.dataset.target)));
 
   function openModal(){
     modal.style.display = 'flex';
@@ -2568,6 +2598,7 @@ function kvtInit(){
       if(tBody) tBody.innerHTML='';
       const pager = el('#kvt_table_pager');
       if(pager) pager.style.display='none';
+      if(typeof switchBoardTab==='function') switchBoardTab('candidates');
       listProfiles(1, boardCtx);
       return;
     } else {
@@ -2737,10 +2768,11 @@ function kvtInit(){
     const notifs = (data.comments||[]).map(c=>{
       return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> — '+esc(c.comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
     });
+    const logs = (data.logs||[]).sort((a,b)=>a.time<b.time?1:-1);
     activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
     activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
     activityNotify.innerHTML = notifs.join('') || '<li>No hay notificaciones</li>';
-    if(activityLog) activityLog.innerHTML = '<li>No hay actividad</li>';
+    if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(l.time)+' - '+esc(l.text)+'</li>').join('') : '<li>No hay actividad</li>';
   }
 
   function renderOverview(rows){
@@ -2775,16 +2807,7 @@ function kvtInit(){
   }
 
   function updatePager(){
-    if(!tablePager) return;
-    const baseMode = !selClient.value && !selProcess.value;
-    if(!baseMode || totalPages <= 1){
-      tablePager.style.display = 'none';
-      return;
-    }
-    tablePager.style.display = 'flex';
-    if(tablePage) tablePage.textContent = currentPage+' / '+totalPages;
-    if(tablePrev) tablePrev.disabled = currentPage <= 1;
-    if(tableNext) tableNext.disabled = currentPage >= totalPages;
+    if(tablePager) tablePager.style.display = 'none';
   }
 
   function syncExportHidden(){
@@ -3329,7 +3352,7 @@ function kvtInit(){
     inp && inp.addEventListener('input', ()=>{ clearTimeout(mto); mto=setTimeout(()=>listProfiles(1, boardCtx),300); });
   });
 
-  function listClients(){
+  function listClients(target){
     const params = new URLSearchParams();
     params.set('action','kvt_list_clients');
     params.set('_ajax_nonce', KVT_NONCE);
@@ -3350,7 +3373,8 @@ function kvtInit(){
             }
           });
         }
-        if(clientsList) clientsList.innerHTML = j.data.items.map(c=>{
+        const targets = target ? [target] : [clientsList, boardClientsList].filter(Boolean);
+        const html = j.data.items.map(c=>{
           const subs=[];
           if(c.contact_name) subs.push(esc(c.contact_name)+(c.contact_email?' ('+esc(c.contact_email)+')':''));
           if(c.contact_phone) subs.push(esc(c.contact_phone));
@@ -3362,10 +3386,11 @@ function kvtInit(){
             '<div class="kvt-meta"><button type="button" class="kvt-btn kvt-edit-client" data-id="'+escAttr(c.id)+'" data-name="'+escAttr(c.name||'')+'" data-contact-name="'+escAttr(c.contact_name||'')+'" data-contact-email="'+escAttr(c.contact_email||'')+'" data-contact-phone="'+escAttr(c.contact_phone||'')+'" data-desc="'+escAttr(c.description||'')+'">Editar</button></div>'+
           '</div>';
         }).join('');
+        targets.forEach(t=>t.innerHTML = html);
       });
-    }
+  }
 
-  function listProcesses(){
+  function listProcesses(target){
     const params = new URLSearchParams();
     params.set('action','kvt_list_processes');
     params.set('_ajax_nonce', KVT_NONCE);
@@ -3386,7 +3411,8 @@ function kvtInit(){
             }
           });
         }
-        if(processesList) processesList.innerHTML = j.data.items.map(p=>{
+        const targets = target ? [target] : [processesList, boardProcessesList].filter(Boolean);
+        const html = j.data.items.map(p=>{
           const subs=[];
           if(p.client) subs.push(esc(p.client));
           if(p.contact_name) subs.push(esc(p.contact_name)+(p.contact_email?' ('+esc(p.contact_email)+')':''));
@@ -3397,8 +3423,9 @@ function kvtInit(){
             '<div class="kvt-meta"><button type="button" class="kvt-btn kvt-edit-process" data-id="'+escAttr(p.id)+'" data-name="'+escAttr(p.name||'')+'" data-client-id="'+escAttr(p.client_id||'')+'" data-contact-name="'+escAttr(p.contact_name||'')+'" data-contact-email="'+escAttr(p.contact_email||'')+'" data-desc="'+escAttr(p.description||'')+'">Editar</button></div>'+
           '</div>';
         }).join('');
+        targets.forEach(t=>t.innerHTML = html);
       });
-    }
+  }
 
   btnAdd && btnAdd.addEventListener('click', openModal);
   // Create candidate modal
@@ -3580,7 +3607,7 @@ function kvtInit(){
         });
     });
 
-    clientsList && clientsList.addEventListener('click', e=>{
+    const handleClientClick = e=>{
       const btn = e.target.closest('.kvt-edit-client');
       if(!btn) return;
       let data = getClientById(btn.dataset.id);
@@ -3595,8 +3622,8 @@ function kvtInit(){
         };
       }
       openEditClModal(data);
-    });
-    processesList && processesList.addEventListener('click', e=>{
+    };
+    const handleProcessClick = e=>{
       const btn = e.target.closest('.kvt-edit-process');
       if(!btn) return;
       let data = getProcessById(btn.dataset.id);
@@ -3611,7 +3638,11 @@ function kvtInit(){
         };
       }
       openEditPModal(data);
-    });
+    };
+    clientsList && clientsList.addEventListener('click', handleClientClick);
+    boardClientsList && boardClientsList.addEventListener('click', handleClientClick);
+    processesList && processesList.addEventListener('click', handleProcessClick);
+    boardProcessesList && boardProcessesList.addEventListener('click', handleProcessClick);
     const handleInlineEdit = e=>{
       if(e.target.classList.contains('kvt-edit-client-inline')){
         const d=getClientById(e.target.dataset.id);
@@ -3801,6 +3832,7 @@ JS;
         $comments = [];
         $upcoming = [];
         $overdue  = [];
+        $logs     = [];
         $today    = strtotime('today');
         $nextWeek = strtotime('+7 days', $today);
 
@@ -3845,12 +3877,46 @@ JS;
                     }
                 }
             }
+
+            $acts = get_post_meta($p->ID, 'kvt_activity_log', true);
+            if (is_array($acts)) {
+                foreach ($acts as $act) {
+                    $msg = '';
+                    switch ($act['type'] ?? '') {
+                        case 'status':
+                            $msg = 'Estado a ' . ($act['status'] ?? '');
+                            if (!empty($act['comment'])) $msg .= ' — ' . $act['comment'];
+                            break;
+                        case 'task_add':
+                            $msg = 'Tarea ' . ($act['date'] ?? '');
+                            if (!empty($act['note'])) $msg .= ' — ' . $act['note'];
+                            break;
+                        case 'task_done':
+                            $msg = 'Tarea completada ' . ($act['date'] ?? '');
+                            if (!empty($act['comment'])) $msg .= ' — ' . $act['comment'];
+                            break;
+                        case 'task_deleted':
+                            $msg = 'Tarea eliminada ' . ($act['date'] ?? '');
+                            if (!empty($act['note'])) $msg .= ' — ' . $act['note'];
+                            break;
+                        default:
+                            $msg = $act['type'] ?? '';
+                    }
+                    $author = isset($act['author']) ? $act['author'] : '';
+                    $time   = isset($act['time']) ? $act['time'] : '';
+                    $logs[] = [
+                        'time' => $time,
+                        'text' => $title . ' — ' . $msg . ($author ? ' (' . $author . ')' : ''),
+                    ];
+                }
+            }
         }
 
         wp_send_json_success([
             'comments' => $comments,
             'upcoming' => $upcoming,
             'overdue'  => $overdue,
+            'logs'     => $logs,
         ]);
     }
 
