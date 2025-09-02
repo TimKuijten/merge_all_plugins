@@ -81,6 +81,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_clone_profile', [$this, 'ajax_clone_profile']);
         add_action('wp_ajax_kvt_upload_cv',            [$this, 'ajax_upload_cv']); // subir CV desde UI
         add_action('wp_ajax_nopriv_kvt_upload_cv',     [$this, 'ajax_upload_cv']);
+        add_action('wp_ajax_kvt_parse_cv',             [$this, 'ajax_parse_cv']);
+        add_action('wp_ajax_nopriv_kvt_parse_cv',      [$this, 'ajax_parse_cv']);
         add_action('wp_ajax_kvt_create_candidate',     [$this, 'ajax_create_candidate']);
         add_action('wp_ajax_nopriv_kvt_create_candidate',[$this, 'ajax_create_candidate']);
         add_action('wp_ajax_kvt_create_client',        [$this, 'ajax_create_client']);
@@ -1526,6 +1528,7 @@ JS;
                 <input type="text" id="kvt_new_tags" placeholder="Tags">
                 <input type="url" id="kvt_new_cv_url" placeholder="CV (URL)">
                 <input type="file" id="kvt_new_cv_file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                <button type="button" class="kvt-btn" id="kvt_new_cv_upload">Subir y guardar</button>
                 <select id="kvt_new_client">
                   <option value="">— Cliente —</option>
                   <?php foreach ($clients as $t): ?>
@@ -3521,6 +3524,7 @@ function kvtInit(){
   const ctags    = el('#kvt_new_tags');
   const ccvurl   = el('#kvt_new_cv_url');
   const ccvfile  = el('#kvt_new_cv_file');
+  const ccvupload= el('#kvt_new_cv_upload');
   const ccli     = el('#kvt_new_client');
   const cproc    = el('#kvt_new_process');
   const csubmit  = el('#kvt_new_submit');
@@ -3556,6 +3560,31 @@ function kvtInit(){
     const cid = parseInt(ccli.value||'0',10);
     cproc.innerHTML = '<option value=\"\">— Proceso —</option>';
     window.KVT_PROCESS_MAP.forEach(p=>{ if(!cid || p.client_id===cid){ const o=document.createElement('option'); o.value=String(p.id); o.textContent=p.name; cproc.appendChild(o);} });
+  });
+  ccvupload && ccvupload.addEventListener('click', async ()=>{
+    if (!ccvfile || !ccvfile.files || !ccvfile.files[0]) { alert('Selecciona un archivo.'); return; }
+    const file = ccvfile.files[0];
+    const fd = new FormData();
+    fd.append('action','kvt_parse_cv');
+    fd.append('_ajax_nonce', KVT_NONCE);
+    fd.append('file', file);
+    if (file.type === 'application/pdf') {
+      let txt = await extractPdfWithPDFjs(file);
+      if (!txt) txt = await ocrPdfWithTesseract(file);
+      if (txt) fd.append('cv_text', txt);
+    }
+    const res = await fetch(KVT_AJAX,{method:'POST',body:fd});
+    const j = await res.json();
+    if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo analizar el CV.');
+    if(j.data.fields){
+      if(cfirst && j.data.fields.first_name) cfirst.value = j.data.fields.first_name;
+      if(clast && j.data.fields.last_name) clast.value = j.data.fields.last_name;
+      if(cemail && j.data.fields.email) cemail.value = j.data.fields.email;
+      if(cphone && j.data.fields.phone) cphone.value = j.data.fields.phone;
+      if(ccountry && j.data.fields.country) ccountry.value = j.data.fields.country;
+      if(ccity && j.data.fields.city) ccity.value = j.data.fields.city;
+    }
+    alert('Datos del CV cargados.');
   });
     csubmit && csubmit.addEventListener('click', ()=>{
     const params = new URLSearchParams();
@@ -4301,6 +4330,35 @@ JS;
         // Extract profile details using AI
         $fields = $this->update_profile_from_cv($id);
         wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url,'fields'=>$fields,'current_role'=>($fields['current_role']??'')]);
+    }
+
+    public function ajax_parse_cv() {
+        check_ajax_referer('kvt_nonce');
+
+        if (empty($_FILES['file']['name'])) wp_send_json_error(['msg'=>'Archivo no recibido'],400);
+
+        if (!function_exists('wp_handle_upload')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+        add_filter('upload_mimes', function($mimes){
+            $mimes['pdf']  = 'application/pdf';
+            $mimes['doc']  = 'application/msword';
+            $mimes['docx'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            return $mimes;
+        });
+
+        $uploaded = wp_handle_upload($_FILES['file'], ['test_form'=>false]);
+        if (isset($uploaded['error'])) wp_send_json_error(['msg'=>$uploaded['error']],500);
+
+        $text = isset($_POST['cv_text']) ? sanitize_textarea_field(wp_unslash($_POST['cv_text'])) : '';
+        if ($text === '' && isset($uploaded['file'])) {
+            $text = $this->extract_text_from_file($uploaded['file']);
+        }
+        if (isset($uploaded['file'])) @unlink($uploaded['file']);
+
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        $fields = ($text && $key) ? $this->openai_extract_profile_fields($key, $text) : [];
+        wp_send_json_success(['fields'=>$fields]);
     }
 
     public function ajax_list_profiles() {
