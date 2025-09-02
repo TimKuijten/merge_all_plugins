@@ -1212,6 +1212,38 @@ JS;
                             <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                         </form>
                     </div>
+                    <div id="kvt_board_base" class="kvt-base" style="display:none;">
+                      <div class="kvt-head">
+                        <h3 class="kvt-title">Base de candidatos</h3>
+                        <div class="kvt-stats"><span>Total: <?php echo intval($total_candidates); ?></span><span>Últimos 7 días: <?php echo intval($recent_candidates); ?></span></div>
+                        <div class="kvt-toolbar">
+                          <label>Nombre
+                            <input type="text" id="kvt_board_name" placeholder="Nombre">
+                          </label>
+                          <label>Rol
+                            <input type="text" id="kvt_board_role" placeholder="Rol">
+                          </label>
+                          <label>Ubicación
+                            <input type="text" id="kvt_board_location" placeholder="País o ciudad">
+                          </label>
+                          <button type="button" class="kvt-btn" id="kvt_board_assign" style="display:none;">Asignar seleccionados</button>
+                          <form id="kvt_board_export_all_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank">
+                            <input type="hidden" name="action" value="kvt_export">
+                            <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
+                            <input type="hidden" name="filter_client" value="">
+                            <input type="hidden" name="filter_process" value="">
+                            <input type="hidden" name="format" id="kvt_board_export_all_format" value="xls">
+                            <button type="button" class="kvt-btn" id="kvt_board_export_all_xls">Exportar Excel</button>
+                          </form>
+                        </div>
+                      </div>
+                      <div id="kvt_board_list" class="kvt-list"></div>
+                      <div class="kvt-modal-pager">
+                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_board_prev">Anterior</button>
+                        <span id="kvt_board_pageinfo"></span>
+                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_board_next">Siguiente</button>
+                      </div>
+                    </div>
                     <table id="kvt_table">
                         <thead><tr id="kvt_table_head"></tr></thead>
                         <tbody id="kvt_table_body"></tbody>
@@ -1797,6 +1829,18 @@ function kvtInit(){
   const tBody = el('#kvt_table_body');
   const searchInput = el('#kvt_search');
   const stageSelect = el('#kvt_stage_filter');
+  const boardBase   = el('#kvt_board_base');
+  const boardList   = el('#kvt_board_list');
+  const boardName   = el('#kvt_board_name');
+  const boardRole   = el('#kvt_board_role');
+  const boardLoc    = el('#kvt_board_location');
+  const boardAssign = el('#kvt_board_assign');
+  const boardPrev   = el('#kvt_board_prev');
+  const boardNext   = el('#kvt_board_next');
+  const boardPage   = el('#kvt_board_pageinfo');
+  const boardExportXls = el('#kvt_board_export_all_xls');
+  const boardExportFormat = el('#kvt_board_export_all_format');
+  const boardExportAllForm = el('#kvt_board_export_all_form');
   const activityDue = el('#kvt_tasks_due');
   const activityUpcoming = el('#kvt_tasks_upcoming');
   const activityNotify = el('#kvt_notifications');
@@ -1870,6 +1914,8 @@ function kvtInit(){
   const modalPrev  = el('#kvt_modal_prev', modal);
   const modalNext  = el('#kvt_modal_next', modal);
   const modalPage  = el('#kvt_modal_pageinfo', modal);
+  const modalCtx   = {list: modalList, page: modalPage, prev: modalPrev, next: modalNext, name: modalName, role: modalRole, loc: modalLoc, assign: modalAssign, close: closeModal};
+  const boardCtx   = {list: boardList, page: boardPage, prev: boardPrev, next: boardNext, name: boardName, role: boardRole, loc: boardLoc, assign: boardAssign, close: null};
   const tabs = els('.kvt-tab', modal);
   const tabCandidates = el('#kvt_tab_candidates', modal);
   const tabClients = el('#kvt_tab_clients', modal);
@@ -1938,7 +1984,7 @@ function kvtInit(){
     tabs.forEach(b=>b.classList.toggle('active', b.dataset.target===target));
     if(target==='clients') listClients();
     if(target==='processes') listProcesses();
-    if(target==='candidates') listProfiles(1);
+    if(target==='candidates') listProfiles(1, modalCtx);
   }
   tabs.forEach(b=>b.addEventListener('click', ()=>switchTab(b.dataset.target)));
 
@@ -2509,12 +2555,25 @@ function kvtInit(){
   function renderData(data){
     const baseMode = !selClient.value && !selProcess.value;
     if(overview){
-      overview.style.display = 'block';
-      overview.innerHTML = baseMode ? '<h3 class="kvt-title">Base de candidatos</h3>' : '';
+      overview.style.display = baseMode ? 'none' : 'block';
+      overview.innerHTML = '';
     }
     if(atsBar) atsBar.style.display = baseMode ? 'none' : 'flex';
     board.innerHTML = '';
-    if(!baseMode){
+    if(baseMode){
+      if(boardBase) boardBase.style.display='block';
+      const tbl = el('#kvt_table');
+      if(tbl) tbl.style.display='none';
+      if(tHead) tHead.innerHTML='';
+      if(tBody) tBody.innerHTML='';
+      const pager = el('#kvt_table_pager');
+      if(pager) pager.style.display='none';
+      listProfiles(1, boardCtx);
+      return;
+    } else {
+      if(boardBase) boardBase.style.display='none';
+      const tbl = el('#kvt_table');
+      if(tbl) tbl.style.display='table';
       KVT_STATUSES.forEach(st=>{
         const col = document.createElement('div');
         col.className = 'kvt-col'; col.dataset.status = st;
@@ -2802,6 +2861,7 @@ function kvtInit(){
   const exportForm = el('#kvt_export_form');
   btnXLS && btnXLS.addEventListener('click', ()=>{ el('#kvt_export_format').value='xls'; syncExportHidden(); exportForm.submit(); });
   btnAllXLS && btnAllXLS.addEventListener('click', ()=>{ exportAllFormat.value='xls'; exportAllForm && exportAllForm.submit(); });
+  boardExportXls && boardExportXls.addEventListener('click', ()=>{ boardExportFormat.value='xls'; boardExportAllForm && boardExportAllForm.submit(); });
   infoClose && infoClose.addEventListener('click', ()=>{ infoModal.style.display='none'; });
   infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
   selToggle && selToggle.addEventListener('click', ()=>{
@@ -3105,16 +3165,17 @@ function kvtInit(){
 
   updateSelectedInfo();
 
-  // Modal list & clone/create
-  function listProfiles(page){
+  // Base list (modal or board)
+  function listProfiles(page, ctx){
     currentPage = page || 1;
+    ctx = ctx || modalCtx;
     const params = new URLSearchParams();
     params.set('action','kvt_list_profiles');
     params.set('_ajax_nonce', KVT_NONCE);
     params.set('page', currentPage);
-    params.set('name', modalName ? modalName.value : '');
-    params.set('role', modalRole ? modalRole.value : '');
-    params.set('location', modalLoc ? modalLoc.value : '');
+    params.set('name', ctx.name ? ctx.name.value : '');
+    params.set('role', ctx.role ? ctx.role.value : '');
+    params.set('location', ctx.loc ? ctx.loc.value : '');
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json())
       .then(j=>{
@@ -3123,7 +3184,7 @@ function kvtInit(){
         const procSel = selProcess && selProcess.value;
         const cliSel  = selClient && selClient.value;
         const allowAdd = !!(procSel && (cliSel || getClientIdForProcess(procSel)));
-        const filterActive = (modalName && modalName.value) || (modalRole && modalRole.value) || (modalLoc && modalLoc.value);
+        const filterActive = (ctx.name && ctx.name.value) || (ctx.role && ctx.role.value) || (ctx.loc && ctx.loc.value);
         let html = items.map(it=>{
           const m = it.meta||{};
           const name = esc((m.first_name||'')+' '+(m.last_name||''));
@@ -3151,12 +3212,12 @@ function kvtInit(){
             '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
         }).join('');
-        modalList.innerHTML = html;
-        modalPage.textContent = 'Página '+currentPage+' de '+(pages||1);
-        if(modalPrev) modalPrev.style.display = pages>1 ? 'inline-block' : 'none';
-        if(modalNext) modalNext.style.display = pages>1 ? 'inline-block' : 'none';
+        ctx.list.innerHTML = html;
+        ctx.page.textContent = 'Página '+currentPage+' de '+(pages||1);
+        if(ctx.prev) ctx.prev.style.display = pages>1 ? 'inline-block' : 'none';
+        if(ctx.next) ctx.next.style.display = pages>1 ? 'inline-block' : 'none';
         if(allowAdd){
-          els('.kvt-mini-add', modalList).forEach(b=>{
+          els('.kvt-mini-add', ctx.list).forEach(b=>{
             b.addEventListener('click', ()=>{
               const id = b.getAttribute('data-id');
               const proc = selProcess.value;
@@ -3173,19 +3234,20 @@ function kvtInit(){
                 .then(r=>r.json()).then(j=>{
                   if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo asignar.');
                   alert('Candidato asignado.');
-                  closeModal();
+                  if(ctx.close) ctx.close();
                   refresh();
                 });
             });
           });
         }
-        if(modalAssign) modalAssign.style.display = (filterActive && allowAdd) ? 'inline-flex' : 'none';
-        els('.kvt-mini-view', modalList).forEach(b=>{
+        if(ctx.assign) ctx.assign.style.display = (filterActive && allowAdd) ? 'inline-flex' : 'none';
+        els('.kvt-mini-view', ctx.list).forEach(b=>{
           b.addEventListener('click', e=>{
             e.preventDefault();
             const card = b.closest('.kvt-card-mini');
             const panel = card.querySelector('.kvt-mini-panel');
             const show = panel.style.display==='block';
+            els('.kvt-mini-panel', ctx.list).forEach(p=>p.style.display='none');
             panel.style.display = show?'none':'block';
             if(!b.classList.contains('kvt-name')){
               const label = b.dataset.label || 'Ver perfil';
@@ -3193,7 +3255,7 @@ function kvtInit(){
             }
           });
         });
-        els('.kvt-mini-delete', modalList).forEach(b=>{
+        els('.kvt-mini-delete', ctx.list).forEach(b=>{
           b.addEventListener('click', ()=>{
             if(!confirm('¿Enviar este candidato a la papelera?')) return;
             const id = b.getAttribute('data-id');
@@ -3205,13 +3267,13 @@ function kvtInit(){
               .then(r=>r.json()).then(j=>{
                 if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo eliminar.');
                 alert('Candidato eliminado.');
-                listProfiles(currentPage);
+                listProfiles(currentPage, ctx);
                 refresh();
               });
           });
         });
         items.forEach(it=>{
-          const card = modalList.querySelector('.kvt-card-mini[data-id="'+it.id+'"]');
+          const card = ctx.list.querySelector('.kvt-card-mini[data-id="'+it.id+'"]');
           if(card){
             enableProfileEditHandlers(card, String(it.id));
             enableCvUploadHandlers(card, String(it.id));
@@ -3219,8 +3281,10 @@ function kvtInit(){
         });
       });
   }
-  modalPrev && modalPrev.addEventListener('click', ()=>{ if(currentPage>1) listProfiles(currentPage-1); });
-  modalNext && modalNext.addEventListener('click', ()=>{ listProfiles(currentPage+1); });
+  modalPrev && modalPrev.addEventListener('click', ()=>{ if(currentPage>1) listProfiles(currentPage-1, modalCtx); });
+  modalNext && modalNext.addEventListener('click', ()=>{ listProfiles(currentPage+1, modalCtx); });
+  boardPrev && boardPrev.addEventListener('click', ()=>{ if(currentPage>1) listProfiles(currentPage-1, boardCtx); });
+  boardNext && boardNext.addEventListener('click', ()=>{ listProfiles(currentPage+1, boardCtx); });
   modalAssign && modalAssign.addEventListener('click', ()=>{
     const ids = Array.from(els('.kvt-select:checked', modalList)).map(cb=>cb.value);
     if(!ids.length){ alert('Seleccione candidatos'); return; }
@@ -3239,9 +3303,30 @@ function kvtInit(){
     };
     Promise.all(ids.map(assignOne)).then(()=>{ alert('Candidatos asignados.'); closeModal(); refresh(); });
   });
+  boardAssign && boardAssign.addEventListener('click', ()=>{
+    const ids = Array.from(els('.kvt-select:checked', boardList)).map(cb=>cb.value);
+    if(!ids.length){ alert('Seleccione candidatos'); return; }
+    const proc = selProcess && selProcess.value;
+    let cli  = selClient && selClient.value;
+    if(!proc){ alert('Seleccione proceso en el tablero.'); return; }
+    if(!cli) cli = getClientIdForProcess(proc);
+    const assignOne = id => {
+      const p = new URLSearchParams();
+      p.set('action','kvt_assign_candidate');
+      p.set('_ajax_nonce', KVT_NONCE);
+      p.set('candidate_id', id);
+      p.set('process_id', proc);
+      p.set('client_id', cli);
+      return fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()}).then(r=>r.json());
+    };
+    Promise.all(ids.map(assignOne)).then(()=>{ alert('Candidatos asignados.'); refresh(); });
+  });
   let mto=null;
   [modalName, modalRole, modalLoc].forEach(inp=>{
-    inp && inp.addEventListener('input', ()=>{ clearTimeout(mto); mto=setTimeout(()=>listProfiles(1),300); });
+    inp && inp.addEventListener('input', ()=>{ clearTimeout(mto); mto=setTimeout(()=>listProfiles(1, modalCtx),300); });
+  });
+  [boardName, boardRole, boardLoc].forEach(inp=>{
+    inp && inp.addEventListener('input', ()=>{ clearTimeout(mto); mto=setTimeout(()=>listProfiles(1, boardCtx),300); });
   });
 
   function listClients(){
