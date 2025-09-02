@@ -3316,7 +3316,6 @@ function kvtInit(){
     }
 
   btnAdd && btnAdd.addEventListener('click', openModal);
-  openModal();
   // Create candidate modal
     const cmodal = el('#kvt_create_modal');
   const cclose = el('#kvt_create_close');
