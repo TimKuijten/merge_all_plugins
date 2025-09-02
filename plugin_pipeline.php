@@ -3046,15 +3046,21 @@ function kvtInit(){
   boardExportXls && boardExportXls.addEventListener('click', ()=>{ boardExportFormat.value='xls'; boardExportAllForm && boardExportAllForm.submit(); });
   const triggerLoadRoles = btn => {
     if(btn) btn.disabled = true;
-    ajaxForm({action:'kvt_generate_roles', _ajax_nonce:KVT_NONCE}).then(res=>{
-      if(btn) btn.disabled = false;
-      if(res && res.success){
-        refresh();
-        listProfiles(currentPage, boardCtx);
-      } else {
-        alert('No se pudo cargar roles y empresas');
-      }
-    });
+    ajaxForm({action:'kvt_generate_roles', _ajax_nonce:KVT_NONCE})
+      .then(res => {
+        if(btn) btn.disabled = false;
+        if(res && res.success){
+          refresh();
+          listProfiles(currentPage, boardCtx);
+        } else {
+          const msg = res && res.data && res.data.msg ? res.data.msg : 'No se pudo cargar roles y empresas';
+          alert(msg);
+        }
+      })
+      .catch(() => {
+        if(btn) btn.disabled = false;
+        alert('Error de red al cargar roles y empresas');
+      });
   };
   boardLoadRoles && boardLoadRoles.addEventListener('click', ()=>triggerLoadRoles(boardLoadRoles));
   navLoadRoles && navLoadRoles.addEventListener('click', e=>{ e.preventDefault(); triggerLoadRoles(navLoadRoles); });
