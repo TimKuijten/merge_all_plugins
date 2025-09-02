@@ -1210,26 +1210,26 @@ JS;
 
         ob_start(); ?>
         <div class="kvt-wrapper">
+            <nav class="kvt-nav" aria-label="Navegación principal">
+                <a href="#" class="active" data-view="detalles"><span class="dashicons dashicons-dashboard"></span> Dashboard</a>
+                <a href="#" data-view="ats"><span class="dashicons dashicons-admin-users"></span> Candidates</a>
+                <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendar</a>
+                <a href="#" id="kvt_add_profile"><span class="dashicons dashicons-id-alt"></span> Base</a>
+                <a href="#" id="kvt_toggle_table"><span class="dashicons dashicons-editor-table"></span> Tabla</a>
+                <a href="#" id="kvt_mandar_correos"><span class="dashicons dashicons-email"></span> Correos</a>
+                <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
+                <a href="#" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
+                <a href="#" id="kvt_nav_export"><span class="dashicons dashicons-download"></span> Exportar</a>
+                <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
+                <a href="#"><span class="dashicons dashicons-filter"></span> Nuevo filtro</a>
+            </nav>
+            <div class="kvt-content">
             <?php if ($is_client_board): ?>
             <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
             <?php endif; ?>
             <span class="dashicons dashicons-editor-help kvt-help" title="Haz clic para ver cómo funciona el tablero"></span>
             <div class="kvt-header">
                 <h2 class="kvt-board-title">Tablero ATS</h2>
-                <nav class="kvt-nav" aria-label="Navegación principal">
-                    <a href="#" class="active" data-view="detalles">Detalles</a>
-                    <a href="#" data-view="ats">ATS</a>
-                    <a href="#" data-view="calendario">Calendario</a>
-                    <span class="kvt-nav-spacer"></span>
-                    <a href="#" id="kvt_add_profile">Base</a>
-                    <a href="#" id="kvt_toggle_table">Tabla</a>
-                    <a href="#" id="kvt_mandar_correos">Correos</a>
-                    <a href="#" id="kvt_share_board">Tablero Cliente</a>
-                    <a href="#" id="kvt_open_processes">Procesos</a>
-                    <a href="#" id="kvt_nav_export">Exportar</a>
-                    <a href="#" id="kvt_nav_load_roles">Cargar roles y empresas</a>
-                    <a href="#">Nuevo filtro</a>
-                </nav>
             </div>
             <div id="kvt_filters_bar" class="kvt-filters" style="display:none;">
                 <label>Cliente
@@ -1360,11 +1360,11 @@ JS;
                     </div>
                 </div>
             </div>
-
             <div id="kvt_board_wrap" class="kvt-board-wrap">
                 <button class="kvt-btn" type="button" id="kvt_board_toggle">Mostrar Kanban</button>
                 <div id="kvt_board" class="kvt-board" aria-live="polite" style="display:none;margin-top:12px;"></div>
             </div>
+            </div><!-- .kvt-content -->
         </div>
         <!-- Info Modal -->
         <div class="kvt-modal" id="kvt_info_modal" style="display:none;">
@@ -1631,21 +1631,22 @@ JS;
         // Styles
         wp_enqueue_style('dashicons');
         $css = "
-        .kvt-wrapper{max-width:1200px;margin:0 auto;padding:16px;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.06);position:relative}
+        .kvt-wrapper{max-width:1200px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.06);display:flex}
         .kvt-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
         .kvt-filters{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
         .kvt-filters label{display:inline-flex;gap:6px;align-items:center;font-weight:600}
         .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-client-link{margin-left:12px;display:inline-flex;align-items:center;gap:6px;font-weight:600}
         .kvt-logo{display:block;margin:0 auto 12px;max-width:300px}
+        .kvt-content{flex:1;padding:16px;position:relative}
         .kvt-help{position:absolute;top:16px;right:16px;font-size:24px;color:#0A212E;cursor:pointer}
-        .kvt-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;border-bottom:1px solid #e5e7eb;padding-bottom:8px}
+        .kvt-header{display:flex;align-items:center;margin-bottom:16px;border-bottom:1px solid #e5e7eb;padding-bottom:8px}
         .kvt-board-title{font-size:20px;font-weight:700;margin:0}
-        .kvt-nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-        .kvt-nav-spacer{flex:1}
-        .kvt-nav a{padding:6px 10px;border-radius:8px;color:#6b7280;font-weight:600}
+        .kvt-nav{width:200px;background:#f8fafc;border-right:1px solid #e5e7eb;padding:20px 10px;display:flex;flex-direction:column;gap:8px}
+        .kvt-nav a{display:flex;align-items:center;gap:8px;padding:10px;border-radius:8px;color:#6b7280;font-weight:600;text-decoration:none}
         .kvt-nav a.active{background:#0A212E;color:#fff}
-        .kvt-nav a:hover{background:#f1f5f9;color:#0A212E}
+        .kvt-nav a:hover{background:#e2e8f0;color:#0A212E}
+        .kvt-nav a .dashicons{font-size:20px}
         .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
         .kvt-btn:hover{opacity:.95}
           .kvt-secondary{background:#475569}
