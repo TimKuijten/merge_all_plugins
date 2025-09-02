@@ -1279,6 +1279,7 @@ JS;
                               <input type="hidden" name="format" id="kvt_board_export_all_format" value="xls">
                               <button type="button" class="kvt-btn" id="kvt_board_export_all_xls">Exportar Excel</button>
                             </form>
+                            <button type="button" class="kvt-btn" id="kvt_board_load_roles">Cargar roles</button>
                           </div>
                         </div>
                         <div id="kvt_board_list" class="kvt-list"></div>
@@ -1939,6 +1940,7 @@ function kvtInit(){
   const boardExportXls = el('#kvt_board_export_all_xls');
   const boardExportFormat = el('#kvt_board_export_all_format');
   const boardExportAllForm = el('#kvt_board_export_all_form');
+  const boardLoadRoles = el('#kvt_board_load_roles');
   const activityDue = el('#kvt_tasks_due');
   const activityUpcoming = el('#kvt_tasks_upcoming');
   const activityNotify = el('#kvt_notifications');
@@ -3009,6 +3011,14 @@ function kvtInit(){
   btnXLS && btnXLS.addEventListener('click', ()=>{ el('#kvt_export_format').value='xls'; syncExportHidden(); exportForm.submit(); });
   btnAllXLS && btnAllXLS.addEventListener('click', ()=>{ exportAllFormat.value='xls'; exportAllForm && exportAllForm.submit(); });
   boardExportXls && boardExportXls.addEventListener('click', ()=>{ boardExportFormat.value='xls'; boardExportAllForm && boardExportAllForm.submit(); });
+  boardLoadRoles && boardLoadRoles.addEventListener('click', ()=>{
+    boardLoadRoles.disabled = true;
+    ajaxForm({action:'kvt_generate_roles', _ajax_nonce:KVT_NONCE}).then(res=>{
+      boardLoadRoles.disabled = false;
+      if(res && res.success){ listProfiles(currentPage, boardCtx); }
+      else alert('No se pudo cargar roles');
+    });
+  });
   infoClose && infoClose.addEventListener('click', ()=>{ infoModal.style.display='none'; });
   infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
   aiBtn && aiBtn.addEventListener('click', ()=>{
