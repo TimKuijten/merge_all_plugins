@@ -3022,8 +3022,12 @@ function kvtInit(){
     if(btn) btn.disabled = true;
     ajaxForm({action:'kvt_generate_roles', _ajax_nonce:KVT_NONCE}).then(res=>{
       if(btn) btn.disabled = false;
-      if(res && res.success){ listProfiles(currentPage, boardCtx); }
-      else alert('No se pudo cargar roles y empresas');
+      if(res && res.success){
+        refresh();
+        listProfiles(currentPage, boardCtx);
+      } else {
+        alert('No se pudo cargar roles y empresas');
+      }
     });
   };
   boardLoadRoles && boardLoadRoles.addEventListener('click', ()=>triggerLoadRoles(boardLoadRoles));
@@ -4675,6 +4679,11 @@ JS;
             return $m;
         });
 
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        if (!$key) {
+            wp_send_json_error(['msg'=>'Falta la clave'], 400);
+        }
+
         $created  = [];
         $files    = $_FILES['files'];
         $statuses = $this->get_statuses();
@@ -4719,7 +4728,7 @@ JS;
                 update_post_meta($cid, 'kvt_cv_uploaded', $today);
                 update_post_meta($cid, 'cv_uploaded', $today);
                 $this->save_cv_text_attachment($cid, $attach_id);
-                $fields = $this->update_profile_from_cv($cid);
+                $fields = $this->update_profile_from_cv($cid, $key);
             } else {
                 $fields = [];
             }
