@@ -1204,6 +1204,7 @@ JS;
                     <a href="#" id="kvt_share_board">Tablero Cliente</a>
                     <a href="#" id="kvt_open_processes">Procesos</a>
                     <a href="#" id="kvt_nav_export">Exportar</a>
+                    <a href="#" id="kvt_nav_load_roles">Cargar roles y empresas</a>
                     <a href="#">Nuevo filtro</a>
                 </nav>
             </div>
@@ -1279,7 +1280,7 @@ JS;
                               <input type="hidden" name="format" id="kvt_board_export_all_format" value="xls">
                               <button type="button" class="kvt-btn" id="kvt_board_export_all_xls">Exportar Excel</button>
                             </form>
-                            <button type="button" class="kvt-btn" id="kvt_board_load_roles">Cargar roles</button>
+                            <button type="button" class="kvt-btn" id="kvt_board_load_roles">Cargar roles y empresas</button>
                           </div>
                         </div>
                         <div id="kvt_board_list" class="kvt-list"></div>
@@ -1941,6 +1942,7 @@ function kvtInit(){
   const boardExportFormat = el('#kvt_board_export_all_format');
   const boardExportAllForm = el('#kvt_board_export_all_form');
   const boardLoadRoles = el('#kvt_board_load_roles');
+  const navLoadRoles = el('#kvt_nav_load_roles');
   const activityDue = el('#kvt_tasks_due');
   const activityUpcoming = el('#kvt_tasks_upcoming');
   const activityNotify = el('#kvt_notifications');
@@ -3011,14 +3013,16 @@ function kvtInit(){
   btnXLS && btnXLS.addEventListener('click', ()=>{ el('#kvt_export_format').value='xls'; syncExportHidden(); exportForm.submit(); });
   btnAllXLS && btnAllXLS.addEventListener('click', ()=>{ exportAllFormat.value='xls'; exportAllForm && exportAllForm.submit(); });
   boardExportXls && boardExportXls.addEventListener('click', ()=>{ boardExportFormat.value='xls'; boardExportAllForm && boardExportAllForm.submit(); });
-  boardLoadRoles && boardLoadRoles.addEventListener('click', ()=>{
-    boardLoadRoles.disabled = true;
+  const triggerLoadRoles = btn => {
+    if(btn) btn.disabled = true;
     ajaxForm({action:'kvt_generate_roles', _ajax_nonce:KVT_NONCE}).then(res=>{
-      boardLoadRoles.disabled = false;
+      if(btn) btn.disabled = false;
       if(res && res.success){ listProfiles(currentPage, boardCtx); }
-      else alert('No se pudo cargar roles');
+      else alert('No se pudo cargar roles y empresas');
     });
-  });
+  };
+  boardLoadRoles && boardLoadRoles.addEventListener('click', ()=>triggerLoadRoles(boardLoadRoles));
+  navLoadRoles && navLoadRoles.addEventListener('click', e=>{ e.preventDefault(); triggerLoadRoles(navLoadRoles); });
   infoClose && infoClose.addEventListener('click', ()=>{ infoModal.style.display='none'; });
   infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
   aiBtn && aiBtn.addEventListener('click', ()=>{
