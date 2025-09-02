@@ -81,8 +81,12 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_clone_profile', [$this, 'ajax_clone_profile']);
         add_action('wp_ajax_kvt_upload_cv',            [$this, 'ajax_upload_cv']); // subir CV desde UI
         add_action('wp_ajax_nopriv_kvt_upload_cv',     [$this, 'ajax_upload_cv']);
+        add_action('wp_ajax_kvt_parse_cv',             [$this, 'ajax_parse_cv']);
+        add_action('wp_ajax_nopriv_kvt_parse_cv',      [$this, 'ajax_parse_cv']);
         add_action('wp_ajax_kvt_create_candidate',     [$this, 'ajax_create_candidate']);
         add_action('wp_ajax_nopriv_kvt_create_candidate',[$this, 'ajax_create_candidate']);
+        add_action('wp_ajax_kvt_bulk_upload_cvs',       [$this, 'ajax_bulk_upload_cvs']);
+        add_action('wp_ajax_nopriv_kvt_bulk_upload_cvs',[$this, 'ajax_bulk_upload_cvs']);
         add_action('wp_ajax_kvt_create_client',        [$this, 'ajax_create_client']);
         add_action('wp_ajax_nopriv_kvt_create_client', [$this, 'ajax_create_client']);
         add_action('wp_ajax_kvt_create_process',       [$this, 'ajax_create_process']);
@@ -91,6 +95,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_update_client', [$this, 'ajax_update_client']);
         add_action('wp_ajax_kvt_update_process',       [$this, 'ajax_update_process']);
         add_action('wp_ajax_nopriv_kvt_update_process',[$this, 'ajax_update_process']);
+        add_action('wp_ajax_kvt_update_process_status',       [$this, 'ajax_update_process_status']);
+        add_action('wp_ajax_nopriv_kvt_update_process_status',[$this, 'ajax_update_process_status']);
         add_action('wp_ajax_kvt_assign_candidate',     [$this, 'ajax_assign_candidate']);
         add_action('wp_ajax_nopriv_kvt_assign_candidate',[$this, 'ajax_assign_candidate']);
         add_action('wp_ajax_kvt_unassign_candidate',   [$this, 'ajax_unassign_candidate']);
@@ -697,14 +703,33 @@ JS;
         echo '</select><p class="description">Si eliges Proceso, se asignará automáticamente su Cliente.</p>';
     }
 
+    private function normalize_name($name) {
+        $name = trim((string)$name);
+        if ($name === '') return '';
+        return mb_convert_case($name, MB_CASE_TITLE, 'UTF-8');
+    }
     private function meta_get_compat($post_id, $key, $fallbacks = []) {
         $v = get_post_meta($post_id, $key, true);
-        if ($v !== '' && $v !== null) return $v;
-        foreach ($fallbacks as $fb) {
-            $vv = get_post_meta($post_id, $fb, true);
-            if ($vv !== '' && $vv !== null) return $vv;
+        if ($v === '' || $v === null) {
+            foreach ($fallbacks as $fb) {
+                $vv = get_post_meta($post_id, $fb, true);
+                if ($vv !== '' && $vv !== null) {
+                    $v = $vv;
+                    update_post_meta($post_id, $key, $vv);
+                    break;
+                }
+            }
         }
-        return '';
+        if (in_array($key, ['kvt_first_name','first_name','kvt_last_name','last_name'], true)) {
+            $norm = $this->normalize_name($v);
+            if ($norm !== $v) {
+                $alt = strpos($key, 'kvt_') === 0 ? substr($key,4) : 'kvt_'.$key;
+                update_post_meta($post_id, $key, $norm);
+                update_post_meta($post_id, $alt, $norm);
+                $v = $norm;
+            }
+        }
+        return ($v !== '' && $v !== null) ? $v : '';
     }
     private function fmt_date_ddmmyyyy($val){
         $val = trim((string)$val);
@@ -1054,17 +1079,41 @@ JS;
     private function get_process_map() {
         $terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
         $out = [];
+        $statuses = array_values(array_filter(array_map('trim', explode("\n", get_option(self::OPT_STATUSES, '')))));
         foreach ($terms as $t) {
             $cid = (int) get_term_meta($t->term_id, 'kvt_process_client', true);
+            // Determine furthest active job stage
+            $job_stage = '';
+            $posts = get_posts([
+                'post_type'   => self::CPT,
+                'numberposts' => -1,
+                'fields'      => 'ids',
+                'tax_query'   => [[
+                    'taxonomy' => self::TAX_PROCESS,
+                    'terms'    => $t->term_id,
+                ]],
+            ]);
+            $max = -1;
+            foreach ($posts as $pid) {
+                $st = get_post_meta($pid,'kvt_status',true);
+                $idx = array_search($st, $statuses, true);
+                if ($idx !== false && strtolower($st) !== 'declined' && $idx > $max) {
+                    $max = $idx;
+                }
+            }
+            if ($max >= 0 && isset($statuses[$max])) $job_stage = $statuses[$max];
+
             $out[] = [
                 'id'          => $t->term_id,
                 'name'        => $t->name,
                 'client_id'   => $cid ?: 0,
+                'client'      => $cid ? get_term($cid)->name : '',
                 'description' => wp_strip_all_tags($t->description),
                 'contact_name'  => get_term_meta($t->term_id, 'contact_name', true),
                 'contact_email' => get_term_meta($t->term_id, 'contact_email', true),
                 'creator'       => get_the_author_meta('display_name', (int) get_term_meta($t->term_id, 'kvt_process_creator', true)),
                 'created'       => get_term_meta($t->term_id, 'kvt_process_created', true),
+                'job_stage'     => $job_stage,
             ];
         }
         return $out;
@@ -1178,6 +1227,7 @@ JS;
                     <a href="#" id="kvt_share_board">Tablero Cliente</a>
                     <a href="#" id="kvt_open_processes">Procesos</a>
                     <a href="#" id="kvt_nav_export">Exportar</a>
+                    <a href="#" id="kvt_nav_load_roles">Cargar roles y empresas</a>
                     <a href="#">Nuevo filtro</a>
                 </nav>
             </div>
@@ -1203,12 +1253,9 @@ JS;
 
             <?php if (!$is_client_board): ?>
             <div id="kvt_selected_info" style="display:none;">
-              <button type="button" class="kvt-btn" id="kvt_selected_toggle">Información de cliente y proceso</button>
-              <div id="kvt_selected_details" style="display:none;">
-                <p id="kvt_selected_client"></p>
-                <p id="kvt_selected_process"></p>
-                <p id="kvt_selected_board"></p>
-              </div>
+              <p id="kvt_selected_client"></p>
+              <p id="kvt_selected_process"></p>
+              <p id="kvt_selected_board"></p>
             </div>
             <?php endif; ?>
 
@@ -1226,6 +1273,7 @@ JS;
                             <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
                             <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                         </form>
+                        <button type="button" class="kvt-btn" id="kvt_assign_search" style="display:none;">Asignar seleccionados</button>
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
                       <div class="kvt-tabs" id="kvt_board_tabs">
@@ -1256,6 +1304,7 @@ JS;
                               <input type="hidden" name="format" id="kvt_board_export_all_format" value="xls">
                               <button type="button" class="kvt-btn" id="kvt_board_export_all_xls">Exportar Excel</button>
                             </form>
+                            <button type="button" class="kvt-btn" id="kvt_board_load_roles">Cargar roles y empresas</button>
                           </div>
                         </div>
                         <div id="kvt_board_list" class="kvt-list"></div>
@@ -1428,7 +1477,7 @@ JS;
                 <button type="button" class="kvt-tab active" data-target="candidates">Candidatos</button>
                 <button type="button" class="kvt-tab" data-target="clients">Clientes</button>
                 <button type="button" class="kvt-tab" data-target="processes">Procesos</button>
-                <button type="button" class="kvt-tab" data-target="ai">AI Search</button>
+                <button type="button" class="kvt-tab" data-target="ai">Buscador IA</button>
               </div>
               <div class="kvt-new" id="kvt_new_container">
                 <button type="button" class="kvt-btn" id="kvt_new_btn">Nuevo</button>
@@ -1436,8 +1485,10 @@ JS;
                   <button type="button" data-action="candidate">Nuevo candidato</button>
                   <button type="button" data-action="client">Nuevo cliente</button>
                   <button type="button" data-action="process">Nuevo proceso</button>
+                  <button type="button" data-action="bulk_cv">Subir CVs</button>
                 </div>
               </div>
+              <input type="file" id="kvt_bulk_cv_input" multiple style="display:none;">
               <div id="kvt_tab_candidates" class="kvt-tab-panel active kvt-base">
                 <div class="kvt-head">
                   <h3 class="kvt-title">Base de candidatos</h3>
@@ -1478,7 +1529,7 @@ JS;
               </div>
               <div id="kvt_tab_ai" class="kvt-tab-panel">
                 <div class="kvt-modal-controls">
-                  <textarea id="kvt_ai_input" rows="6" style="width:100%;" placeholder="Pega descripción del trabajo"></textarea>
+                  <textarea id="kvt_ai_input" rows="6" style="width:100%;" placeholder="Describe el perfil o pega la descripción del trabajo para que la IA sugiera candidatos"></textarea>
                   <button type="button" class="kvt-btn" id="kvt_ai_search">Buscar</button>
                 </div>
                 <div id="kvt_ai_results" class="kvt-modal-list"></div>
@@ -1505,6 +1556,7 @@ JS;
                 <input type="text" id="kvt_new_tags" placeholder="Tags">
                 <input type="url" id="kvt_new_cv_url" placeholder="CV (URL)">
                 <input type="file" id="kvt_new_cv_file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                <button type="button" class="kvt-btn" id="kvt_new_cv_upload">Subir y guardar</button>
                 <select id="kvt_new_client">
                   <option value="">— Cliente —</option>
                   <?php foreach ($clients as $t): ?>
@@ -1903,6 +1955,7 @@ function kvtInit(){
   const tBody = el('#kvt_table_body');
   const searchInput = el('#kvt_search');
   const stageSelect = el('#kvt_stage_filter');
+  const assignSearch = el('#kvt_assign_search');
   const boardBase   = el('#kvt_board_base');
   const boardList   = el('#kvt_board_list');
   const boardName   = el('#kvt_board_name');
@@ -1915,6 +1968,8 @@ function kvtInit(){
   const boardExportXls = el('#kvt_board_export_all_xls');
   const boardExportFormat = el('#kvt_board_export_all_format');
   const boardExportAllForm = el('#kvt_board_export_all_form');
+  const boardLoadRoles = el('#kvt_board_load_roles');
+  const navLoadRoles = el('#kvt_nav_load_roles');
   const activityDue = el('#kvt_tasks_due');
   const activityUpcoming = el('#kvt_tasks_upcoming');
   const activityNotify = el('#kvt_notifications');
@@ -1948,6 +2003,7 @@ function kvtInit(){
   const btnAdd     = el('#kvt_add_profile');
   const btnNew     = el('#kvt_new_btn');
   const newMenu    = el('#kvt_new_menu');
+  const bulkCvInput = el('#kvt_bulk_cv_input');
   const btnAllXLS  = el('#kvt_export_all_xls');
   const exportAllForm   = el('#kvt_export_all_form');
   const exportAllFormat = el('#kvt_export_all_format');
@@ -1962,13 +2018,11 @@ function kvtInit(){
     const shareStepsAll   = el('#kvt_share_steps_all');
     const shareGenerate   = el('#kvt_share_generate');
     const shareComments   = el('#kvt_share_comments');
-    const selInfo    = el('#kvt_selected_info');
-    const selToggle  = el('#kvt_selected_toggle');
-    const selDetails = el('#kvt_selected_details');
-    const selClientInfo = el('#kvt_selected_client');
+    const selInfo        = el('#kvt_selected_info');
+    const selClientInfo  = el('#kvt_selected_client');
     const selProcessInfo = el('#kvt_selected_process');
-  const selBoardInfo = el('#kvt_selected_board');
-  const clientLink   = el('#kvt_client_link');
+    const selBoardInfo   = el('#kvt_selected_board');
+    const clientLink     = el('#kvt_client_link');
   const tablePager = el('#kvt_table_pager');
   const tablePrev  = el('#kvt_table_prev');
   const tableNext  = el('#kvt_table_next');
@@ -2710,7 +2764,8 @@ function kvtInit(){
 
   function renderTable(rows){
     if(!tHead || !tBody) return;
-    tHead.innerHTML = '<th>Candidato/a</th><th>Etapas</th>';
+    const showSelect = searchInput && searchInput.value.trim() !== '';
+    tHead.innerHTML = (showSelect?'<th></th>':'')+'<th>Candidato/a</th><th>Etapas</th>';
     tBody.innerHTML = rows.map(r=>{
         const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
         const icons=[];
@@ -2744,8 +2799,10 @@ function kvtInit(){
           const label = idx < cidx ? '&#10003;' : esc(s);
           return '<button type="button" class="'+cls+'" data-id="'+escAttr(r.id)+'" data-status="'+escAttr(s)+'" title="'+escAttr(s)+'">'+label+'</button>';
         }).join('');
-        return '<tr><td>'+name+'</td><td class="kvt-stage-cell">'+parts+'</td></tr>';
+        const checkCell = showSelect?'<td><input type="checkbox" class="kvt-row-select" value="'+escAttr(r.id)+'"></td>':'';
+        return '<tr>'+checkCell+'<td>'+name+'</td><td class="kvt-stage-cell">'+parts+'</td></tr>';
       }).join('');
+    if(assignSearch) assignSearch.style.display = (showSelect && selProcess && selProcess.value) ? 'inline-block' : 'none';
   }
 
   function renderActivity(rows){
@@ -2932,8 +2989,6 @@ function kvtInit(){
     }
     if(!cid && !pid){ selInfo.style.display='none'; if(clientLink) clientLink.innerHTML=''; return; }
     selInfo.style.display='block';
-    selToggle.style.display = 'inline-block';
-    selDetails.style.display = 'none';
     let clientDet='';
     if(cid && Array.isArray(window.KVT_CLIENT_MAP)){
       const c = window.KVT_CLIENT_MAP.find(x=>String(x.id)===cid);
@@ -2951,84 +3006,66 @@ function kvtInit(){
       clientDet += ' <button type="button" class="kvt-edit-client-inline" data-id="'+cid+'">Editar</button>';
     }
     selClientInfo.innerHTML = clientDet;
-      let procDet='';
-      if(pid && Array.isArray(window.KVT_PROCESS_MAP)){
-        const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
-        if(p){
-          procDet = '<strong>Proceso:</strong> '+esc(p.name||'');
+    let procDet='';
+    if(pid && Array.isArray(window.KVT_PROCESS_MAP)){
+      const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
+      if(p){
         const cl = getClientById(p.client_id);
-        if(cl) procDet += '<br><em>Cliente:</em> '+esc(cl.name||'');
-        if(p.contact_name || p.contact_email){
-          procDet += '<br><em>Contacto:</em> '+esc(p.contact_name||'');
-          if(p.contact_email) procDet += ', '+esc(p.contact_email);
+        const clientName = cl ? cl.name||'' : (p.client||'');
+        const title = (clientName?esc(clientName)+' + ':'')+esc(p.name||'');
+        procDet = '<strong>'+title+'</strong>';
+        if(p.creator) procDet += '<br><em>Registrado por:</em> '+esc(p.creator);
+        const contact = p.contact_name || (cl?cl.contact_name:'');
+        if(contact) procDet += '<br><em>Persona de contacto:</em> '+esc(contact);
+        if(p.job_stage) procDet += '<br><em>Etapa:</em> '+esc(p.job_stage);
+        if(p.created){
+          const cd = new Date(p.created);
+          if(!isNaN(cd)) procDet += '<br><em>Días abierto:</em> '+Math.floor((Date.now()-cd.getTime())/86400000);
         }
         if(p.description) procDet += '<br><em>Descripción:</em> '+esc(p.description);
+        procDet += ' <button type="button" class="kvt-edit-process-inline" data-id="'+pid+'">Editar</button>';
       }
-      procDet += ' <button type="button" class="kvt-edit-process-inline" data-id="'+pid+'">Editar</button>';
-      }
-      selProcessInfo.innerHTML = procDet;
-      let boardDet='';
-      if(cid && pid){
-        const key = cid+'|'+pid;
-        const slug = CLIENT_LINKS[key];
-        if(slug){
-          const url = KVT_HOME + slug;
-          boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a>';
-        }
-      }
-      if(selBoardInfo) selBoardInfo.innerHTML = boardDet;
-      if(clientLink) clientLink.innerHTML = boardDet;
     }
+    selProcessInfo.innerHTML = procDet;
+    let boardDet='';
+    if(cid && pid){
+      const key = cid+'|'+pid;
+      const slug = CLIENT_LINKS[key];
+      if(slug){
+        const url = KVT_HOME + slug;
+        boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a>';
+      }
+    }
+    if(selBoardInfo) selBoardInfo.innerHTML = boardDet;
+    if(clientLink) clientLink.innerHTML = boardDet;
+  }
 
   const exportForm = el('#kvt_export_form');
   btnXLS && btnXLS.addEventListener('click', ()=>{ el('#kvt_export_format').value='xls'; syncExportHidden(); exportForm.submit(); });
   btnAllXLS && btnAllXLS.addEventListener('click', ()=>{ exportAllFormat.value='xls'; exportAllForm && exportAllForm.submit(); });
   boardExportXls && boardExportXls.addEventListener('click', ()=>{ boardExportFormat.value='xls'; boardExportAllForm && boardExportAllForm.submit(); });
+  const triggerLoadRoles = btn => {
+    if(btn) btn.disabled = true;
+    ajaxForm({action:'kvt_generate_roles', _ajax_nonce:KVT_NONCE})
+      .then(res => {
+        if(btn) btn.disabled = false;
+        if(res && res.success){
+          refresh();
+          listProfiles(currentPage, boardCtx);
+        } else {
+          const msg = res && res.data && res.data.msg ? res.data.msg : 'No se pudo cargar roles y empresas';
+          alert(msg);
+        }
+      })
+      .catch(() => {
+        if(btn) btn.disabled = false;
+        alert('Error de red al cargar roles y empresas');
+      });
+  };
+  boardLoadRoles && boardLoadRoles.addEventListener('click', ()=>triggerLoadRoles(boardLoadRoles));
+  navLoadRoles && navLoadRoles.addEventListener('click', e=>{ e.preventDefault(); triggerLoadRoles(navLoadRoles); });
   infoClose && infoClose.addEventListener('click', ()=>{ infoModal.style.display='none'; });
   infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
-  selToggle && selToggle.addEventListener('click', ()=>{
-    updateSelectedInfo();
-    const cid = selClient && selClient.value ? selClient.value : '';
-    const pid = selProcess && selProcess.value ? selProcess.value : '';
-    let html = '';
-    if(cid && Array.isArray(window.KVT_CLIENT_MAP)){
-      const c = window.KVT_CLIENT_MAP.find(x=>String(x.id)===cid);
-      if(c){
-        html += '<p><strong>Cliente:</strong> '+esc(c.name||'');
-        if(c.contact_name || c.contact_email || c.contact_phone){
-          html += '<br><em>Contacto:</em> '+esc(c.contact_name||'');
-          if(c.contact_email) html += ', '+esc(c.contact_email);
-          if(c.contact_phone) html += ', '+esc(c.contact_phone);
-        }
-        if(c.description) html += '<br><em>Descripción:</em> '+esc(c.description);
-        const procNames = Array.isArray(window.KVT_PROCESS_MAP)?window.KVT_PROCESS_MAP.filter(p=>String(p.client_id)===cid).map(p=>p.name):[];
-        if(procNames.length) html += '<br><em>Procesos:</em> '+esc(procNames.join(', '));
-        html += ' <button type="button" class="kvt-edit-client-inline" data-id="'+cid+'">Editar</button></p>';
-      }
-    }
-    if(pid && Array.isArray(window.KVT_PROCESS_MAP)){
-      const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
-      if(p){
-        html += '<p><strong>Proceso:</strong> '+esc(p.name||'');
-        const cl = getClientById(p.client_id);
-        if(cl) html += '<br><em>Cliente:</em> '+esc(cl.name||'');
-        if(p.contact_name || p.contact_email){
-          html += '<br><em>Contacto:</em> '+esc(p.contact_name||'');
-          if(p.contact_email) html += ', '+esc(p.contact_email);
-        }
-        if(p.description) html += '<br><em>Descripción:</em> '+esc(p.description);
-        html += ' <button type="button" class="kvt-edit-process-inline" data-id="'+pid+'">Editar</button></p>';
-      }
-    }
-    const key = cid+'|'+pid;
-    const slug = CLIENT_LINKS[key];
-    if(slug){
-      const url = KVT_HOME + slug;
-      html += '<p><strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a></p>';
-    }
-    infoBody.innerHTML = html || '<p>No hay información disponible.</p>';
-    infoModal.style.display='flex';
-  });
   aiBtn && aiBtn.addEventListener('click', ()=>{
     const desc = (aiInput.value||'').trim();
     if(!desc) return;
@@ -3442,6 +3479,24 @@ function kvtInit(){
     };
     Promise.all(ids.map(assignOne)).then(()=>{ alert('Candidatos asignados.'); refresh(); });
   });
+  assignSearch && assignSearch.addEventListener('click', ()=>{
+    const ids = Array.from(els('.kvt-row-select:checked', tBody)).map(cb=>cb.value);
+    if(!ids.length){ alert('Seleccione candidatos'); return; }
+    const proc = selProcess && selProcess.value;
+    let cli  = selClient && selClient.value;
+    if(!proc){ alert('Seleccione proceso en el tablero.'); return; }
+    if(!cli) cli = getClientIdForProcess(proc);
+    const assignOne = id => {
+      const p = new URLSearchParams();
+      p.set('action','kvt_assign_candidate');
+      p.set('_ajax_nonce', KVT_NONCE);
+      p.set('candidate_id', id);
+      p.set('process_id', proc);
+      p.set('client_id', cli);
+      return fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()}).then(r=>r.json());
+    };
+    Promise.all(ids.map(assignOne)).then(()=>{ alert('Candidatos asignados.'); refresh(); });
+  });
   let mto=null;
   [modalName, modalRole, modalLoc].forEach(inp=>{
     inp && inp.addEventListener('input', ()=>{ clearTimeout(mto); mto=setTimeout(()=>listProfiles(1, modalCtx),300); });
@@ -3503,6 +3558,12 @@ function kvtInit(){
               window.KVT_PROCESS_MAP[idx].contact_name = p.contact_name;
               window.KVT_PROCESS_MAP[idx].contact_email = p.contact_email;
               window.KVT_PROCESS_MAP[idx].description = p.description;
+              window.KVT_PROCESS_MAP[idx].creator = p.creator;
+              window.KVT_PROCESS_MAP[idx].created = p.created;
+              window.KVT_PROCESS_MAP[idx].status = p.status;
+              window.KVT_PROCESS_MAP[idx].days = p.days;
+              window.KVT_PROCESS_MAP[idx].job_stage = p.job_stage;
+              if(typeof p.client!=='undefined') window.KVT_PROCESS_MAP[idx].client = p.client;
               if(typeof p.client_id!=='undefined') window.KVT_PROCESS_MAP[idx].client_id = p.client_id;
             } else {
               window.KVT_PROCESS_MAP.push(p);
@@ -3510,18 +3571,39 @@ function kvtInit(){
           });
         }
         const targets = target ? [target] : [processesList, boardProcessesList].filter(Boolean);
+        const statuses = {active:'Activo',completed:'Completado',closed:'Cerrado'};
         const html = j.data.items.map(p=>{
           const subs=[];
           if(p.client) subs.push(esc(p.client));
           if(p.contact_name) subs.push(esc(p.contact_name)+(p.contact_email?' ('+esc(p.contact_email)+')':''));
           if(p.description) subs.push(esc(p.description));
+          subs.push('Creado por '+esc(p.creator||'')+' el '+esc(p.created||''));
           const subHtml = subs.length?'<br><span class="kvt-sub">'+subs.join(' / ')+'</span>':'';
+          const sel = '<select class="kvt-process-status" data-id="'+escAttr(p.id)+'">'+
+            Object.keys(statuses).map(s=>'<option value="'+s+'"'+(p.status===s?' selected':'')+'>'+statuses[s]+'</option>').join('')+
+            '</select>';
+          const days = '<span class="kvt-sub">'+p.days+' días</span>';
           return '<div class="kvt-row">'+
             '<div><span class="kvt-name">'+esc(p.name)+'</span>'+subHtml+'</div>'+
-            '<div class="kvt-meta"><button type="button" class="kvt-btn kvt-edit-process" data-id="'+escAttr(p.id)+'" data-name="'+escAttr(p.name||'')+'" data-client-id="'+escAttr(p.client_id||'')+'" data-contact-name="'+escAttr(p.contact_name||'')+'" data-contact-email="'+escAttr(p.contact_email||'')+'" data-desc="'+escAttr(p.description||'')+'">Editar</button></div>'+
+            '<div class="kvt-meta">'+sel+' '+days+' <button type="button" class="kvt-btn kvt-edit-process" data-id="'+escAttr(p.id)+'" data-name="'+escAttr(p.name||'')+'" data-client-id="'+escAttr(p.client_id||'')+'" data-contact-name="'+escAttr(p.contact_name||'')+'" data-contact-email="'+escAttr(p.contact_email||'')+'" data-desc="'+escAttr(p.description||'')+'">Editar</button></div>'+
           '</div>';
         }).join('');
-        targets.forEach(t=>t.innerHTML = html);
+        targets.forEach(t=>{
+          t.innerHTML = html;
+          els('.kvt-process-status', t).forEach(s=>{
+            s.addEventListener('change', ()=>{
+              const id = s.getAttribute('data-id');
+              const val = s.value;
+              const p = new URLSearchParams();
+              p.set('action','kvt_update_process_status');
+              p.set('_ajax_nonce', KVT_NONCE);
+              p.set('id', id);
+              p.set('status', val);
+              fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+                .then(r=>r.json()).then(()=>listProcesses(target));
+            });
+          });
+        });
       });
   }
 
@@ -3538,6 +3620,7 @@ function kvtInit(){
   const ctags    = el('#kvt_new_tags');
   const ccvurl   = el('#kvt_new_cv_url');
   const ccvfile  = el('#kvt_new_cv_file');
+  const ccvupload= el('#kvt_new_cv_upload');
   const ccli     = el('#kvt_new_client');
   const cproc    = el('#kvt_new_process');
   const csubmit  = el('#kvt_new_submit');
@@ -3573,6 +3656,31 @@ function kvtInit(){
     const cid = parseInt(ccli.value||'0',10);
     cproc.innerHTML = '<option value=\"\">— Proceso —</option>';
     window.KVT_PROCESS_MAP.forEach(p=>{ if(!cid || p.client_id===cid){ const o=document.createElement('option'); o.value=String(p.id); o.textContent=p.name; cproc.appendChild(o);} });
+  });
+  ccvupload && ccvupload.addEventListener('click', async ()=>{
+    if (!ccvfile || !ccvfile.files || !ccvfile.files[0]) { alert('Selecciona un archivo.'); return; }
+    const file = ccvfile.files[0];
+    const fd = new FormData();
+    fd.append('action','kvt_parse_cv');
+    fd.append('_ajax_nonce', KVT_NONCE);
+    fd.append('file', file);
+    if (file.type === 'application/pdf') {
+      let txt = await extractPdfWithPDFjs(file);
+      if (!txt) txt = await ocrPdfWithTesseract(file);
+      if (txt) fd.append('cv_text', txt);
+    }
+    const res = await fetch(KVT_AJAX,{method:'POST',body:fd});
+    const j = await res.json();
+    if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo analizar el CV.');
+    if(j.data.fields){
+      if(cfirst && j.data.fields.first_name) cfirst.value = j.data.fields.first_name;
+      if(clast && j.data.fields.last_name) clast.value = j.data.fields.last_name;
+      if(cemail && j.data.fields.email) cemail.value = j.data.fields.email;
+      if(cphone && j.data.fields.phone) cphone.value = j.data.fields.phone;
+      if(ccountry && j.data.fields.country) ccountry.value = j.data.fields.country;
+      if(ccity && j.data.fields.city) ccity.value = j.data.fields.city;
+    }
+    alert('Datos del CV cargados.');
   });
     csubmit && csubmit.addEventListener('click', ()=>{
     const params = new URLSearchParams();
@@ -3767,8 +3875,26 @@ function kvtInit(){
           if(act==='candidate') openCModal();
           if(act==='client') openClModal();
           if(act==='process') openPModal();
+          if(act==='bulk_cv' && bulkCvInput) bulkCvInput.click();
         },0);
       });
+    });
+
+    bulkCvInput && bulkCvInput.addEventListener('change', async ()=>{
+      if(!bulkCvInput.files.length) return;
+      const fd = new FormData();
+      fd.append('action','kvt_bulk_upload_cvs');
+      fd.append('_ajax_nonce', KVT_NONCE);
+      Array.from(bulkCvInput.files).forEach(f=>fd.append('files[]', f));
+      const res = await fetch(KVT_AJAX, {method:'POST', body: fd});
+      const j = await res.json();
+      if(!j.success){
+        alert(j.data && j.data.msg ? j.data.msg : 'No se pudieron procesar los CVs.');
+      } else {
+        alert('Se crearon ' + j.data.count + ' candidatos.');
+        refresh();
+      }
+      bulkCvInput.value = '';
     });
 
   // Easier drag & drop: allow drop anywhere in column and highlight
@@ -4247,6 +4373,8 @@ JS;
             'kvt_notes'      => isset($_POST['notes'])      ? wp_kses_post($_POST['notes'])             : '',
             'kvt_public_notes' => isset($_POST['public_notes']) ? wp_kses_post($_POST['public_notes']) : '',
         ];
+        $fields['kvt_first_name'] = $this->normalize_name($fields['kvt_first_name']);
+        $fields['kvt_last_name']  = $this->normalize_name($fields['kvt_last_name']);
         if ($fields['kvt_cv_uploaded']) $fields['kvt_cv_uploaded'] = $this->fmt_date_ddmmyyyy($fields['kvt_cv_uploaded']);
         if ($fields['kvt_next_action']) $fields['kvt_next_action'] = $this->fmt_date_ddmmyyyy($fields['kvt_next_action']);
 
@@ -4320,6 +4448,35 @@ JS;
         wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url,'fields'=>$fields,'current_role'=>($fields['current_role']??'')]);
     }
 
+    public function ajax_parse_cv() {
+        check_ajax_referer('kvt_nonce');
+
+        if (empty($_FILES['file']['name'])) wp_send_json_error(['msg'=>'Archivo no recibido'],400);
+
+        if (!function_exists('wp_handle_upload')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+        add_filter('upload_mimes', function($mimes){
+            $mimes['pdf']  = 'application/pdf';
+            $mimes['doc']  = 'application/msword';
+            $mimes['docx'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            return $mimes;
+        });
+
+        $uploaded = wp_handle_upload($_FILES['file'], ['test_form'=>false]);
+        if (isset($uploaded['error'])) wp_send_json_error(['msg'=>$uploaded['error']],500);
+
+        $text = isset($_POST['cv_text']) ? sanitize_textarea_field(wp_unslash($_POST['cv_text'])) : '';
+        if ($text === '' && isset($uploaded['file'])) {
+            $text = $this->extract_text_from_file($uploaded['file']);
+        }
+        if (isset($uploaded['file'])) @unlink($uploaded['file']);
+
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        $fields = ($text && $key) ? $this->openai_extract_profile_fields($key, $text) : [];
+        wp_send_json_success(['fields'=>$fields]);
+    }
+
     public function ajax_list_profiles() {
         check_ajax_referer('kvt_nonce');
 
@@ -4349,11 +4506,13 @@ JS;
         }
 
         if ($role !== '') {
-            $meta_query[] = [
-                'relation' => 'OR',
-                ['key'=>'kvt_current_role','value'=>$role,'compare'=>'LIKE'],
-                ['key'=>'current_role','value'=>$role,'compare'=>'LIKE'],
-            ];
+            $role_parts = array_filter(array_map('trim', explode(',', $role)));
+            $role_sub   = ['relation' => 'OR'];
+            foreach ($role_parts as $rpart) {
+                $role_sub[] = ['key'=>'kvt_current_role','value'=>$rpart,'compare'=>'LIKE'];
+                $role_sub[] = ['key'=>'current_role','value'=>$rpart,'compare'=>'LIKE'];
+            }
+            if (count($role_sub) > 1) $meta_query[] = $role_sub;
         }
 
         if ($location !== '') {
@@ -4430,9 +4589,46 @@ JS;
         check_ajax_referer('kvt_nonce');
         $terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
         $items = [];
+        $statuses = array_values(array_filter(array_map('trim', explode("\n", get_option(self::OPT_STATUSES, '')))));
         foreach ($terms as $t) {
             $client_id = (int) get_term_meta($t->term_id,'kvt_process_client',true);
             $client_name = $client_id ? get_term($client_id)->name : '';
+            $creator_id = (int) get_term_meta($t->term_id,'kvt_process_creator',true);
+            $creator = '';
+            if ($creator_id) {
+                $u = get_user_by('id', $creator_id);
+                if ($u) $creator = $u->display_name;
+            }
+            $created = get_term_meta($t->term_id,'kvt_process_created',true);
+            $created_fmt = $created ? date_i18n('d-m-Y', strtotime($created)) : '';
+            $status  = get_term_meta($t->term_id,'kvt_process_status',true);
+            if (!$status) $status = 'active';
+            $end     = get_term_meta($t->term_id,'kvt_process_end',true);
+            $start_ts = $created ? strtotime($created) : 0;
+            $end_ts   = ($status === 'active') ? current_time('timestamp') : ($end ? strtotime($end) : current_time('timestamp'));
+            $days_active = $start_ts ? floor(($end_ts - $start_ts)/DAY_IN_SECONDS) : 0;
+
+            // Determine furthest active job stage
+            $job_stage = '';
+            $posts = get_posts([
+                'post_type'   => self::CPT,
+                'numberposts' => -1,
+                'fields'      => 'ids',
+                'tax_query'   => [[
+                    'taxonomy' => self::TAX_PROCESS,
+                    'terms'    => $t->term_id,
+                ]],
+            ]);
+            $max = -1;
+            foreach ($posts as $pid) {
+                $st = get_post_meta($pid,'kvt_status',true);
+                $idx = array_search($st, $statuses, true);
+                if ($idx !== false && strtolower($st) !== 'declined' && $idx > $max) {
+                    $max = $idx;
+                }
+            }
+            if ($max >= 0 && isset($statuses[$max])) $job_stage = $statuses[$max];
+
             $items[] = [
                 'id' => $t->term_id,
                 'name' => $t->name,
@@ -4441,6 +4637,11 @@ JS;
                 'contact_name'  => get_term_meta($t->term_id,'contact_name',true),
                 'contact_email' => get_term_meta($t->term_id,'contact_email',true),
                 'description'   => $t->description,
+                'creator'       => $creator,
+                'created'       => $created_fmt,
+                'status'        => $status,
+                'days'          => $days_active,
+                'job_stage'     => $job_stage,
                 'edit_url'      => admin_url('term.php?taxonomy=' . self::TAX_PROCESS . '&tag_ID=' . $t->term_id),
             ];
         }
@@ -4502,6 +4703,8 @@ JS;
 
         $first      = isset($_POST['first_name']) ? sanitize_text_field($_POST['first_name']) : '';
         $last       = isset($_POST['last_name'])  ? sanitize_text_field($_POST['last_name'])  : '';
+        $first      = $this->normalize_name($first);
+        $last       = $this->normalize_name($last);
         $email      = isset($_POST['email'])      ? sanitize_email($_POST['email'])           : '';
         $phone      = isset($_POST['phone'])      ? sanitize_text_field($_POST['phone'])      : '';
         $country    = isset($_POST['country'])    ? sanitize_text_field($_POST['country'])    : '';
@@ -4542,8 +4745,98 @@ JS;
         if ($client_id) wp_set_object_terms($new_id, [$client_id], self::TAX_CLIENT, false);
         if ($process_id) wp_set_object_terms($new_id, [$process_id], self::TAX_PROCESS, false);
 
-      wp_send_json_success(['id'=>$new_id]);
-      }
+        wp_send_json_success(['id'=>$new_id]);
+    }
+
+    public function ajax_bulk_upload_cvs() {
+        check_ajax_referer('kvt_nonce');
+
+        if (empty($_FILES['files']['name']) || !is_array($_FILES['files']['name'])) {
+            wp_send_json_error(['msg'=>'Archivos no recibidos'],400);
+        }
+
+        if (!function_exists('wp_handle_upload')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+            require_once ABSPATH . 'wp-admin/includes/image.php';
+            require_once ABSPATH . 'wp-admin/includes/media.php';
+        }
+        add_filter('upload_mimes', function($m){
+            $m['pdf']  = 'application/pdf';
+            $m['doc']  = 'application/msword';
+            $m['docx'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            return $m;
+        });
+
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        if (!$key) {
+            wp_send_json_error(['msg'=>'Falta la clave'], 400);
+        }
+
+        $created  = [];
+        $files    = $_FILES['files'];
+        $statuses = $this->get_statuses();
+
+        foreach ($files['name'] as $i => $name) {
+            if ($files['error'][$i] !== UPLOAD_ERR_OK) continue;
+
+            $file = [
+                'name'     => $files['name'][$i],
+                'type'     => $files['type'][$i],
+                'tmp_name' => $files['tmp_name'][$i],
+                'error'    => $files['error'][$i],
+                'size'     => $files['size'][$i],
+            ];
+
+            $title = sanitize_text_field(pathinfo($name, PATHINFO_FILENAME));
+            $cid = wp_insert_post([
+                'post_type'   => self::CPT,
+                'post_status' => 'publish',
+                'post_title'  => $title ?: 'Candidate',
+            ]);
+            if (!$cid || is_wp_error($cid)) continue;
+
+            $uploaded = wp_handle_upload($file, ['test_form'=>false]);
+            if (isset($uploaded['error'])) { wp_delete_post($cid, true); continue; }
+
+            $attachment = [
+                'post_mime_type' => $uploaded['type'],
+                'post_title'     => sanitize_file_name($name),
+                'post_content'   => '',
+                'post_status'    => 'inherit',
+            ];
+            $attach_id = wp_insert_attachment($attachment, $uploaded['file'], $cid);
+            if (!is_wp_error($attach_id)) {
+                $attach_data = wp_generate_attachment_metadata($attach_id, $uploaded['file']);
+                wp_update_attachment_metadata($attach_id, $attach_data);
+                $url = $uploaded['url'];
+                update_post_meta($cid, 'kvt_cv_attachment_id', $attach_id);
+                update_post_meta($cid, 'kvt_cv_url', esc_url_raw($url));
+                update_post_meta($cid, 'cv_url', esc_url_raw($url));
+                $today = date_i18n('d-m-Y');
+                update_post_meta($cid, 'kvt_cv_uploaded', $today);
+                update_post_meta($cid, 'cv_uploaded', $today);
+                $this->save_cv_text_attachment($cid, $attach_id);
+                $fields = $this->update_profile_from_cv($cid, $key);
+            } else {
+                $fields = [];
+            }
+
+            if (!empty($statuses)) update_post_meta($cid, 'kvt_status', $statuses[0]);
+
+            $first = get_post_meta($cid, 'kvt_first_name', true);
+            $last  = get_post_meta($cid, 'kvt_last_name', true);
+            $new_title = trim($first.' '.$last);
+            if ($new_title !== '') {
+                wp_update_post(['ID'=>$cid,'post_title'=>$new_title]);
+            }
+
+            $created[] = ['id'=>$cid, 'fields'=>$fields];
+        }
+
+        if (empty($created)) wp_send_json_error(['msg'=>'No se pudieron procesar los CVs'],500);
+
+        wp_send_json_success(['candidates'=>$created, 'count'=>count($created)]);
+    }
 
       public function ajax_create_client() {
           check_ajax_referer('kvt_nonce');
@@ -4582,6 +4875,9 @@ JS;
         if ($client_id) update_term_meta($tid, 'kvt_process_client', $client_id);
         if ($contact_name)  update_term_meta($tid, 'contact_name', $contact_name);
         if ($contact_email) update_term_meta($tid, 'contact_email', $contact_email);
+        update_term_meta($tid, 'kvt_process_creator', get_current_user_id());
+        update_term_meta($tid, 'kvt_process_created', current_time('Y-m-d'));
+        update_term_meta($tid, 'kvt_process_status', 'active');
 
         wp_send_json_success(['id'=>$tid]);
     }
@@ -4627,6 +4923,21 @@ JS;
         update_term_meta($id, 'contact_name', $contact_name);
         update_term_meta($id, 'contact_email', $contact_email);
 
+        wp_send_json_success(['id'=>$id]);
+    }
+
+    public function ajax_update_process_status() {
+        check_ajax_referer('kvt_nonce');
+
+        $id     = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        $status = isset($_POST['status']) ? sanitize_text_field($_POST['status']) : '';
+        if (!$id || $status === '') wp_send_json_error(['msg'=>'Datos inválidos'],400);
+        update_term_meta($id, 'kvt_process_status', $status);
+        if ($status === 'active') {
+            delete_term_meta($id, 'kvt_process_end');
+        } else {
+            update_term_meta($id, 'kvt_process_end', current_time('Y-m-d'));
+        }
         wp_send_json_success(['id'=>$id]);
     }
 
@@ -4976,6 +5287,9 @@ JS;
         foreach ($map as $field => $meta) {
             $val = isset($data[$field]) ? trim($data[$field]) : '';
             if ($val === '') continue;
+            if (in_array($field, ['first_name','last_name'], true)) {
+                $val = $this->normalize_name($val);
+            }
             if ($this->meta_get_compat($post_id, $meta, [substr($meta,4)]) === '') {
                 update_post_meta($post_id, $meta, $val);
                 update_post_meta($post_id, substr($meta,4), $val);
