@@ -1054,17 +1054,41 @@ JS;
     private function get_process_map() {
         $terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
         $out = [];
+        $statuses = array_values(array_filter(array_map('trim', explode("\n", get_option(self::OPT_STATUSES, '')))));
         foreach ($terms as $t) {
             $cid = (int) get_term_meta($t->term_id, 'kvt_process_client', true);
+            // Determine furthest active job stage
+            $job_stage = '';
+            $posts = get_posts([
+                'post_type'   => self::CPT,
+                'numberposts' => -1,
+                'fields'      => 'ids',
+                'tax_query'   => [[
+                    'taxonomy' => self::TAX_PROCESS,
+                    'terms'    => $t->term_id,
+                ]],
+            ]);
+            $max = -1;
+            foreach ($posts as $pid) {
+                $st = get_post_meta($pid,'kvt_status',true);
+                $idx = array_search($st, $statuses, true);
+                if ($idx !== false && strtolower($st) !== 'declined' && $idx > $max) {
+                    $max = $idx;
+                }
+            }
+            if ($max >= 0 && isset($statuses[$max])) $job_stage = $statuses[$max];
+
             $out[] = [
                 'id'          => $t->term_id,
                 'name'        => $t->name,
                 'client_id'   => $cid ?: 0,
+                'client'      => $cid ? get_term($cid)->name : '',
                 'description' => wp_strip_all_tags($t->description),
                 'contact_name'  => get_term_meta($t->term_id, 'contact_name', true),
                 'contact_email' => get_term_meta($t->term_id, 'contact_email', true),
                 'creator'       => get_the_author_meta('display_name', (int) get_term_meta($t->term_id, 'kvt_process_creator', true)),
                 'created'       => get_term_meta($t->term_id, 'kvt_process_created', true),
+                'job_stage'     => $job_stage,
             ];
         }
         return $out;
@@ -2951,22 +2975,27 @@ function kvtInit(){
       clientDet += ' <button type="button" class="kvt-edit-client-inline" data-id="'+cid+'">Editar</button>';
     }
     selClientInfo.innerHTML = clientDet;
-      let procDet='';
-      if(pid && Array.isArray(window.KVT_PROCESS_MAP)){
-        const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
-        if(p){
-          procDet = '<strong>Proceso:</strong> '+esc(p.name||'');
+    let procDet='';
+    if(pid && Array.isArray(window.KVT_PROCESS_MAP)){
+      const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
+      if(p){
         const cl = getClientById(p.client_id);
-        if(cl) procDet += '<br><em>Cliente:</em> '+esc(cl.name||'');
-        if(p.contact_name || p.contact_email){
-          procDet += '<br><em>Contacto:</em> '+esc(p.contact_name||'');
-          if(p.contact_email) procDet += ', '+esc(p.contact_email);
+        const clientName = cl ? cl.name||'' : (p.client||'');
+        const title = (clientName?esc(clientName)+' + ':'')+esc(p.name||'');
+        procDet = '<strong>'+title+'</strong>';
+        if(p.creator) procDet += '<br><em>Registrado por:</em> '+esc(p.creator);
+        const contact = p.contact_name || (cl?cl.contact_name:'');
+        if(contact) procDet += '<br><em>Persona de contacto:</em> '+esc(contact);
+        if(p.job_stage) procDet += '<br><em>Etapa:</em> '+esc(p.job_stage);
+        if(p.created){
+          const cd = new Date(p.created);
+          if(!isNaN(cd)) procDet += '<br><em>Días abierto:</em> '+Math.floor((Date.now()-cd.getTime())/86400000);
         }
         if(p.description) procDet += '<br><em>Descripción:</em> '+esc(p.description);
+        procDet += ' <button type="button" class="kvt-edit-process-inline" data-id="'+pid+'">Editar</button>';
       }
-      procDet += ' <button type="button" class="kvt-edit-process-inline" data-id="'+pid+'">Editar</button>';
-      }
-      selProcessInfo.innerHTML = procDet;
+    }
+    selProcessInfo.innerHTML = procDet;
       let boardDet='';
       if(cid && pid){
         const key = cid+'|'+pid;
@@ -2991,33 +3020,23 @@ function kvtInit(){
     const cid = selClient && selClient.value ? selClient.value : '';
     const pid = selProcess && selProcess.value ? selProcess.value : '';
     let html = '';
-    if(cid && Array.isArray(window.KVT_CLIENT_MAP)){
-      const c = window.KVT_CLIENT_MAP.find(x=>String(x.id)===cid);
-      if(c){
-        html += '<p><strong>Cliente:</strong> '+esc(c.name||'');
-        if(c.contact_name || c.contact_email || c.contact_phone){
-          html += '<br><em>Contacto:</em> '+esc(c.contact_name||'');
-          if(c.contact_email) html += ', '+esc(c.contact_email);
-          if(c.contact_phone) html += ', '+esc(c.contact_phone);
-        }
-        if(c.description) html += '<br><em>Descripción:</em> '+esc(c.description);
-        const procNames = Array.isArray(window.KVT_PROCESS_MAP)?window.KVT_PROCESS_MAP.filter(p=>String(p.client_id)===cid).map(p=>p.name):[];
-        if(procNames.length) html += '<br><em>Procesos:</em> '+esc(procNames.join(', '));
-        html += ' <button type="button" class="kvt-edit-client-inline" data-id="'+cid+'">Editar</button></p>';
-      }
-    }
     if(pid && Array.isArray(window.KVT_PROCESS_MAP)){
       const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
       if(p){
-        html += '<p><strong>Proceso:</strong> '+esc(p.name||'');
         const cl = getClientById(p.client_id);
-        if(cl) html += '<br><em>Cliente:</em> '+esc(cl.name||'');
-        if(p.contact_name || p.contact_email){
-          html += '<br><em>Contacto:</em> '+esc(p.contact_name||'');
-          if(p.contact_email) html += ', '+esc(p.contact_email);
+        const clientName = cl ? cl.name||'' : (p.client||'');
+        let block = '<strong>'+((clientName?esc(clientName)+' + ':'')+esc(p.name||''))+'</strong>';
+        if(p.creator) block += '<br><em>Registrado por:</em> '+esc(p.creator);
+        const contact = p.contact_name || (cl?cl.contact_name:'');
+        if(contact) block += '<br><em>Persona de contacto:</em> '+esc(contact);
+        if(p.job_stage) block += '<br><em>Etapa:</em> '+esc(p.job_stage);
+        if(p.created){
+          const cd = new Date(p.created);
+          if(!isNaN(cd)) block += '<br><em>Días abierto:</em> '+Math.floor((Date.now()-cd.getTime())/86400000);
         }
-        if(p.description) html += '<br><em>Descripción:</em> '+esc(p.description);
-        html += ' <button type="button" class="kvt-edit-process-inline" data-id="'+pid+'">Editar</button></p>';
+        if(p.description) block += '<br><em>Descripción:</em> '+esc(p.description);
+        block += ' <button type="button" class="kvt-edit-process-inline" data-id="'+pid+'">Editar</button>';
+        html += '<p>'+block+'</p>';
       }
     }
     const key = cid+'|'+pid;
@@ -3503,6 +3522,10 @@ function kvtInit(){
               window.KVT_PROCESS_MAP[idx].contact_name = p.contact_name;
               window.KVT_PROCESS_MAP[idx].contact_email = p.contact_email;
               window.KVT_PROCESS_MAP[idx].description = p.description;
+              window.KVT_PROCESS_MAP[idx].creator = p.creator;
+              window.KVT_PROCESS_MAP[idx].created = p.created;
+              window.KVT_PROCESS_MAP[idx].job_stage = p.job_stage;
+              if(typeof p.client!=='undefined') window.KVT_PROCESS_MAP[idx].client = p.client;
               if(typeof p.client_id!=='undefined') window.KVT_PROCESS_MAP[idx].client_id = p.client_id;
             } else {
               window.KVT_PROCESS_MAP.push(p);
@@ -4430,9 +4453,39 @@ JS;
         check_ajax_referer('kvt_nonce');
         $terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
         $items = [];
+        $statuses = array_values(array_filter(array_map('trim', explode("\n", get_option(self::OPT_STATUSES, '')))));
         foreach ($terms as $t) {
             $client_id = (int) get_term_meta($t->term_id,'kvt_process_client',true);
             $client_name = $client_id ? get_term($client_id)->name : '';
+            $creator_id = (int) get_term_meta($t->term_id,'kvt_process_creator',true);
+            $creator = '';
+            if ($creator_id) {
+                $u = get_user_by('id', $creator_id);
+                if ($u) $creator = $u->display_name;
+            }
+            $created = get_term_meta($t->term_id,'kvt_process_created',true);
+
+            // Determine furthest active job stage
+            $job_stage = '';
+            $posts = get_posts([
+                'post_type'   => self::CPT,
+                'numberposts' => -1,
+                'fields'      => 'ids',
+                'tax_query'   => [[
+                    'taxonomy' => self::TAX_PROCESS,
+                    'terms'    => $t->term_id,
+                ]],
+            ]);
+            $max = -1;
+            foreach ($posts as $pid) {
+                $st = get_post_meta($pid,'kvt_status',true);
+                $idx = array_search($st, $statuses, true);
+                if ($idx !== false && strtolower($st) !== 'declined' && $idx > $max) {
+                    $max = $idx;
+                }
+            }
+            if ($max >= 0 && isset($statuses[$max])) $job_stage = $statuses[$max];
+
             $items[] = [
                 'id' => $t->term_id,
                 'name' => $t->name,
@@ -4441,6 +4494,9 @@ JS;
                 'contact_name'  => get_term_meta($t->term_id,'contact_name',true),
                 'contact_email' => get_term_meta($t->term_id,'contact_email',true),
                 'description'   => $t->description,
+                'creator'       => $creator,
+                'created'       => $created,
+                'job_stage'     => $job_stage,
                 'edit_url'      => admin_url('term.php?taxonomy=' . self::TAX_PROCESS . '&tag_ID=' . $t->term_id),
             ];
         }
