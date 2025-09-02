@@ -371,7 +371,11 @@ cv_uploaded|Fecha de subida");
   position:sticky;top:0;background:#f9fbfd;border-bottom:1px solid var(--divider);
   text-align:left;font-weight:600;padding:12px
 }
+.kcvf tbody tr:nth-child(even){background:var(--bg)}
+.kcvf tbody tr:hover{background:var(--surface)}
 .kcvf tbody td{border-top:1px solid var(--divider);padding:12px;vertical-align:middle}
+.kcvf .k-row-actions{width:80px;text-align:right;opacity:0;transition:opacity .2s}
+.kcvf tbody tr:hover .k-row-actions{opacity:1}
 .kcvf .sortable{cursor:pointer}
 .kcvf .checkbox{width:36px;text-align:center}
 
@@ -472,7 +476,8 @@ CSS;
           +'</span>';
       }
       const actions=document.createElement('td');
-      actions.innerHTML='<button class="btn btn--ghost">Ver</button>';
+      actions.className='k-row-actions';
+      actions.innerHTML='<span class="dashicons dashicons-visibility"></span><span class="dashicons dashicons-edit"></span><span class="dashicons dashicons-trash"></span>';
       tr.append(cb,name,intNo,stage,actions);
       tbody.appendChild(tr);
     });
@@ -1216,19 +1221,20 @@ JS;
             <span class="dashicons dashicons-editor-help kvt-help" title="Haz clic para ver cómo funciona el tablero"></span>
             <div class="kvt-header">
                 <h2 class="kvt-board-title">Tablero ATS</h2>
-                <nav class="kvt-nav" aria-label="Navegación principal">
-                    <a href="#" class="active" data-view="detalles">Detalles</a>
-                    <a href="#" data-view="ats">ATS</a>
-                    <a href="#" data-view="calendario">Calendario</a>
+                <nav class="kvt-nav kvt-nav--collapsed" aria-label="Navegación principal">
+                    <button type="button" id="kvt_nav_toggle" class="kvt-nav__toggle dashicons dashicons-menu" aria-label="Toggle navigation"></button>
+                    <a href="#" class="active" data-view="detalles"><span class="dashicons dashicons-info"></span><span class="kvt-nav__label">Detalles</span></a>
+                    <a href="#" data-view="ats"><span class="dashicons dashicons-groups"></span><span class="kvt-nav__label">ATS</span></a>
+                    <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar-alt"></span><span class="kvt-nav__label">Calendario</span></a>
                     <span class="kvt-nav-spacer"></span>
-                    <a href="#" id="kvt_add_profile">Base</a>
-                    <a href="#" id="kvt_toggle_table">Tabla</a>
-                    <a href="#" id="kvt_mandar_correos">Correos</a>
-                    <a href="#" id="kvt_share_board">Tablero Cliente</a>
-                    <a href="#" id="kvt_open_processes">Procesos</a>
-                    <a href="#" id="kvt_nav_export">Exportar</a>
-                    <a href="#" id="kvt_nav_load_roles">Cargar roles y empresas</a>
-                    <a href="#">Nuevo filtro</a>
+                    <a href="#" id="kvt_add_profile"><span class="dashicons dashicons-database"></span><span class="kvt-nav__label">Base</span></a>
+                    <a href="#" id="kvt_toggle_table"><span class="dashicons dashicons-list-view"></span><span class="kvt-nav__label">Tabla</span></a>
+                    <a href="#" id="kvt_mandar_correos"><span class="dashicons dashicons-email"></span><span class="kvt-nav__label">Correos</span></a>
+                    <a href="#" id="kvt_share_board"><span class="dashicons dashicons-admin-users"></span><span class="kvt-nav__label">Tablero Cliente</span></a>
+                    <a href="#" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span><span class="kvt-nav__label">Procesos</span></a>
+                    <a href="#" id="kvt_nav_export"><span class="dashicons dashicons-download"></span><span class="kvt-nav__label">Exportar</span></a>
+                    <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-upload"></span><span class="kvt-nav__label">Cargar roles y empresas</span></a>
+                    <a href="#"><span class="dashicons dashicons-filter"></span><span class="kvt-nav__label">Nuevo filtro</span></a>
                 </nav>
             </div>
             <div id="kvt_filters_bar" class="kvt-filters" style="display:none;">
@@ -1260,6 +1266,18 @@ JS;
             <?php endif; ?>
 
             <div class="kvt-main">
+                <section class="kvt-summary">
+                    <div class="kvt-summary__job">
+                        <h3 class="kvt-summary__title">Job Title</h3>
+                        <span class="kvt-summary__status">Status: Active</span>
+                    </div>
+                    <div class="kvt-summary__metrics">
+                        <span class="kvt-chip"><span class="dashicons dashicons-list-view"></span>Long Lists <span class="kvt-badge">0</span></span>
+                        <span class="kvt-chip"><span class="dashicons dashicons-yes"></span>Shortlists <span class="kvt-badge">0</span></span>
+                        <span class="kvt-chip"><span class="dashicons dashicons-format-chat"></span>Interviews <span class="kvt-badge">0</span></span>
+                        <span class="kvt-chip"><span class="dashicons dashicons-awards"></span>Placements <span class="kvt-badge">0</span></span>
+                    </div>
+                </section>
                 <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:none;">
                     <div id="kvt_stage_overview" class="kvt-stage-overview"></div>
                     <div id="kvt_ats_bar" class="kvt-ats-bar">
@@ -1631,7 +1649,7 @@ JS;
         // Styles
         wp_enqueue_style('dashicons');
         $css = "
-        .kvt-wrapper{max-width:1200px;margin:0 auto;padding:16px;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.06);position:relative}
+        .kvt-wrapper{max-width:1200px;margin:0 auto;padding:var(--space-md);background:var(--surface);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.06);position:relative}
         .kvt-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
         .kvt-filters{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
         .kvt-filters label{display:inline-flex;gap:6px;align-items:center;font-weight:600}
@@ -1641,20 +1659,27 @@ JS;
         .kvt-help{position:absolute;top:16px;right:16px;font-size:24px;color:#0A212E;cursor:pointer}
         .kvt-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;border-bottom:1px solid #e5e7eb;padding-bottom:8px}
         .kvt-board-title{font-size:20px;font-weight:700;margin:0}
-        .kvt-nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+        .kvt-nav{display:flex;flex-direction:column;gap:var(--space-sm);align-items:flex-start;width:var(--sidebar-width)}
+        .kvt-nav__toggle{display:none;background:none;border:none;cursor:pointer}
         .kvt-nav-spacer{flex:1}
-        .kvt-nav a{padding:6px 10px;border-radius:8px;color:#6b7280;font-weight:600}
-        .kvt-nav a.active{background:#0A212E;color:#fff}
-        .kvt-nav a:hover{background:#f1f5f9;color:#0A212E}
+        .kvt-nav a{display:flex;align-items:center;gap:var(--space-sm);padding:6px 10px;border-radius:8px;color:var(--ink-muted);font-weight:600;position:relative}
+        .kvt-nav a.active{background:var(--ink);color:var(--surface)}
+        .kvt-nav a.active::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--ink)}
+        .kvt-nav a:hover{background:var(--surface);color:var(--ink)}
+        .kvt-summary{display:flex;align-items:center;justify-content:space-between;gap:var(--space-md);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:var(--space-md);margin-bottom:var(--space-md);flex-wrap:wrap}
+        .kvt-summary__title{margin:0}
+        .kvt-summary__metrics{display:flex;gap:var(--space-md);flex-wrap:wrap}
+        .kvt-chip{display:flex;align-items:center;gap:4px;background:var(--bg);border-radius:var(--radius);padding:4px 8px;font-weight:600}
+        .kvt-badge{background:var(--ink);color:var(--surface);border-radius:999px;padding:0 6px;font-size:12px}
         .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
         .kvt-btn:hover{opacity:.95}
           .kvt-secondary{background:#475569}
           .kvt-new{position:relative;display:inline-block}
-          .kvt-new-menu{position:absolute;right:0;top:100%;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 5px 15px rgba(0,0,0,.1);display:none;flex-direction:column;z-index:1000}
-          .kvt-new-menu button{background:none;color:#0A212E;border:none;padding:8px 12px;text-align:left;cursor:pointer}
-          .kvt-new-menu button:hover{background:#f1f5f9}
+          .kvt-new-menu{position:absolute;right:0;top:100%;background:var(--surface);border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 5px 15px rgba(0,0,0,.1);display:none;flex-direction:column;z-index:1000}
+          .kvt-new-menu button{background:none;color:var(--ink);border:none;padding:8px 12px;text-align:left;cursor:pointer}
+          .kvt-new-menu button:hover{background:var(--surface)}
           .kvt-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px}
-        .kvt-col{min-width:260px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:10px;flex:0 0 260px}
+        .kvt-col{min-width:var(--sidebar-width);background:var(--surface);border:1px solid #e5e7eb;border-radius:12px;padding:10px;flex:0 0 var(--sidebar-width)}
         .kvt-col h3{margin:0 0 8px;font-size:16px;color:#0A212E}
         .kvt-col.dragover{outline:2px dashed #0A212E; outline-offset: -6px;}
         .kvt-dropzone{min-height:60px;display:flex;flex-direction:column;gap:8px}
@@ -1694,7 +1719,7 @@ JS;
         .kvt-delete{background:none !important;border:none !important;color:#b91c1c !important;font-size:18px;line-height:1;cursor:pointer;padding:0}
         .kvt-delete:hover{color:#7f1d1d !important}
         .kvt-delete.dashicons{vertical-align:middle}
-        .kvt-main{display:flex;gap:16px}
+        .kvt-main{display:flex;gap:var(--space-md)}
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
         #kvt_table_wrap{flex:0 0 70%}
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
@@ -1766,7 +1791,7 @@ JS;
           .kvt-share-title{font-weight:600;margin-bottom:6px}
           .kvt-config-client{background:none;border:none;cursor:pointer;margin-left:8px}
           .kvt-config-client .dashicons{vertical-align:middle}
-          :root{--ink:#0A212E;--muted:#6B7280;--line:#E5E7EB;--bg:#FFFFFF;--accent:#0A212E;--radius:8px;--shadow:0 6px 20px rgba(10,33,46,.06)}
+          :root{--ink:#0A212E;--muted:#6B7280;--ink-muted:#6B7280;--surface:#FFFFFF;--line:#E5E7EB;--bg:#FFFFFF;--accent:#0A212E;--radius:8px;--shadow:0 6px 20px rgba(10,33,46,.06);--sidebar-width:260px;--space-md:16px;--space-sm:8px}
           .kvt-base *{box-sizing:border-box}
           .kvt-base{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial;color:var(--ink);background:var(--bg)}
           .kvt-base a{color:var(--accent);text-decoration:none}
@@ -1790,7 +1815,7 @@ JS;
           .kvt-base .kvt-meta{display:flex;align-items:center;gap:10px;white-space:nowrap}
           .kvt-base .kvt-mini-panel{margin:8px 0}
           .kvt-base .kvt-stats{font-size:14px;color:var(--muted);margin-bottom:8px;display:flex;gap:12px}
-          @media(max-width:720px){.kvt-base .kvt-row{grid-template-columns:1fr}.kvt-base .kvt-meta{grid-column:1;justify-content:flex-start;margin-top:4px}.kvt-base .kvt-head{top:120px}#kvt_modal .kvt-base .kvt-head{top:0}}
+          @media(max-width:720px){.kvt-nav__toggle{display:block}.kvt-nav{transition:width .2s}.kvt-nav.kvt-nav--collapsed{width:48px}.kvt-nav.kvt-nav--collapsed a{justify-content:center}.kvt-nav.kvt-nav--collapsed .kvt-nav__label{display:none}.kvt-base .kvt-row{grid-template-columns:1fr}.kvt-base .kvt-meta{grid-column:1;justify-content:flex-start;margin-top:4px}.kvt-base .kvt-head{top:120px}#kvt_modal .kvt-base .kvt-head{top:0}}
         ";
         wp_register_style('kvt-style', false);
         wp_enqueue_style('kvt-style');
@@ -1891,6 +1916,11 @@ function kvtInit(){
 
   const viewLinks = els('.kvt-nav a[data-view]');
   const exportLink = el('#kvt_nav_export');
+  const nav = el('.kvt-nav');
+  const navToggle = el('#kvt_nav_toggle');
+  if(nav && navToggle){
+    navToggle.addEventListener('click',()=>nav.classList.toggle('kvt-nav--collapsed'));
+  }
   if (viewLinks.length){
     viewLinks.forEach(link=>{
       link.addEventListener('click',e=>{
