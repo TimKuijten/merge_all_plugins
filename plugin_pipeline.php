@@ -1165,6 +1165,16 @@ JS;
             <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
             <?php endif; ?>
             <span class="dashicons dashicons-editor-help kvt-help" title="Haz clic para ver cómo funciona el tablero"></span>
+            <div class="kvt-header">
+                <h2 class="kvt-board-title">Tablero ATS</h2>
+                <nav class="kvt-nav" aria-label="Navegación principal">
+                    <a href="#" class="active">Detalles</a>
+                    <a href="#">ATS</a>
+                    <a href="#">Calendario</a>
+                    <a href="#" id="kvt_nav_export">Exportar</a>
+                    <a href="#">Nuevo filtro</a>
+                </nav>
+            </div>
             <div class="kvt-toolbar">
                 <div class="kvt-filters">
                     <label>Cliente
@@ -1568,6 +1578,12 @@ JS;
         .kvt-client-link{margin-left:12px;display:inline-flex;align-items:center;gap:6px;font-weight:600}
         .kvt-logo{display:block;margin:0 auto 12px;max-width:300px}
         .kvt-help{position:absolute;top:16px;right:16px;font-size:24px;color:#0A212E;cursor:pointer}
+        .kvt-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;border-bottom:1px solid #e5e7eb;padding-bottom:8px}
+        .kvt-board-title{font-size:20px;font-weight:700;margin:0}
+        .kvt-nav{display:flex;gap:8px}
+        .kvt-nav a{padding:6px 10px;border-radius:8px;color:#6b7280;font-weight:600}
+        .kvt-nav a.active{background:#0A212E;color:#fff}
+        .kvt-nav a:hover{background:#f1f5f9;color:#0A212E}
         .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
         .kvt-btn:hover{opacity:.95}
           .kvt-secondary{background:#475569}
@@ -1620,8 +1636,9 @@ JS;
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
         #kvt_table_wrap{flex:0 0 70%}
         #kvt_table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
-        #kvt_table thead th{position:sticky;top:0;background:#0A212E;color:#fff;padding:10px;border-bottom:1px solid #0A212E;text-align:left}
+        #kvt_table thead th{position:sticky;top:0;background:#f8fafc;color:#0A212E;padding:10px;border-bottom:1px solid #e5e7eb;text-align:left;font-weight:600}
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
+        #kvt_table tbody tr:hover{background:#f1f5f9}
         .kvt-ats-bar{display:flex;gap:8px;align-items:center;padding:8px}
         .kvt-activity{margin-top:16px;flex:1;border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto}
         .kvt-activity-tabs{display:flex;gap:8px;margin-bottom:8px}
@@ -1801,6 +1818,21 @@ function kvtInit(){
   if (helpBtn && helpModal) {
     helpBtn.addEventListener('click', () => { helpModal.style.display = 'flex'; });
     if (helpClose) helpClose.addEventListener('click', () => { helpModal.style.display = 'none'; });
+  }
+
+  const navLinks = els('.kvt-nav a');
+  if (navLinks.length){
+    navLinks.forEach(link=>{
+      link.addEventListener('click',e=>{
+        e.preventDefault();
+        navLinks.forEach(n=>n.classList.remove('active'));
+        link.classList.add('active');
+        if (link.id==='kvt_nav_export'){
+          const trg = el('#kvt_export_xls');
+          if (trg) trg.click();
+        }
+      });
+    });
   }
 
   async function extractPdfWithPDFjs(file){
