@@ -1185,13 +1185,12 @@ JS;
                     </label>
                     <span id="kvt_client_link" class="kvt-client-link"></span>
                 </div>
-                <div class="kvt-actions">
-                    <button class="kvt-btn" id="kvt_add_profile">Base</button>
-                    <button class="kvt-btn" id="kvt_toggle_table">Tabla</button>
-                    <button class="kvt-btn" type="button" id="kvt_mandar_correos">Correos</button>
-                    <button class="kvt-btn" type="button" id="kvt_share_board">Tablero Cliente</button>
-                    <button class="kvt-btn" type="button" id="kvt_open_processes">Procesos</button>
-                </div>
+                  <div class="kvt-actions">
+                      <button class="kvt-btn" id="kvt_add_profile">Base</button>
+                      <button class="kvt-btn" id="kvt_toggle_table">Tabla</button>
+                      <button class="kvt-btn" type="button" id="kvt_share_board">Tablero Cliente</button>
+                      <button class="kvt-btn" type="button" id="kvt_open_processes">Procesos</button>
+                  </div>
             </div>
 
             <?php if (!$is_client_board): ?>
@@ -1275,45 +1274,41 @@ JS;
                         <button type="button" class="kvt-btn kvt-secondary" id="kvt_table_next">Siguiente</button>
                     </div>
                 </div>
-                <div id="kvt_activity" class="kvt-activity">
-                    <div class="kvt-activity-tabs">
-                        <button type="button" class="kvt-activity-tab active" data-target="tasks">Actividad</button>
-                        <button type="button" class="kvt-activity-tab" data-target="log">Activity</button>
-                        <button type="button" class="kvt-activity-tab" data-target="mail">Correos</button>
-                    </div>
-                    <div id="kvt_activity_tasks" class="kvt-activity-content">
-                        <div class="kvt-activity-columns">
-                            <div class="kvt-activity-col">
-                                <h4>Próximos eventos</h4>
-                                <ul id="kvt_tasks_due" class="kvt-activity-list"></ul>
-                                <ul id="kvt_tasks_upcoming" class="kvt-activity-list"></ul>
-                                <h4>Añadir tarea</h4>
-                                <form id="kvt_task_form">
-                                    <select id="kvt_task_candidate"></select>
-                                    <input type="date" id="kvt_task_date">
-                                    <input type="text" id="kvt_task_note" placeholder="Nota">
-                                    <button class="kvt-btn" type="submit">Guardar</button>
-                                </form>
-                            </div>
-                            <div class="kvt-activity-col">
-                                <h4>Notificaciones</h4>
-                                <ul id="kvt_notifications" class="kvt-activity-list"></ul>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="kvt_activity_log" class="kvt-activity-content" style="display:none;">
-                        <ul id="kvt_activity_log_list" class="kvt-activity-list"></ul>
-                    </div>
-                    <div id="kvt_activity_mail" class="kvt-activity-content" style="display:none;">
-                        <iframe id="kvt_correo_iframe" style="width:100%;border:0;min-height:600px;"></iframe>
-                    </div>
-                </div>
+                  <div id="kvt_activity" class="kvt-activity">
+                      <div class="kvt-activity-columns">
+                          <div class="kvt-activity-col">
+                              <h4>Próximos eventos</h4>
+                              <ul id="kvt_tasks_due" class="kvt-activity-list"></ul>
+                              <ul id="kvt_tasks_upcoming" class="kvt-activity-list"></ul>
+                              <h4>Añadir tarea</h4>
+                              <form id="kvt_task_form">
+                                  <select id="kvt_task_candidate"></select>
+                                  <input type="date" id="kvt_task_date">
+                                  <input type="text" id="kvt_task_note" placeholder="Nota">
+                                  <button class="kvt-btn" type="submit">Guardar</button>
+                              </form>
+                          </div>
+                          <div class="kvt-activity-col">
+                              <h4>Notificaciones</h4>
+                              <ul id="kvt_notifications" class="kvt-activity-list"></ul>
+                          </div>
+                      </div>
+                      <div class="kvt-calendar" id="kvt_calendar_wrap">
+                          <h4 id="kvt_calendar_month"></h4>
+                          <ul id="kvt_calendar_list" class="kvt-activity-list"></ul>
+                          <h4>Añadir evento</h4>
+                          <form id="kvt_event_form">
+                              <input type="date" id="kvt_event_date">
+                              <input type="text" id="kvt_event_note" placeholder="Nota">
+                              <button class="kvt-btn" type="submit">Guardar</button>
+                          </form>
+                      </div>
+                  </div>
             </div>
 
-            <div id="kvt_board_wrap" class="kvt-board-wrap">
-                <button class="kvt-btn" type="button" id="kvt_board_toggle">Mostrar Kanban</button>
-                <div id="kvt_board" class="kvt-board" aria-live="polite" style="display:none;margin-top:12px;"></div>
-            </div>
+              <div id="kvt_board_wrap" class="kvt-board-wrap">
+                  <div id="kvt_board" class="kvt-board" aria-live="polite" style="margin-top:12px;"></div>
+              </div>
         </div>
         <!-- Info Modal -->
         <div class="kvt-modal" id="kvt_info_modal" style="display:none;">
@@ -1623,15 +1618,14 @@ JS;
         #kvt_table thead th{position:sticky;top:0;background:#0A212E;color:#fff;padding:10px;border-bottom:1px solid #0A212E;text-align:left}
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
         .kvt-ats-bar{display:flex;gap:8px;align-items:center;padding:8px}
-        .kvt-activity{margin-top:16px;flex:1;border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto}
-        .kvt-activity-tabs{display:flex;gap:8px;margin-bottom:8px}
-        .kvt-activity-tab{flex:1;padding:6px 8px;border:1px solid #e5e7eb;border-radius:8px;background:#f1f5f9;cursor:pointer}
-        .kvt-activity-tab.active{background:#0A212E;color:#fff}
-        .kvt-activity-columns{display:flex;gap:16px}
-        .kvt-activity-col{flex:1}
-        .kvt-activity-col h4{margin:8px 0;font-size:14px}
-        .kvt-activity-list{list-style:none;margin:0;padding-left:16px;font-size:13px}
-        .kvt-activity-list li{margin-bottom:4px}
+          .kvt-activity{margin-top:16px;flex:1;border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto}
+          .kvt-activity-columns{display:flex;gap:16px}
+          .kvt-activity-col{flex:1}
+          .kvt-activity-col + .kvt-activity-col{border-left:1px solid #e5e7eb;padding-left:16px}
+          .kvt-activity-col h4{margin:8px 0;font-size:14px}
+          .kvt-activity-list{list-style:none;margin:0;padding-left:16px;font-size:13px}
+          .kvt-activity-list li{margin-bottom:4px}
+          .kvt-calendar{margin-top:16px}
         .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-stage-cell{display:flex;align-items:center;font-size:12px;flex-wrap:nowrap}
         .kvt-stage-step{display:inline-flex;align-items:center;justify-content:center;width:120px;flex:0 0 120px;padding:4px 12px;background:#e5e7eb;color:#6b7280;white-space:nowrap;box-sizing:border-box;border:none;cursor:pointer}
@@ -1843,7 +1837,6 @@ function kvtInit(){
 
   const board = el('#kvt_board');
   if (!board) return;
-  const boardToggle = el('#kvt_board_toggle');
 
   const tableWrap = el('#kvt_table_wrap');
   const tHead = el('#kvt_table_head');
@@ -1866,9 +1859,11 @@ function kvtInit(){
   const activityUpcoming = el('#kvt_tasks_upcoming');
   const activityNotify = el('#kvt_notifications');
   const activityLog = el('#kvt_activity_log_list');
-  const activityTabs = document.querySelectorAll('.kvt-activity-tab');
-  const activityViews = document.querySelectorAll('.kvt-activity-content');
-  const correoFrame = el('#kvt_correo_iframe');
+  const calendarList = el('#kvt_calendar_list');
+  const calendarMonth = el('#kvt_calendar_month');
+  const eventForm = el('#kvt_event_form');
+  const eventDate = el('#kvt_event_date');
+  const eventNote = el('#kvt_event_note');
   const overview = el('#kvt_stage_overview');
   const atsBar   = el('#kvt_ats_bar');
   const taskForm = el('#kvt_task_form');
@@ -1892,7 +1887,6 @@ function kvtInit(){
   const btnAllXLS  = el('#kvt_export_all_xls');
   const exportAllForm   = el('#kvt_export_all_form');
   const exportAllFormat = el('#kvt_export_all_format');
-  const btnMail    = el('#kvt_mandar_correos');
   const btnShare   = el('#kvt_share_board');
   const btnProcesses = el('#kvt_open_processes');
   const shareModal = el('#kvt_share_modal');
@@ -2592,6 +2586,9 @@ function kvtInit(){
 
   function renderData(data){
     const baseMode = !selClient.value && !selProcess.value;
+    allRows = Array.isArray(data) ? data.slice() : [];
+    allRows.sort((a,b)=>KVT_STATUSES.indexOf(b.status||'') - KVT_STATUSES.indexOf(a.status||''));
+    data = allRows;
     if(overview){
       overview.style.display = baseMode ? 'none' : 'block';
       overview.innerHTML = '';
@@ -2636,11 +2633,10 @@ function kvtInit(){
         }
       });
 
-      if (!CLIENT_VIEW) enableDnD();
+        if (!CLIENT_VIEW) enableDnD();
+      }
+      filterTable();
     }
-    allRows = Array.isArray(data) ? data : [];
-    filterTable();
-  }
 
   function renderTable(rows){
     if(!tHead || !tBody) return;
@@ -2799,16 +2795,10 @@ function kvtInit(){
         days = Math.max(0, Math.floor((today-d)/86400000));
       }
     }
-    const count = rows.length;
-    const sts = KVT_STATUSES.filter(s=>s !== 'Descartados');
-    let maxIdx = -1; let maxStage = '—';
-    rows.forEach(r=>{
-      const idx = sts.indexOf(r.status||'');
-      if(idx>maxIdx){ maxIdx=idx; maxStage=r.status||'—'; }
-    });
-    overview.style.display='block';
-    overview.innerHTML = '<strong>Creado por:</strong> '+esc(creator)+' | <strong>Abierto hace:</strong> '+(days!==''?days:0)+' días | <strong>Candidatos vinculados:</strong> '+count+' | <strong>Etapa más avanzada:</strong> '+esc(maxStage);
-  }
+      const count = rows.length;
+      overview.style.display='block';
+      overview.innerHTML = '<strong>Creado por:</strong> '+esc(creator)+' | <strong>Registrado hace:</strong> '+(days!==''?days:0)+' días | <strong>Candidatos involucrados:</strong> '+count;
+    }
 
   function populateTaskCandidates(){
     if(!taskCandidate) return;
@@ -3023,31 +3013,40 @@ function kvtInit(){
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(()=>{ if(stageModal) stageModal.style.display='none'; refresh(); });
   });
-  boardToggle && boardToggle.addEventListener('click', ()=>{
-    const hidden = board.style.display === 'none';
-    board.style.display = hidden ? 'flex' : 'none';
-    boardToggle.textContent = hidden ? 'Ocultar Kanban' : 'Mostrar Kanban';
+  // board is always visible; no toggle button
+
+  // Calendar events stored locally
+  function loadEvents(){ try{ return JSON.parse(localStorage.getItem('kvt_events')||'[]'); } catch(e){ return []; } }
+  function saveEvents(ev){ localStorage.setItem('kvt_events', JSON.stringify(ev)); }
+  function renderCalendarEvents(){
+    if(!calendarList) return;
+    const now = new Date();
+    if(calendarMonth) calendarMonth.textContent = now.toLocaleString('default',{month:'long'})+' '+now.getFullYear();
+    const ev = loadEvents();
+    calendarList.innerHTML = ev.length ? ev.map((e,i)=>'<li data-index="'+i+'">'+esc(e.date)+' — '+esc(e.note)+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecho"></span></li>').join('') : '<li>No hay eventos</li>';
+  }
+  eventForm && eventForm.addEventListener('submit', e=>{
+    e.preventDefault();
+    const d = eventDate.value;
+    const n = eventNote.value.trim();
+    if(!d || !n) return;
+    const ev = loadEvents();
+    ev.push({date:d, note:n});
+    saveEvents(ev);
+    eventForm.reset();
+    renderCalendarEvents();
   });
-
-  const loadCorreos = ()=>{
-    if(!correoFrame) return;
-    const pid = selProcess ? selProcess.value : '';
-    correoFrame.src = KVT_BULKREADER_URL + (pid ? '&process='+encodeURIComponent(pid) : '');
-  };
-
-  selProcess && selProcess.addEventListener('change', ()=>{ loadCorreos(); });
-  loadCorreos();
-
-  activityTabs.forEach(tab=>{
-    tab.addEventListener('click', ()=>{
-      activityTabs.forEach(t=>t.classList.remove('active'));
-      activityViews.forEach(v=>v.style.display='none');
-      tab.classList.add('active');
-      const pane = el('#kvt_activity_'+tab.dataset.target);
-      if(pane) pane.style.display='block';
-      if(tab.dataset.target==='mail') loadCorreos();
-    });
+  calendarList && calendarList.addEventListener('click', e=>{
+    if(e.target.classList.contains('kvt-task-done')){
+      const li = e.target.closest('li');
+      const idx = parseInt(li.dataset.index,10);
+      const ev = loadEvents();
+      ev.splice(idx,1);
+      saveEvents(ev);
+      renderCalendarEvents();
+    }
   });
+  renderCalendarEvents();
 
   taskForm && taskForm.addEventListener('submit', e=>{
     e.preventDefault();
@@ -3141,9 +3140,6 @@ function kvtInit(){
   }
   selClient && selClient.addEventListener('change', ()=>{ currentPage=1; filterProcessOptions(); refresh(); updateSelectedInfo(); });
   selProcess && selProcess.addEventListener('change', ()=>{ currentPage=1; refresh(); updateSelectedInfo(); });
-  btnMail && btnMail.addEventListener('click', ()=>{
-    window.open('https://kovacictalent.com/wp-admin/admin.php?page=kt-abm','_blank','noopener');
-  });
   btnShare && btnShare.addEventListener('click', ()=>{
     if (!selClient || !selClient.value || !selProcess || !selProcess.value) {
       alert('Selecciona un cliente y un proceso.');
@@ -3445,7 +3441,14 @@ function kvtInit(){
       });
   }
 
-  btnAdd && btnAdd.addEventListener('click', openModal);
+  btnAdd && btnAdd.addEventListener('click', ()=>{
+    if(boardBase){
+      boardBase.style.display='block';
+      const tbl = el('#kvt_table');
+      if(tbl) tbl.style.display='none';
+      listProfiles(1, boardCtx);
+    }
+  });
   // Create candidate modal
     const cmodal = el('#kvt_create_modal');
   const cclose = el('#kvt_create_close');
