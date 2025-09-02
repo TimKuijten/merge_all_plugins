@@ -85,6 +85,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_parse_cv',      [$this, 'ajax_parse_cv']);
         add_action('wp_ajax_kvt_create_candidate',     [$this, 'ajax_create_candidate']);
         add_action('wp_ajax_nopriv_kvt_create_candidate',[$this, 'ajax_create_candidate']);
+        add_action('wp_ajax_kvt_bulk_upload_cvs',       [$this, 'ajax_bulk_upload_cvs']);
+        add_action('wp_ajax_nopriv_kvt_bulk_upload_cvs',[$this, 'ajax_bulk_upload_cvs']);
         add_action('wp_ajax_kvt_create_client',        [$this, 'ajax_create_client']);
         add_action('wp_ajax_nopriv_kvt_create_client', [$this, 'ajax_create_client']);
         add_action('wp_ajax_kvt_create_process',       [$this, 'ajax_create_process']);
@@ -1461,8 +1463,10 @@ JS;
                   <button type="button" data-action="candidate">Nuevo candidato</button>
                   <button type="button" data-action="client">Nuevo cliente</button>
                   <button type="button" data-action="process">Nuevo proceso</button>
+                  <button type="button" data-action="bulk_cv">Subir CVs</button>
                 </div>
               </div>
+              <input type="file" id="kvt_bulk_cv_input" multiple style="display:none;">
               <div id="kvt_tab_candidates" class="kvt-tab-panel active kvt-base">
                 <div class="kvt-head">
                   <h3 class="kvt-title">Base de candidatos</h3>
@@ -1976,6 +1980,7 @@ function kvtInit(){
   const btnAdd     = el('#kvt_add_profile');
   const btnNew     = el('#kvt_new_btn');
   const newMenu    = el('#kvt_new_menu');
+  const bulkCvInput = el('#kvt_bulk_cv_input');
   const btnAllXLS  = el('#kvt_export_all_xls');
   const exportAllForm   = el('#kvt_export_all_form');
   const exportAllFormat = el('#kvt_export_all_format');
@@ -3793,8 +3798,26 @@ function kvtInit(){
           if(act==='candidate') openCModal();
           if(act==='client') openClModal();
           if(act==='process') openPModal();
+          if(act==='bulk_cv' && bulkCvInput) bulkCvInput.click();
         },0);
       });
+    });
+
+    bulkCvInput && bulkCvInput.addEventListener('change', async ()=>{
+      if(!bulkCvInput.files.length) return;
+      const fd = new FormData();
+      fd.append('action','kvt_bulk_upload_cvs');
+      fd.append('_ajax_nonce', KVT_NONCE);
+      Array.from(bulkCvInput.files).forEach(f=>fd.append('files[]', f));
+      const res = await fetch(KVT_AJAX, {method:'POST', body: fd});
+      const j = await res.json();
+      if(!j.success){
+        alert(j.data && j.data.msg ? j.data.msg : 'No se pudieron procesar los CVs.');
+      } else {
+        alert('Se crearon ' + j.data.count + ' candidatos.');
+        refresh();
+      }
+      bulkCvInput.value = '';
     });
 
   // Easier drag & drop: allow drop anywhere in column and highlight
@@ -4630,8 +4653,93 @@ JS;
         if ($client_id) wp_set_object_terms($new_id, [$client_id], self::TAX_CLIENT, false);
         if ($process_id) wp_set_object_terms($new_id, [$process_id], self::TAX_PROCESS, false);
 
-      wp_send_json_success(['id'=>$new_id]);
-      }
+        wp_send_json_success(['id'=>$new_id]);
+    }
+
+    public function ajax_bulk_upload_cvs() {
+        check_ajax_referer('kvt_nonce');
+
+        if (empty($_FILES['files']['name']) || !is_array($_FILES['files']['name'])) {
+            wp_send_json_error(['msg'=>'Archivos no recibidos'],400);
+        }
+
+        if (!function_exists('wp_handle_upload')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+            require_once ABSPATH . 'wp-admin/includes/image.php';
+            require_once ABSPATH . 'wp-admin/includes/media.php';
+        }
+        add_filter('upload_mimes', function($m){
+            $m['pdf']  = 'application/pdf';
+            $m['doc']  = 'application/msword';
+            $m['docx'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            return $m;
+        });
+
+        $created  = [];
+        $files    = $_FILES['files'];
+        $statuses = $this->get_statuses();
+
+        foreach ($files['name'] as $i => $name) {
+            if ($files['error'][$i] !== UPLOAD_ERR_OK) continue;
+
+            $file = [
+                'name'     => $files['name'][$i],
+                'type'     => $files['type'][$i],
+                'tmp_name' => $files['tmp_name'][$i],
+                'error'    => $files['error'][$i],
+                'size'     => $files['size'][$i],
+            ];
+
+            $title = sanitize_text_field(pathinfo($name, PATHINFO_FILENAME));
+            $cid = wp_insert_post([
+                'post_type'   => self::CPT,
+                'post_status' => 'publish',
+                'post_title'  => $title ?: 'Candidate',
+            ]);
+            if (!$cid || is_wp_error($cid)) continue;
+
+            $uploaded = wp_handle_upload($file, ['test_form'=>false]);
+            if (isset($uploaded['error'])) { wp_delete_post($cid, true); continue; }
+
+            $attachment = [
+                'post_mime_type' => $uploaded['type'],
+                'post_title'     => sanitize_file_name($name),
+                'post_content'   => '',
+                'post_status'    => 'inherit',
+            ];
+            $attach_id = wp_insert_attachment($attachment, $uploaded['file'], $cid);
+            if (!is_wp_error($attach_id)) {
+                $attach_data = wp_generate_attachment_metadata($attach_id, $uploaded['file']);
+                wp_update_attachment_metadata($attach_id, $attach_data);
+                $url = $uploaded['url'];
+                update_post_meta($cid, 'kvt_cv_attachment_id', $attach_id);
+                update_post_meta($cid, 'kvt_cv_url', esc_url_raw($url));
+                update_post_meta($cid, 'cv_url', esc_url_raw($url));
+                $today = date_i18n('d-m-Y');
+                update_post_meta($cid, 'kvt_cv_uploaded', $today);
+                update_post_meta($cid, 'cv_uploaded', $today);
+                $this->save_cv_text_attachment($cid, $attach_id);
+                $fields = $this->update_profile_from_cv($cid);
+            } else {
+                $fields = [];
+            }
+
+            if (!empty($statuses)) update_post_meta($cid, 'kvt_status', $statuses[0]);
+
+            $first = get_post_meta($cid, 'kvt_first_name', true);
+            $last  = get_post_meta($cid, 'kvt_last_name', true);
+            $new_title = trim($first.' '.$last);
+            if ($new_title !== '') {
+                wp_update_post(['ID'=>$cid,'post_title'=>$new_title]);
+            }
+
+            $created[] = ['id'=>$cid, 'fields'=>$fields];
+        }
+
+        if (empty($created)) wp_send_json_error(['msg'=>'No se pudieron procesar los CVs'],500);
+
+        wp_send_json_success(['candidates'=>$created, 'count'=>count($created)]);
+    }
 
       public function ajax_create_client() {
           check_ajax_referer('kvt_nonce');
