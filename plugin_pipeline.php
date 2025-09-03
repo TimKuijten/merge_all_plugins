@@ -16,6 +16,7 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_STATUSES  = 'kvt_statuses';
     const OPT_COLUMNS   = 'kvt_columns';
     const OPT_OPENAI_KEY= 'kvt_openai_key';
+    const OPT_NEWS_KEY  = 'kvt_newsapi_key';
 
     public function __construct() {
         add_action('init',                       [$this, 'register_types']);
@@ -193,6 +194,7 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_STATUSES);
         register_setting(self::OPT_GROUP, self::OPT_COLUMNS);
         register_setting(self::OPT_GROUP, self::OPT_OPENAI_KEY);
+        register_setting(self::OPT_GROUP, self::OPT_NEWS_KEY);
     }
     public function admin_menu() {
         global $admin_page_hooks;
@@ -547,6 +549,7 @@ JS;
         $statuses = get_option(self::OPT_STATUSES, "");
         $columns  = get_option(self::OPT_COLUMNS, "");
         $openai   = get_option(self::OPT_OPENAI_KEY, "");
+        $newskey  = get_option(self::OPT_NEWS_KEY, "");
         ?>
         <div class="wrap">
             <h1>Kovacic Pipeline — Ajustes</h1>
@@ -565,6 +568,13 @@ JS;
                         <td>
                             <input type="text" name="<?php echo self::OPT_OPENAI_KEY; ?>" id="<?php echo self::OPT_OPENAI_KEY; ?>" class="regular-text" value="<?php echo esc_attr($openai); ?>">
                             <p class="description">Clave utilizada para las búsquedas avanzadas.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_NEWS_KEY; ?>">News API Key</label></th>
+                        <td>
+                            <input type="text" name="<?php echo self::OPT_NEWS_KEY; ?>" id="<?php echo self::OPT_NEWS_KEY; ?>" class="regular-text" value="<?php echo esc_attr($newskey); ?>">
+                            <p class="description">Clave para obtener noticias del sector de energía renovable.</p>
                         </td>
                     </tr>
                     <tr>
@@ -1358,6 +1368,7 @@ JS;
                 <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
                     <h4>Assistente MIT</h4>
                     <p id="kvt_mit_content"></p>
+                    <ul id="kvt_mit_news"></ul>
                 </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
@@ -2066,6 +2077,7 @@ function kvtInit(){
   const calendarWrap = el('#kvt_calendar');
   const mitWrap = el('#kvt_mit_view');
   const mitContent = el('#kvt_mit_content');
+  const mitNews = el('#kvt_mit_news');
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
@@ -2118,13 +2130,27 @@ function kvtInit(){
         body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:KVT_MIT_NONCE})
       });
       const json = await resp.json();
-      if(json && json.success && json.data && json.data.suggestions){
-        mitContent.textContent = json.data.suggestions;
+      if(json && json.success && json.data){
+        if(json.data.suggestions){
+          mitContent.textContent = json.data.suggestions;
+        } else {
+          mitContent.textContent = 'No hay sugerencias disponibles.';
+        }
+        if(mitNews){
+          mitNews.innerHTML = '';
+          (json.data.news || []).forEach(n=>{
+            const li = document.createElement('li');
+            li.textContent = n;
+            mitNews.appendChild(li);
+          });
+        }
       } else {
         mitContent.textContent = 'No hay sugerencias disponibles.';
+        if(mitNews) mitNews.innerHTML='';
       }
     } catch(e){
       mitContent.textContent = 'No hay sugerencias disponibles.';
+      if(mitNews) mitNews.innerHTML='';
     }
   }
 
@@ -4455,26 +4481,71 @@ JS;
         if (!$key) {
             wp_send_json_success(['suggestions' => __('Falta la clave de OpenAI', 'kovacic')]);
         }
+
         $cands = get_posts([
             'post_type'   => self::CPT,
             'post_status' => 'any',
-            'numberposts' => 5,
+            'numberposts' => -1,
         ]);
         $clients = get_terms([
             'taxonomy'   => self::TAX_CLIENT,
             'hide_empty' => false,
-            'number'     => 5,
+            'number'     => 0,
         ]);
-        $notes = [];
+
+        $notes        = [];
+        $cand_lines   = [];
         foreach ($cands as $c) {
+            $country = get_post_meta($c->ID, 'kvt_country', true);
+            $role    = $this->meta_get_compat($c->ID, 'kvt_current_role', ['current_role']);
+            $line    = $c->post_title;
+            if ($role)    $line .= " ($role)";
+            if ($country) $line .= " - $country";
+            $cand_lines[] = $line;
             $n = get_post_meta($c->ID, 'kvt_notes', true);
             if ($n) $notes[] = $n;
         }
-        $summary  = 'Candidatos: ' . implode(', ', wp_list_pluck($cands, 'post_title')) . '.';
-        $summary .= ' Clientes: ' . implode(', ', wp_list_pluck($clients, 'name')) . '.';
+
+        $client_lines = [];
+        foreach ($clients as $cl) {
+            $contact = get_term_meta($cl->term_id, 'contact_name', true);
+            $line    = $cl->name;
+            if ($contact) $line .= " ($contact)";
+            $client_lines[] = $line;
+        }
+
+        // Fetch latest renewable energy market news
+        $news_key = get_option(self::OPT_NEWS_KEY, '');
+        $news     = [];
+        if ($news_key) {
+            $news_url = add_query_arg([
+                'apikey'   => $news_key,
+                'q'        => 'energia renovable',
+                'language' => 'es',
+                'country'  => 'es,cl',
+            ], 'https://newsdata.io/api/1/news');
+            $news_resp = wp_remote_get($news_url, ['timeout' => 15]);
+            if (!is_wp_error($news_resp)) {
+                $news_data = json_decode(wp_remote_retrieve_body($news_resp), true);
+                if (!empty($news_data['results'])) {
+                    foreach (array_slice($news_data['results'], 0, 3) as $item) {
+                        if (!empty($item['title'])) {
+                            $news[] = sanitize_text_field($item['title']);
+                        }
+                    }
+                }
+            }
+        }
+
+        $summary  = 'Candidatos: ' . implode('; ', $cand_lines) . '.';
+        $summary .= ' Clientes: ' . implode('; ', $client_lines) . '.';
         if ($notes) {
             $summary .= ' Notas: ' . implode(' | ', $notes) . '.';
         }
+        if ($news) {
+            $summary .= ' Noticias del mercado: ' . implode(' | ', $news) . '.';
+        }
+
         $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable en España y Chile. Con los siguientes datos: $summary Sugiere próximos pasos y posibles clientes o candidatos.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
@@ -4497,14 +4568,14 @@ JS;
         }
         $data = json_decode(wp_remote_retrieve_body($resp), true);
         $text = $data['choices'][0]['message']['content'] ?? '';
-        wp_send_json_success(['suggestions' => $text]);
+        wp_send_json_success(['suggestions' => $text, 'news' => $news]);
     }
 
     public function mit_lightbulb() {
         if (!wp_script_is('kvt-app', 'enqueued')) return;
         ?>
         <div id="k-mit-bulb" class="dashicons dashicons-lightbulb"></div>
-        <div id="k-mit-box" style="display:none;"><strong><?php esc_html_e('Assistente MIT', 'kovacic'); ?></strong><div id="k-mit-box-content"></div></div>
+        <div id="k-mit-box" style="display:none;"><strong><?php esc_html_e('Assistente MIT', 'kovacic'); ?></strong><div id="k-mit-box-content"></div><ul id="k-mit-news"></ul></div>
         <script>
         (function(){
             const bulb = document.getElementById('k-mit-bulb');
@@ -4519,9 +4590,20 @@ JS;
                 credentials:'same-origin',
                 body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:'<?php echo wp_create_nonce('kvt_mit'); ?>'})
             }).then(r=>r.json()).then(resp=>{
-                if(resp && resp.success && resp.data && resp.data.suggestions){
-                    document.getElementById('k-mit-box-content').textContent = resp.data.suggestions;
-                    bulb.style.color = '#f1c40f';
+                if(resp && resp.success && resp.data){
+                    if(resp.data.suggestions){
+                        document.getElementById('k-mit-box-content').textContent = resp.data.suggestions;
+                        bulb.style.color = '#f1c40f';
+                    }
+                    const newsList = document.getElementById('k-mit-news');
+                    if(newsList){
+                        newsList.innerHTML = '';
+                        (resp.data.news || []).forEach(n=>{
+                            const li = document.createElement('li');
+                            li.textContent = n;
+                            newsList.appendChild(li);
+                        });
+                    }
                 }
             });
         })();
