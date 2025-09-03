@@ -1212,13 +1212,13 @@ JS;
         <div class="kvt-wrapper">
             <nav class="kvt-nav" aria-label="Navegación principal">
                 <a href="#" class="active" data-view="detalles"><span class="dashicons dashicons-dashboard"></span> Dashboard</a>
-                <a href="#" data-view="ats"><span class="dashicons dashicons-admin-users"></span> Candidates</a>
+                <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidates</a>
                 <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendar</a>
                 <a href="#" id="kvt_add_profile"><span class="dashicons dashicons-id-alt"></span> Base</a>
                 <a href="#" id="kvt_toggle_table"><span class="dashicons dashicons-editor-table"></span> Tabla</a>
                 <a href="#" id="kvt_mandar_correos"><span class="dashicons dashicons-email"></span> Correos</a>
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
-                <a href="#" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
+                <a href="#" data-view="ats" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
                 <a href="#" id="kvt_nav_export"><span class="dashicons dashicons-download"></span> Exportar</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#"><span class="dashicons dashicons-filter"></span> Nuevo filtro</a>
@@ -1705,6 +1705,10 @@ JS;
         .kvt-cal-day{font-size:12px;color:#6b7280;position:absolute;top:4px;right:4px}
         .kvt-cal-event{display:block;margin-top:16px;font-size:12px;text-align:left}
         .kvt-cal-cell.has-event{background:#f1f5f9}
+        .kvt-cal-controls{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+        .kvt-cal-add{display:flex;gap:8px;margin-bottom:8px}
+        .kvt-cal-event.done{text-decoration:line-through;color:#9ca3af}
+        .kvt-cal-remove{background:none;border:0;color:#ef4444;margin-left:4px;cursor:pointer}
         #kvt_table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
         #kvt_table thead th{position:sticky;top:0;background:#f8fafc;color:#0A212E;padding:10px;border-bottom:1px solid #e5e7eb;text-align:left;font-weight:600}
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
@@ -1996,6 +2000,8 @@ function kvtInit(){
 
   const filtersBar = el('#kvt_filters_bar');
   const calendarWrap = el('#kvt_calendar');
+  const activityWrap = el('#kvt_activity');
+  const boardWrap    = el('#kvt_board_wrap');
 
   const selClient  = el('#kvt_client');
   const selProcess = el('#kvt_process');
@@ -2032,6 +2038,8 @@ function kvtInit(){
   let totalPages = 1;
   let allRows = [];
   let calendarEvents = [];
+  let calMonth = (new Date()).getMonth();
+  let calYear  = (new Date()).getFullYear();
 
   function showView(view){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
@@ -2039,16 +2047,39 @@ function kvtInit(){
       filtersBar.style.display='flex';
       tableWrap.style.display='block';
       calendarWrap.style.display='none';
+      if(boardBase) boardBase.style.display='none';
+      if(overview) overview.style.display='block';
+      if(atsBar) atsBar.style.display='flex';
+      const tbl = el('#kvt_table'); if(tbl) tbl.style.display='table';
+      const pager = el('#kvt_table_pager'); if(pager) pager.style.display='block';
+      if(activityWrap) activityWrap.style.display='block';
+      if(boardWrap) boardWrap.style.display='block';
       refresh();
     } else if(view==='calendario'){
       filtersBar.style.display='none';
       tableWrap.style.display='none';
       calendarWrap.style.display='block';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
       renderCalendar();
+    } else if(view==='base'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='block';
+      calendarWrap.style.display='none';
+      if(overview) overview.style.display='none';
+      if(atsBar) atsBar.style.display='none';
+      const tbl = el('#kvt_table'); if(tbl) tbl.style.display='none';
+      const pager = el('#kvt_table_pager'); if(pager) pager.style.display='none';
+      if(boardBase) boardBase.style.display='block';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      switchBoardTab('candidates');
     } else {
       filtersBar.style.display='none';
       tableWrap.style.display='none';
       calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
     }
   }
 
@@ -2821,7 +2852,7 @@ function kvtInit(){
           const item = '<li data-id="'+escAttr(r.id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a> - '+esc(r.meta.next_action)+(note?' — '+note:'')+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
           (d <= today ? due : upcoming).push(item);
           const ds = parts.join('-');
-          calendarEvents.push({date: ds, text: nameTxt});
+          calendarEvents.push({date: ds, text: nameTxt, done:false});
         }
       }
       if(Array.isArray(r.meta.client_comments)){
@@ -2871,12 +2902,12 @@ function kvtInit(){
     calendarEvents = [];
     const due = (data.overdue||[]).map(c=>{
       const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:c.date, text:c.candidate});
+      calendarEvents.push({date:c.date, text:c.candidate, done:false});
       return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(c.date)+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const upcoming = (data.upcoming||[]).map(c=>{
       const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:c.date, text:c.candidate});
+      calendarEvents.push({date:c.date, text:c.candidate, done:false});
       return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(c.date)+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const notifs = (data.comments||[]).map(c=>{
@@ -2891,27 +2922,41 @@ function kvtInit(){
 
   function renderCalendar(){
     if(!calendarWrap) return;
-    const now = new Date();
-    const month = now.getMonth();
-    const year = now.getFullYear();
-    const first = new Date(year, month, 1);
-    const last = new Date(year, month+1, 0);
+    const first = new Date(calYear, calMonth, 1);
+    const last = new Date(calYear, calMonth+1, 0);
     const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-    let html = '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
+    const monthName = first.toLocaleString('default',{month:'long'});
+    let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><button type="button" id="kvt_cal_next">&gt;</button></div>';
+    html += '<div class="kvt-cal-add"><input type="date" id="kvt_cal_date"><input type="text" id="kvt_cal_text" placeholder="Evento"><button type="button" id="kvt_cal_add">Añadir</button></div>';
+    html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
     for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
     for(let d=1; d<=last.getDate(); d++){
-      const ds = (d<10?'0'+d:d)+'-'+(month+1<10?'0'+(month+1):(month+1))+'-'+year;
-      const ev = calendarEvents.filter(e=>e.date===ds);
+      const ds = (d<10?'0'+d:d)+'-'+(calMonth+1<10?'0'+(calMonth+1):(calMonth+1))+'-'+calYear;
+      const ev = calendarEvents.map((e,idx)=>Object.assign({idx},e)).filter(e=>e.date===ds);
       let cls = 'kvt-cal-cell';
       if(ev.length) cls += ' has-event';
       html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
-      ev.forEach(e=>{ html += '<span class="kvt-cal-event">'+esc(e.text)+'</span>'; });
+      ev.forEach(e=>{ html += '<span class="kvt-cal-event'+(e.done?' done':'')+'" data-idx="'+e.idx+'">'+esc(e.text)+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>'; });
       html += '</div>';
     }
     const fill = (first.getDay()+last.getDate())%7;
     if(fill!==0){ for(let i=0;i<7-fill;i++) html += '<div class="kvt-cal-cell"></div>'; }
     html += '</div>';
     calendarWrap.innerHTML = html;
+    const prevBtn = el('#kvt_cal_prev', calendarWrap);
+    const nextBtn = el('#kvt_cal_next', calendarWrap);
+    const addBtn  = el('#kvt_cal_add', calendarWrap);
+    const dateInp = el('#kvt_cal_date', calendarWrap);
+    const textInp = el('#kvt_cal_text', calendarWrap);
+    prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendar(); });
+    nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendar(); });
+    addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ calendarEvents.push({date:dateInp.value, text:textInp.value.trim(), done:false}); renderCalendar(); }});
+    calendarWrap.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
+      evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); calendarEvents[idx].done=!calendarEvents[idx].done; renderCalendar(); });
+    });
+    calendarWrap.querySelectorAll('.kvt-cal-remove').forEach(btn=>{
+      btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendar(); });
+    });
   }
 
   function renderOverview(rows){
@@ -3268,11 +3313,6 @@ function kvtInit(){
     }
     buildShareOptions();
     if(shareModal) shareModal.style.display='flex';
-  });
-  btnProcesses && btnProcesses.addEventListener('click', e=>{
-    e.preventDefault();
-    openModal();
-    switchTab('processes');
   });
   tablePrev && tablePrev.addEventListener('click', ()=>{ if(currentPage>1){ currentPage--; refresh(); } });
   tableNext && tableNext.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage++; refresh(); } });
