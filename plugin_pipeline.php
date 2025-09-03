@@ -1745,9 +1745,9 @@ JS;
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
         #kvt_table tbody tr:hover{background:#f1f5f9}
         .kvt-ats-bar{display:flex;gap:8px;align-items:center;padding:8px}
-        .kvt-activity{border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto;flex:1 1 300px}
-        #kvt_activity{flex:2 1 400px}
-        #kvt_active_wrap,#kvt_calendar_wrap{flex:1 1 260px}
+        .kvt-activity{border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto;flex:0 1 300px;align-self:flex-start}
+        #kvt_activity{flex:0 1 400px}
+        #kvt_active_wrap,#kvt_calendar_wrap{flex:0 1 260px}
         .kvt-widget-title{margin:0 0 8px;font-size:15px;font-weight:600;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
         #kvt_table tbody tr:nth-child(even){background:#f9fafb}
         #kvt_table tbody tr:nth-child(odd){background:#fff}
@@ -1763,6 +1763,9 @@ JS;
         .kvt-activity-col h4{margin:8px 0;font-size:14px}
         .kvt-activity-list{list-style:none;margin:0;padding-left:16px;font-size:13px}
         .kvt-activity-list li{margin-bottom:4px}
+        #kvt_active_processes li{padding:4px 8px;border-radius:4px}
+        #kvt_active_processes li:nth-child(even){background:#f9fafb}
+        #kvt_active_processes li:nth-child(odd){background:#fff}
         .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-stage-cell{display:flex;align-items:center;font-size:12px;flex-wrap:nowrap}
         .kvt-stage-step{display:inline-flex;align-items:center;justify-content:center;width:120px;flex:0 0 120px;padding:4px 12px;background:#e5e7eb;color:#6b7280;white-space:nowrap;box-sizing:border-box;border:none;cursor:pointer}
@@ -3069,7 +3072,20 @@ function kvtInit(){
         let cls = 'kvt-cal-cell';
         if(ev.length) cls += ' has-event';
         html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
-        ev.forEach(e=>{ let lbl=''; if(e.time) lbl+=esc(e.time)+' '; lbl+=esc(e.text); const tgt=e.process||e.candidate||e.client||''; if(tgt) lbl+=' <em>- '+esc(tgt)+'</em>'; html += '<span class="kvt-cal-event'+(e.done?' done':'')+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>'; });
+        ev.forEach(e=>{
+          let lbl = esc(e.text);
+          if(e.time) lbl += ' '+esc(e.time);
+          let tgt = '';
+          if(e.candidate || e.process){
+            if(e.candidate) tgt += esc(e.candidate);
+            if(e.candidate && e.process) tgt += ' / ';
+            if(e.process) tgt += esc(e.process);
+          } else if(e.client){
+            tgt = esc(e.client);
+          }
+          if(tgt) lbl += ' <em>- '+tgt+'</em>';
+          html += '<span class="kvt-cal-event'+(e.done?' done':'')+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+        });
         html += '</div>';
       }
       const fill = (first.getDay()+last.getDate())%7;
