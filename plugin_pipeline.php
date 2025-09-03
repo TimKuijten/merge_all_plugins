@@ -91,6 +91,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_bulk_upload_cvs',[$this, 'ajax_bulk_upload_cvs']);
         add_action('wp_ajax_kvt_create_client',        [$this, 'ajax_create_client']);
         add_action('wp_ajax_nopriv_kvt_create_client', [$this, 'ajax_create_client']);
+        add_action('wp_ajax_kvt_parse_signature',       [$this, 'ajax_parse_signature']);
+        add_action('wp_ajax_nopriv_kvt_parse_signature',[$this, 'ajax_parse_signature']);
         add_action('wp_ajax_kvt_create_process',       [$this, 'ajax_create_process']);
         add_action('wp_ajax_nopriv_kvt_create_process',[$this, 'ajax_create_process']);
         add_action('wp_ajax_kvt_update_client',        [$this, 'ajax_update_client']);
@@ -1636,6 +1638,9 @@ JS;
                 <input type="email" id="kvt_client_email" placeholder="Email">
                 <input type="text" id="kvt_client_phone" placeholder="Teléfono">
                 <textarea id="kvt_client_desc" placeholder="Descripción"></textarea>
+                <textarea id="kvt_client_sig_text" placeholder="Email o firma (texto)"></textarea>
+                <input type="file" id="kvt_client_sig_file" accept="image/*">
+                <button type="button" class="kvt-btn" id="kvt_client_sig_parse">Extraer datos</button>
                 <button type="button" class="kvt-btn" id="kvt_client_submit">Crear</button>
               </div>
             </div>
@@ -3995,12 +4000,30 @@ function kvtInit(){
     const clemail = el('#kvt_client_email');
     const clphone = el('#kvt_client_phone');
     const cldesc  = el('#kvt_client_desc');
+    const clsigtxt = el('#kvt_client_sig_text');
+    const clsigfile= el('#kvt_client_sig_file');
+    const clsigparse = el('#kvt_client_sig_parse');
     const clsubmit= el('#kvt_client_submit');
-    function openClModal(){ clmodal.dataset.edit=''; clname.value=''; clcont.value=''; clemail.value=''; clphone.value=''; cldesc.value=''; clsubmit.textContent='Crear'; clmodal.style.display='flex'; }
-    function openEditClModal(c){ clmodal.dataset.edit=c.id; clname.value=c.name||''; clcont.value=c.contact_name||''; clemail.value=c.contact_email||''; clphone.value=c.contact_phone||''; cldesc.value=c.description||''; clsubmit.textContent='Guardar'; clmodal.style.display='flex'; }
-    function closeClModal(){ clmodal.style.display='none'; clmodal.dataset.edit=''; clsubmit.textContent='Crear'; if(cldesc) cldesc.value=''; }
+    function openClModal(){ clmodal.dataset.edit=''; clname.value=''; clcont.value=''; clemail.value=''; clphone.value=''; cldesc.value=''; if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Crear'; clmodal.style.display='flex'; }
+    function openEditClModal(c){ clmodal.dataset.edit=c.id; clname.value=c.name||''; clcont.value=c.contact_name||''; clemail.value=c.contact_email||''; clphone.value=c.contact_phone||''; cldesc.value=c.description||''; if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Guardar'; clmodal.style.display='flex'; }
+    function closeClModal(){ clmodal.style.display='none'; clmodal.dataset.edit=''; clsubmit.textContent='Crear'; if(cldesc) cldesc.value=''; if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; }
     clclose && clclose.addEventListener('click', closeClModal);
     clmodal && clmodal.addEventListener('click', e=>{ if(e.target===clmodal) closeClModal(); });
+    clsigparse && clsigparse.addEventListener('click', ()=>{
+      const fd = new FormData();
+      fd.append('action','kvt_parse_signature');
+      fd.append('_ajax_nonce', KVT_NONCE);
+      if(clsigtxt && clsigtxt.value) fd.append('signature_text', clsigtxt.value);
+      if(clsigfile && clsigfile.files[0]) fd.append('signature_image', clsigfile.files[0]);
+      fetch(KVT_AJAX,{method:'POST',body:fd}).then(r=>r.json()).then(j=>{
+        if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo extraer.');
+        if(j.data.company) clname.value=j.data.company;
+        if(j.data.contact) clcont.value=j.data.contact;
+        if(j.data.email)   clemail.value=j.data.email;
+        if(j.data.phone)   clphone.value=j.data.phone;
+        if(j.data.description) cldesc.value=j.data.description;
+      });
+    });
     clsubmit && clsubmit.addEventListener('click', ()=>{
       const params = new URLSearchParams();
       const editing = clmodal.dataset.edit;
@@ -5338,6 +5361,88 @@ JS;
           update_term_meta($tid, 'contact_phone', $cphone);
 
           wp_send_json_success(['id'=>$tid]);
+      }
+
+      public function ajax_parse_signature() {
+          check_ajax_referer('kvt_nonce');
+
+          $text = isset($_POST['signature_text']) ? sanitize_textarea_field($_POST['signature_text']) : '';
+          $img_b64 = '';
+          if (!empty($_FILES['signature_image']['tmp_name'])) {
+              $img = file_get_contents($_FILES['signature_image']['tmp_name']);
+              if ($img !== false) {
+                  $img_b64 = 'data:image/png;base64,' . base64_encode($img);
+              }
+          }
+          if ($text === '' && $img_b64 === '') {
+              wp_send_json_error(['msg' => 'Firma requerida'], 400);
+          }
+          $key = get_option(self::OPT_OPENAI_KEY, '');
+          if (!$key) {
+              wp_send_json_error(['msg' => 'Falta la clave de OpenAI'], 400);
+          }
+          $content = [];
+          if ($text !== '') $content[] = ['type' => 'text', 'text' => $text];
+          if ($img_b64 !== '') $content[] = ['type' => 'image_url', 'image_url' => ['url' => $img_b64]];
+          $payload = [
+              'model' => 'gpt-4o-mini',
+              'messages' => [
+                  [
+                      'role' => 'system',
+                      'content' => 'Extrae datos de contacto de una firma de email. Devuelve JSON con las claves company, contact, email, phone, description.'
+                  ],
+                  [
+                      'role' => 'user',
+                      'content' => $content
+                  ]
+              ],
+              'response_format' => [
+                  'type' => 'json_schema',
+                  'json_schema' => [
+                      'name' => 'contact',
+                      'schema' => [
+                          'type' => 'object',
+                          'properties' => [
+                              'company' => ['type' => 'string'],
+                              'contact' => ['type' => 'string'],
+                              'email' => ['type' => 'string'],
+                              'phone' => ['type' => 'string'],
+                              'description' => ['type' => 'string'],
+                          ],
+                          'additionalProperties' => false
+                      ]
+                  ]
+              ],
+              'max_tokens' => 300
+          ];
+          $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+              'headers' => [
+                  'Authorization' => 'Bearer ' . $key,
+                  'Content-Type'  => 'application/json',
+              ],
+              'body' => wp_json_encode($payload),
+              'timeout' => 45,
+          ]);
+          if (is_wp_error($resp)) {
+              wp_send_json_error(['msg' => 'No se pudo conectar'], 500);
+          }
+          $code = wp_remote_retrieve_response_code($resp);
+          $body = wp_remote_retrieve_body($resp);
+          $data = json_decode($body, true);
+          if ($code !== 200 || empty($data['choices'][0]['message']['content'])) {
+              wp_send_json_error(['msg' => 'Respuesta inválida'], 500);
+          }
+          $parsed = json_decode($data['choices'][0]['message']['content'], true);
+          if (!is_array($parsed)) {
+              wp_send_json_error(['msg' => 'No se pudo extraer'], 500);
+          }
+          wp_send_json_success([
+              'company' => $parsed['company'] ?? '',
+              'contact' => $parsed['contact'] ?? '',
+              'email'   => $parsed['email'] ?? '',
+              'phone'   => $parsed['phone'] ?? '',
+              'description' => $parsed['description'] ?? '',
+          ]);
       }
 
       public function ajax_create_process() {
