@@ -4482,14 +4482,18 @@ JS;
                 'Content-Type'  => 'application/json',
             ],
             'body' => json_encode([
-                'model' => 'gpt-4o-mini',
-                'messages' => [
+                // Use ChatGPT 5 model instead of the previous 4 mini
+                'model'   => 'chatgpt-5',
+                'messages'=> [
                     ['role' => 'user', 'content' => $prompt],
                 ],
             ]),
         ]);
         if (is_wp_error($resp)) {
-            wp_send_json_success(['suggestions' => __('No se pudo conectar con OpenAI.', 'kovacic')]);
+            $err = $resp->get_error_message();
+            wp_send_json_success([
+                'suggestions' => sprintf(__('No se pudo conectar con OpenAI: %s', 'kovacic'), $err)
+            ]);
         }
         $data = json_decode(wp_remote_retrieve_body($resp), true);
         $text = $data['choices'][0]['message']['content'] ?? '';
