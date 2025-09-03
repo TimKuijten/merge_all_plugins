@@ -1271,7 +1271,7 @@ JS;
                             <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
                             <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                         </form>
-                        <button type="button" class="kvt-btn" id="kvt_assign_search" style="display:none;">Asignar seleccionados</button>
+                        <button type="button" class="kvt-btn" id="kvt_assign_search">Asignar a proceso</button>
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
                       <div class="kvt-tabs" id="kvt_board_tabs">
@@ -1287,14 +1287,15 @@ JS;
                             <label>Nombre
                               <input type="text" id="kvt_board_name" placeholder="Nombre">
                             </label>
-                            <label>Rol
-                              <input type="text" id="kvt_board_role" placeholder="Rol">
+                            <label>Puesto/Empresa actual
+                              <input type="text" id="kvt_board_role" placeholder="Puesto/Empresa actual (ej: Gerente, Analista)">
+                              <small class="kvt-hint">Puedes buscar varios separados por coma</small>
                             </label>
                             <label>Ubicación
                               <input type="text" id="kvt_board_location" placeholder="País o ciudad (ej: Países Bajos, Chile)">
                               <small class="kvt-hint">Puedes buscar varios separados por coma</small>
                             </label>
-                            <button type="button" class="kvt-btn" id="kvt_board_assign" style="display:none;">Asignar seleccionados</button>
+                            <button type="button" class="kvt-btn" id="kvt_board_assign">Asignar a proceso</button>
                             <form id="kvt_board_export_all_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank">
                               <input type="hidden" name="action" value="kvt_export">
                               <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
@@ -1303,7 +1304,6 @@ JS;
                               <input type="hidden" name="format" id="kvt_board_export_all_format" value="xls">
                               <button type="button" class="kvt-btn" id="kvt_board_export_all_xls">Exportar Excel</button>
                             </form>
-                            <button type="button" class="kvt-btn" id="kvt_board_load_roles">Cargar roles y empresas</button>
                           </div>
                         </div>
                         <div id="kvt_board_list" class="kvt-list"></div>
@@ -1525,8 +1525,9 @@ JS;
                     <label>Nombre
                       <input type="text" id="kvt_modal_name" placeholder="Nombre">
                     </label>
-                    <label>Rol
-                      <input type="text" id="kvt_modal_role" placeholder="Rol">
+                    <label>Puesto/Empresa actual
+                      <input type="text" id="kvt_modal_role" placeholder="Puesto/Empresa actual (ej: Gerente, Analista)">
+                      <small class="kvt-hint">Puedes buscar varios separados por coma</small>
                     </label>
                     <label>Ubicación
                       <input type="text" id="kvt_modal_location" placeholder="País o ciudad">
@@ -1725,12 +1726,15 @@ JS;
         .kvt-delete{background:none !important;border:none !important;color:#b91c1c !important;font-size:18px;line-height:1;cursor:pointer;padding:0}
         .kvt-delete:hover{color:#7f1d1d !important}
         .kvt-delete.dashicons{vertical-align:middle}
+        .kvt-edit{background:none !important;border:none !important;color:#0A212E;font-size:18px;line-height:1;cursor:pointer;padding:0}
+        .kvt-edit:hover{color:#334155}
+        .kvt-edit.dashicons{vertical-align:middle}
         .kvt-main{display:flex;gap:16px;align-items:flex-start}
         .kvt-widgets{display:flex;flex-wrap:wrap;gap:16px;flex:1;align-items:flex-start;align-content:flex-start}
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
         #kvt_table_wrap{flex:0 0 70%}
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
-        .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:576px}
+        .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:750px}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
         .kvt-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
@@ -1751,11 +1755,11 @@ JS;
         .kvt-activity{border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto;flex:0 1 300px;align-self:flex-start}
         #kvt_activity{flex:0 1 400px}
         #kvt_active_wrap{flex:0 1 480px}
-        #kvt_calendar_wrap{flex:0 1 576px}
+        #kvt_calendar_wrap{flex:0 1 750px}
         .kvt-widget-title{margin:0 0 8px;font-size:15px;font-weight:600;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
-        #kvt_table tbody tr:nth-child(even){background:#f9fafb}
+        #kvt_table tbody tr:nth-child(even){background:#f1f5f9}
         #kvt_table tbody tr:nth-child(odd){background:#fff}
-        .kvt-base .kvt-row:nth-child(even){background:#f9fafb}
+        .kvt-base .kvt-row:nth-child(even){background:#f1f5f9}
         .kvt-base .kvt-row:nth-child(odd){background:#fff}
         .kvt-active-days{font-size:14px;font-weight:600}
         .kvt-hint{display:block;font-size:12px;color:#6b7280;margin-top:4px}
@@ -2019,7 +2023,6 @@ function kvtInit(){
   const boardExportXls = el('#kvt_board_export_all_xls');
   const boardExportFormat = el('#kvt_board_export_all_format');
   const boardExportAllForm = el('#kvt_board_export_all_form');
-  const boardLoadRoles = el('#kvt_board_load_roles');
   const navLoadRoles = el('#kvt_nav_load_roles');
   const activityDue = el('#kvt_tasks_due');
   const activityUpcoming = el('#kvt_tasks_upcoming');
@@ -2811,7 +2814,7 @@ function kvtInit(){
         const card = document.createElement('div'); card.className='kvt-card';
         card.innerHTML = '<p class="kvt-title">'+esc(c.candidate)+'</p>'+
                          '<p class="kvt-sub">'+esc(c.client+(c.process?' / '+c.process:''))+'</p>'+
-                         '<p class="kvt-followup"><span class="dashicons dashicons-clock"></span> '+esc(c.date)+(c.note?' — '+esc(c.note):'')+'</p>';
+                         '<p class="kvt-followup"><span class="dashicons dashicons-clock"></span> '+esc(formatInputDate(c.date))+(c.note?' — '+esc(c.note):'')+'</p>';
         zone.appendChild(card);
       });
       col.appendChild(h); col.appendChild(zone); board.appendChild(col);
@@ -2826,7 +2829,7 @@ function kvtInit(){
         const card = document.createElement('div'); card.className='kvt-card kvt-overdue';
         card.innerHTML = '<p class="kvt-title">'+esc(c.candidate)+'</p>'+
                          '<p class="kvt-sub">'+esc(c.client+(c.process?' / '+c.process:''))+'</p>'+
-                         '<p class="kvt-followup"><span class="dashicons dashicons-clock"></span> '+esc(c.date)+(c.note?' — '+esc(c.note):'')+'</p>';
+                         '<p class="kvt-followup"><span class="dashicons dashicons-clock"></span> '+esc(formatInputDate(c.date))+(c.note?' — '+esc(c.note):'')+'</p>';
         zone.appendChild(card);
       });
       col.appendChild(h); col.appendChild(zone); board.appendChild(col);
@@ -2936,7 +2939,7 @@ function kvtInit(){
           const note = esc(r.meta.next_action_note||'');
           const item = '<li data-id="'+escAttr(r.id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a> - '+esc(r.meta.next_action)+(note?' — '+note:'')+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
           (d <= today ? due : upcoming).push(item);
-          const ds = parts.join('-');
+          const ds = parts.join('/');
           calendarEvents.push({date: ds, text: nameTxt, done:false});
         }
       }
@@ -2987,13 +2990,13 @@ function kvtInit(){
     calendarEvents = [];
     const due = (data.overdue||[]).map(c=>{
       const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:c.date, time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false});
-      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(c.date)+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false});
+      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const upcoming = (data.upcoming||[]).map(c=>{
       const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:c.date, time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false});
-      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(c.date)+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false});
+      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const notifs = (data.comments||[]).map(c=>{
       return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> — '+esc(c.comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
@@ -3259,7 +3262,6 @@ function kvtInit(){
         alert('Error de red al cargar roles y empresas');
       });
   };
-  boardLoadRoles && boardLoadRoles.addEventListener('click', ()=>triggerLoadRoles(boardLoadRoles));
   navLoadRoles && navLoadRoles.addEventListener('click', e=>{ e.preventDefault(); triggerLoadRoles(navLoadRoles); });
   infoClose && infoClose.addEventListener('click', ()=>{ infoModal.style.display='none'; });
   infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
@@ -3543,12 +3545,12 @@ function kvtInit(){
           const firstLineWithCv = firstLine.replace('</a>', '</a>'+cv);
           const check = filterActive?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" aria-label="Seleccionar"></div>':'';
           const addBtn = allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'';
-          const editBtn = '<button type="button" class="kvt-btn kvt-mini-view kvt-mini-edit" data-id="'+it.id+'" data-label="Editar perfil">Editar perfil</button>';
+          const editBtn = '<button type="button" class="kvt-edit kvt-mini-view kvt-mini-edit dashicons dashicons-edit" data-id="'+it.id+'" data-label="Editar perfil" aria-label="Editar perfil"></button>';
           return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
             '<div class="kvt-row'+(filterActive?' with-check':'')+'">'+
               check+
               '<div>'+firstLineWithCv+'<br>'+infoLine+'</div>'+
-              '<div class="kvt-meta"><button type="button" class="kvt-delete kvt-mini-delete" data-id="'+it.id+'" aria-label="Eliminar"></button>'+editBtn+addBtn+'</div>'+
+              '<div class="kvt-meta"><button type="button" class="kvt-delete kvt-mini-delete dashicons dashicons-trash" data-id="'+it.id+'" aria-label="Eliminar"></button>'+editBtn+addBtn+'</div>'+
             '</div>'+
             '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
