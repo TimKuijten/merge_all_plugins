@@ -1231,38 +1231,37 @@ JS;
                 <h2 class="kvt-board-title">Tablero ATS</h2>
             </div>
             <div id="kvt_filters_bar" class="kvt-filters" style="display:none;">
-                <label>Cliente
+                <div class="kvt-filter-field">
+                    <label for="kvt_client">Cliente</label>
                     <select id="kvt_client">
                         <option value="">— Todos —</option>
                         <?php foreach ($clients as $c): ?>
                           <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
                         <?php endforeach; ?>
                     </select>
-                </label>
-                <label>Proceso
+                </div>
+                <div class="kvt-filter-field">
+                    <label for="kvt_process">Proceso</label>
                     <select id="kvt_process">
                         <option value="">— Todos —</option>
                         <?php foreach ($processes as $t): ?>
                           <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
                         <?php endforeach; ?>
                     </select>
-                </label>
-                <span id="kvt_client_link" class="kvt-client-link"></span>
+                </div>
             </div>
 
             <?php if (!$is_client_board): ?>
-            <div id="kvt_selected_info" style="display:none;">
-              <p id="kvt_selected_client"></p>
-              <p id="kvt_selected_process"></p>
-              <p id="kvt_selected_board"></p>
-            </div>
+            <div id="kvt_selected_info" class="kvt-selected-info" style="display:none;"></div>
             <?php endif; ?>
 
             <div class="kvt-main">
                 <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:none;">
                     <div id="kvt_stage_overview" class="kvt-stage-overview"></div>
                     <div id="kvt_ats_bar" class="kvt-ats-bar">
+                        <label for="kvt_search">Buscar</label>
                         <input type="text" id="kvt_search" placeholder="Buscar candidato, empresa, ciudad...">
+                        <label for="kvt_stage_filter">Etapa</label>
                         <select id="kvt_stage_filter"><option value="">Todas las etapas</option></select>
                         <form id="kvt_export_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank" style="display:inline;">
                             <input type="hidden" name="action" value="kvt_export">
@@ -1272,7 +1271,7 @@ JS;
                             <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
                             <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                         </form>
-                        <button type="button" class="kvt-btn" id="kvt_assign_search" style="display:none;">Asignar seleccionados</button>
+                        <button type="button" class="kvt-btn" id="kvt_assign_search">Asignar a proceso</button>
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
                       <div class="kvt-tabs" id="kvt_board_tabs">
@@ -1288,13 +1287,15 @@ JS;
                             <label>Nombre
                               <input type="text" id="kvt_board_name" placeholder="Nombre">
                             </label>
-                            <label>Rol
-                              <input type="text" id="kvt_board_role" placeholder="Rol">
+                            <label>Puesto/Empresa actual
+                              <input type="text" id="kvt_board_role" placeholder="Puesto/Empresa actual (ej: Gerente, Analista)">
+                              <small class="kvt-hint">Puedes buscar varios separados por coma</small>
                             </label>
                             <label>Ubicación
-                              <input type="text" id="kvt_board_location" placeholder="País o ciudad">
+                              <input type="text" id="kvt_board_location" placeholder="País o ciudad (ej: Países Bajos, Chile)">
+                              <small class="kvt-hint">Puedes buscar varios separados por coma</small>
                             </label>
-                            <button type="button" class="kvt-btn" id="kvt_board_assign" style="display:none;">Asignar seleccionados</button>
+                            <button type="button" class="kvt-btn" id="kvt_board_assign">Asignar a proceso</button>
                             <form id="kvt_board_export_all_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank">
                               <input type="hidden" name="action" value="kvt_export">
                               <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
@@ -1303,7 +1304,6 @@ JS;
                               <input type="hidden" name="format" id="kvt_board_export_all_format" value="xls">
                               <button type="button" class="kvt-btn" id="kvt_board_export_all_xls">Exportar Excel</button>
                             </form>
-                            <button type="button" class="kvt-btn" id="kvt_board_load_roles">Cargar roles y empresas</button>
                           </div>
                         </div>
                         <div id="kvt_board_list" class="kvt-list"></div>
@@ -1318,6 +1318,7 @@ JS;
                       </div>
                       <div id="kvt_board_tab_processes" class="kvt-tab-panel">
                         <div class="kvt-head">
+                          <div id="kvt_board_proc_info" class="kvt-selected-info" style="display:none;"></div>
                           <div class="kvt-toolbar">
                             <label>Estado
                               <select id="kvt_proc_status">
@@ -1351,10 +1352,12 @@ JS;
                     </div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
+                <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
+                    <h4 class="kvt-widget-title">Actividad</h4>
                     <div class="kvt-activity-tabs">
-                        <button type="button" class="kvt-activity-tab active" data-target="tasks">Actividad</button>
-                        <button type="button" class="kvt-activity-tab" data-target="log">Activity</button>
+                        <button type="button" class="kvt-activity-tab active" data-target="tasks">Tareas</button>
+                        <button type="button" class="kvt-activity-tab" data-target="log">Registro</button>
                     </div>
                     <div id="kvt_activity_tasks" class="kvt-activity-content">
                         <div class="kvt-activity-columns">
@@ -1375,12 +1378,13 @@ JS;
                     </div>
                 </div>
                 <div id="kvt_active_wrap" class="kvt-activity">
-                    <h4>Procesos activos</h4>
+                    <h4 class="kvt-widget-title">Procesos activos</h4>
                     <ul id="kvt_active_processes" class="kvt-activity-list"></ul>
                 </div>
                 <div id="kvt_calendar_wrap" class="kvt-activity">
-                    <h4>Calendario</h4>
+                    <h4 class="kvt-widget-title">Calendario</h4>
                     <div id="kvt_dashboard_calendar" class="kvt-calendar-small"></div>
+                </div>
                 </div>
             </div>
             <button type="button" class="kvt-btn" id="kvt_toggle_kanban" style="display:none;">Mostrar Kanban</button>
@@ -1522,8 +1526,9 @@ JS;
                     <label>Nombre
                       <input type="text" id="kvt_modal_name" placeholder="Nombre">
                     </label>
-                    <label>Rol
-                      <input type="text" id="kvt_modal_role" placeholder="Rol">
+                    <label>Puesto/Empresa actual
+                      <input type="text" id="kvt_modal_role" placeholder="Puesto/Empresa actual (ej: Gerente, Analista)">
+                      <small class="kvt-hint">Puedes buscar varios separados por coma</small>
                     </label>
                     <label>Ubicación
                       <input type="text" id="kvt_modal_location" placeholder="País o ciudad">
@@ -1658,10 +1663,12 @@ JS;
         $css = "
         .kvt-wrapper{max-width:1200px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.06);display:flex}
         .kvt-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
-        .kvt-filters{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
-        .kvt-filters label{display:inline-flex;gap:6px;align-items:center;font-weight:600}
+        .kvt-filters{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;align-items:center}
+        .kvt-filter-field{display:flex;gap:6px;align-items:center;font-weight:600}
         .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
-        .kvt-client-link{margin-left:12px;display:inline-flex;align-items:center;gap:6px;font-weight:600}
+        .kvt-selected-info{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;padding:8px;border:1px solid #e5e7eb;border-radius:8px;background:#f1f5f9;font-size:14px}
+        .kvt-selected-info span{font-weight:600}
+        .kvt-selected-info span+span:before{content:'|';margin:0 4px;color:#94a3b8;font-weight:400}
         .kvt-logo{display:block;margin:0 auto 12px;max-width:300px}
         .kvt-content{flex:1;padding:16px;position:relative}
         .kvt-help{position:absolute;top:16px;right:16px;font-size:24px;color:#0A212E;cursor:pointer}
@@ -1720,11 +1727,15 @@ JS;
         .kvt-delete{background:none !important;border:none !important;color:#b91c1c !important;font-size:18px;line-height:1;cursor:pointer;padding:0}
         .kvt-delete:hover{color:#7f1d1d !important}
         .kvt-delete.dashicons{vertical-align:middle}
-        .kvt-main{display:flex;gap:16px}
+        .kvt-edit{background:none !important;border:none !important;color:#0A212E;font-size:18px;line-height:1;cursor:pointer;padding:0}
+        .kvt-edit:hover{color:#334155}
+        .kvt-edit.dashicons{vertical-align:middle}
+        .kvt-main{display:flex;gap:16px;align-items:flex-start}
+        .kvt-widgets{display:flex;flex-wrap:wrap;gap:16px;flex:1;align-items:flex-start;align-content:flex-start}
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
         #kvt_table_wrap{flex:0 0 70%}
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
-        .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px;max-width:300px}
+        .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:750px}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
         .kvt-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
@@ -1732,7 +1743,8 @@ JS;
         .kvt-cal-event{display:block;margin-top:16px;font-size:12px;text-align:left}
         .kvt-cal-cell.has-event{background:#f1f5f9}
         .kvt-cal-controls{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
-        .kvt-cal-add{display:flex;gap:8px;margin-bottom:8px}
+        .kvt-cal-add{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+        .kvt-cal-add label{display:flex;flex-direction:column;font-size:12px}
         .kvt-cal-event.done{text-decoration:line-through;color:#9ca3af}
         .kvt-cal-remove{background:none;border:0;color:#ef4444;margin-left:4px;cursor:pointer}
         #kvt_table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
@@ -1740,7 +1752,18 @@ JS;
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
         #kvt_table tbody tr:hover{background:#f1f5f9}
         .kvt-ats-bar{display:flex;gap:8px;align-items:center;padding:8px}
-        .kvt-activity{margin-top:16px;flex:1;border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto}
+        .kvt-ats-bar label{font-weight:600}
+        .kvt-activity{border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto;flex:0 1 300px;align-self:flex-start}
+        #kvt_activity{flex:0 1 400px}
+        #kvt_active_wrap{flex:0 1 480px}
+        #kvt_calendar_wrap{flex:0 1 750px}
+        .kvt-widget-title{margin:0 0 8px;font-size:15px;font-weight:600;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
+        #kvt_table tbody tr:nth-child(even){background:#f1f5f9}
+        #kvt_table tbody tr:nth-child(odd){background:#fff}
+        .kvt-base .kvt-row:nth-child(even){background:#f1f5f9}
+        .kvt-base .kvt-row:nth-child(odd){background:#fff}
+        .kvt-active-days{font-size:14px;font-weight:600}
+        .kvt-hint{display:block;font-size:12px;color:#6b7280;margin-top:4px}
         .kvt-activity-tabs{display:flex;gap:8px;margin-bottom:8px}
         .kvt-activity-tab{flex:1;padding:6px 8px;border:1px solid #e5e7eb;border-radius:8px;background:#f1f5f9;cursor:pointer}
         .kvt-activity-tab.active{background:#0A212E;color:#fff}
@@ -1749,6 +1772,9 @@ JS;
         .kvt-activity-col h4{margin:8px 0;font-size:14px}
         .kvt-activity-list{list-style:none;margin:0;padding-left:16px;font-size:13px}
         .kvt-activity-list li{margin-bottom:4px}
+        #kvt_active_processes li{padding:4px 8px;border-radius:4px}
+        #kvt_active_processes li:nth-child(even){background:#e5e7eb}
+        #kvt_active_processes li:nth-child(odd){background:#fff}
         .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-stage-cell{display:flex;align-items:center;font-size:12px;flex-wrap:nowrap}
         .kvt-stage-step{display:inline-flex;align-items:center;justify-content:center;width:120px;flex:0 0 120px;padding:4px 12px;background:#e5e7eb;color:#6b7280;white-space:nowrap;box-sizing:border-box;border:none;cursor:pointer}
@@ -1998,7 +2024,6 @@ function kvtInit(){
   const boardExportXls = el('#kvt_board_export_all_xls');
   const boardExportFormat = el('#kvt_board_export_all_format');
   const boardExportAllForm = el('#kvt_board_export_all_form');
-  const boardLoadRoles = el('#kvt_board_load_roles');
   const navLoadRoles = el('#kvt_nav_load_roles');
   const activityDue = el('#kvt_tasks_due');
   const activityUpcoming = el('#kvt_tasks_upcoming');
@@ -2056,10 +2081,7 @@ function kvtInit(){
     const shareGenerate   = el('#kvt_share_generate');
     const shareComments   = el('#kvt_share_comments');
     const selInfo        = el('#kvt_selected_info');
-    const selClientInfo  = el('#kvt_selected_client');
-    const selProcessInfo = el('#kvt_selected_process');
-    const selBoardInfo   = el('#kvt_selected_board');
-    const clientLink     = el('#kvt_client_link');
+    const boardProcInfo  = el('#kvt_board_proc_info');
   const tablePager = el('#kvt_table_pager');
   const tablePrev  = el('#kvt_table_prev');
   const tableNext  = el('#kvt_table_next');
@@ -2175,7 +2197,6 @@ function kvtInit(){
     const actions = el('.kvt-actions');
     if (actions) actions.style.display = 'none';
     if (selInfo) selInfo.style.display = 'none';
-    if (clientLink) clientLink.style.display = 'none';
     if (IS_ADMIN) {
       const gear = document.createElement('button');
       gear.type = 'button';
@@ -2795,7 +2816,7 @@ function kvtInit(){
         const card = document.createElement('div'); card.className='kvt-card';
         card.innerHTML = '<p class="kvt-title">'+esc(c.candidate)+'</p>'+
                          '<p class="kvt-sub">'+esc(c.client+(c.process?' / '+c.process:''))+'</p>'+
-                         '<p class="kvt-followup"><span class="dashicons dashicons-clock"></span> '+esc(c.date)+(c.note?' — '+esc(c.note):'')+'</p>';
+                         '<p class="kvt-followup"><span class="dashicons dashicons-clock"></span> '+esc(formatInputDate(c.date))+(c.note?' — '+esc(c.note):'')+'</p>';
         zone.appendChild(card);
       });
       col.appendChild(h); col.appendChild(zone); board.appendChild(col);
@@ -2810,7 +2831,7 @@ function kvtInit(){
         const card = document.createElement('div'); card.className='kvt-card kvt-overdue';
         card.innerHTML = '<p class="kvt-title">'+esc(c.candidate)+'</p>'+
                          '<p class="kvt-sub">'+esc(c.client+(c.process?' / '+c.process:''))+'</p>'+
-                         '<p class="kvt-followup"><span class="dashicons dashicons-clock"></span> '+esc(c.date)+(c.note?' — '+esc(c.note):'')+'</p>';
+                         '<p class="kvt-followup"><span class="dashicons dashicons-clock"></span> '+esc(formatInputDate(c.date))+(c.note?' — '+esc(c.note):'')+'</p>';
         zone.appendChild(card);
       });
       col.appendChild(h); col.appendChild(zone); board.appendChild(col);
@@ -2920,7 +2941,7 @@ function kvtInit(){
           const note = esc(r.meta.next_action_note||'');
           const item = '<li data-id="'+escAttr(r.id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a> - '+esc(r.meta.next_action)+(note?' — '+note:'')+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
           (d <= today ? due : upcoming).push(item);
-          const ds = parts.join('-');
+          const ds = parts.join('/');
           calendarEvents.push({date: ds, text: nameTxt, done:false});
         }
       }
@@ -2971,20 +2992,20 @@ function kvtInit(){
     calendarEvents = [];
     const due = (data.overdue||[]).map(c=>{
       const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:c.date, time:c.time||'', text:c.note||'', candidate:c.candidate, done:false});
-      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(c.date)+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false});
+      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const upcoming = (data.upcoming||[]).map(c=>{
       const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:c.date, time:c.time||'', text:c.note||'', candidate:c.candidate, done:false});
-      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(c.date)+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false});
+      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const notifs = (data.comments||[]).map(c=>{
       return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> — '+esc(c.comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
     });
-    const active = (data.active||[]).map(p=>{
-      return '<li><a href="#" class="kvt-open-process" data-id="'+escAttr(p.id)+'">'+esc(p.name)+'</a> — '+esc(p.days)+' días — '+esc(p.creator)+' — '+esc(p.client)+'</li>';
-    });
+      const active = (data.active||[]).map(p=>{
+        return '<li><a href="#" class="kvt-open-process" data-id="'+escAttr(p.id)+'">'+esc(p.name)+'</a> - '+esc(p.client)+' - '+esc(p.days)+' días activo - creado por '+esc(p.creator)+'</li>';
+      });
     const logs = (data.logs||[]).sort((a,b)=>a.time<b.time?1:-1);
     activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
     activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
@@ -3010,7 +3031,7 @@ function kvtInit(){
       let cls = 'kvt-cal-cell';
       if(ev.length) cls += ' has-event';
       html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
-      ev.forEach(e=>{ let lbl=''; if(e.time) lbl+=esc(e.time)+' '; lbl+=esc(e.text); if(e.candidate) lbl+=' '+esc(e.candidate); else if(e.process) lbl+=' '+esc(e.process); html += '<span class="kvt-cal-event'+(e.done?' done':'')+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>'; });
+      ev.forEach(e=>{ let lbl=''; if(e.time) lbl+=esc(e.time)+' '; lbl+=esc(e.text); const tgt = e.process || e.candidate || e.client || ''; if(tgt) lbl+=' <em>- '+esc(tgt)+'</em>'; html += '<span class="kvt-cal-event'+(e.done?' done':'')+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>'; });
       html += '</div>';
     }
     const fill = (first.getDay()+last.getDate())%7;
@@ -3039,33 +3060,66 @@ function kvtInit(){
     });
   }
 
-  function renderCalendarSmall(){
-    if(!calendarSmall) return;
-    const first = new Date(calYear, calMonth, 1);
-    const last = new Date(calYear, calMonth+1, 0);
-    const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-    const monthName = first.toLocaleString('default',{month:'long'});
-    let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><button type="button" id="kvt_cal_next_s">&gt;</button></div>';
-    html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
-    for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
-    for(let d=1; d<=last.getDate(); d++){
-      const ds = (d<10?'0'+d:d)+'/'+(calMonth+1<10?'0'+(calMonth+1):(calMonth+1))+'/'+calYear;
-      const ev = calendarEvents.filter(e=>e.date===ds);
-      let cls = 'kvt-cal-cell';
-      if(ev.length) cls += ' has-event';
-      html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
-      ev.forEach(e=>{ let lbl=''; if(e.time) lbl+=esc(e.time)+' '; lbl+=esc(e.text); if(e.candidate) lbl+=' '+esc(e.candidate); else if(e.process) lbl+=' '+esc(e.process); html += '<span class="kvt-cal-event'+(e.done?' done':'')+'">'+lbl+'</span>'; });
+    function renderCalendarSmall(){
+      if(!calendarSmall) return;
+      const first = new Date(calYear, calMonth, 1);
+      const last = new Date(calYear, calMonth+1, 0);
+      const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+      const monthName = first.toLocaleString('default',{month:'long'});
+      let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><button type="button" id="kvt_cal_next_s">&gt;</button></div>';
+      html += '<div class="kvt-cal-add">'
+        +'<label>Fecha<input type="date" id="kvt_cal_date_s"></label>'
+        +'<label>Hora<input type="time" id="kvt_cal_time_s"></label>'
+        +'<label>Tarea<input type="text" id="kvt_cal_text_s" placeholder="Descripción"></label>'
+        +'<label>Proceso<select id="kvt_cal_process_s"><option value="">(opcional)</option></select></label>'
+        +'<label>Candidato<select id="kvt_cal_candidate_s"><option value="">(opcional)</option></select></label>'
+        +'<button type="button" id="kvt_cal_add_s">Añadir</button>'
+      +'</div><span class="kvt-hint">Proceso y candidato son opcionales</span>';
+      html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
+      for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
+      for(let d=1; d<=last.getDate(); d++){
+        const ds = (d<10?'0'+d:d)+'/'+(calMonth+1<10?'0'+(calMonth+1):(calMonth+1))+'/'+calYear;
+        const ev = calendarEvents.map((e,idx)=>Object.assign({idx},e)).filter(e=>e.date===ds);
+        let cls = 'kvt-cal-cell';
+        if(ev.length) cls += ' has-event';
+        html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
+        ev.forEach(e=>{
+          let lbl = esc(e.text);
+          if(e.time) lbl += ' '+esc(e.time);
+          let tgt = '';
+          if(e.candidate || e.process){
+            if(e.candidate) tgt += esc(e.candidate);
+            if(e.candidate && e.process) tgt += ' / ';
+            if(e.process) tgt += esc(e.process);
+          } else if(e.client){
+            tgt = esc(e.client);
+          }
+          if(tgt) lbl += ' <em>- '+tgt+'</em>';
+          html += '<span class="kvt-cal-event'+(e.done?' done':'')+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+        });
+        html += '</div>';
+      }
+      const fill = (first.getDay()+last.getDate())%7;
+      if(fill!==0){ for(let i=0;i<7-fill;i++) html += '<div class="kvt-cal-cell"></div>'; }
       html += '</div>';
+      calendarSmall.innerHTML = html;
+      const prevBtn = el('#kvt_cal_prev_s', calendarSmall);
+      const nextBtn = el('#kvt_cal_next_s', calendarSmall);
+      const addBtn  = el('#kvt_cal_add_s', calendarSmall);
+      const dateInp = el('#kvt_cal_date_s', calendarSmall);
+      const timeInp = el('#kvt_cal_time_s', calendarSmall);
+      const textInp = el('#kvt_cal_text_s', calendarSmall);
+      const procSel = el('#kvt_cal_process_s', calendarSmall);
+      const candSel = el('#kvt_cal_candidate_s', calendarSmall);
+      populateCalProcesses(procSel);
+      populateCalCandidates('', candSel);
+      procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
+      prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendarSmall(); });
+      nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendarSmall(); });
+      addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false}); renderCalendarSmall(); }});
+      calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{ evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); calendarEvents[idx].done=!calendarEvents[idx].done; renderCalendarSmall(); }); });
+      calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
     }
-    const fill = (first.getDay()+last.getDate())%7;
-    if(fill!==0){ for(let i=0;i<7-fill;i++) html += '<div class="kvt-cal-cell"></div>'; }
-    html += '</div>';
-    calendarSmall.innerHTML = html;
-    const prevBtn = el('#kvt_cal_prev_s', calendarSmall);
-    const nextBtn = el('#kvt_cal_next_s', calendarSmall);
-    prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendarSmall(); });
-    nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendarSmall(); });
-  }
 
   function renderOverview(rows){
     if(!overview) return;
@@ -3160,72 +3214,43 @@ function kvtInit(){
   }
 
   function updateSelectedInfo(){
-    const cid = selClient && selClient.value ? selClient.value : '';
     const pid = selProcess && selProcess.value ? selProcess.value : '';
-    if(clientLink) clientLink.innerHTML = '';
-    if(!selInfo){
-      if(cid && pid){
-        const key = cid+'|'+pid;
-        const slug = CLIENT_LINKS[key];
-        if(slug){
-          const url = KVT_HOME + slug;
-          const boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a>';
-          if(clientLink) clientLink.innerHTML = boardDet;
-        }
-      }
+    if(!selInfo && !boardProcInfo){ return; }
+    if(!pid){
+      if(selInfo) selInfo.style.display='none';
+      if(boardProcInfo) boardProcInfo.style.display='none';
       return;
     }
-    if(!cid && !pid){ selInfo.style.display='none'; if(clientLink) clientLink.innerHTML=''; return; }
-    selInfo.style.display='block';
-    let clientDet='';
-    if(cid && Array.isArray(window.KVT_CLIENT_MAP)){
-      const c = window.KVT_CLIENT_MAP.find(x=>String(x.id)===cid);
-      if(c){
-        clientDet = '<strong>Cliente:</strong> '+esc(c.name||'');
-        if(c.contact_name || c.contact_email || c.contact_phone){
-          clientDet += '<br><em>Contacto:</em> '+esc(c.contact_name||'');
-          if(c.contact_email) clientDet += ', '+esc(c.contact_email);
-          if(c.contact_phone) clientDet += ', '+esc(c.contact_phone);
-        }
-        if(c.description) clientDet += '<br><em>Descripción:</em> '+esc(c.description);
-        const procNames = Array.isArray(window.KVT_PROCESS_MAP)?window.KVT_PROCESS_MAP.filter(p=>String(p.client_id)===cid).map(p=>p.name):[];
-        if(procNames.length) clientDet += '<br><em>Procesos:</em> '+esc(procNames.join(', '));
-      }
-      clientDet += ' <button type="button" class="kvt-edit-client-inline" data-id="'+cid+'">Editar</button>';
+    if(!Array.isArray(window.KVT_PROCESS_MAP)){
+      if(selInfo) selInfo.style.display='none';
+      if(boardProcInfo) boardProcInfo.style.display='none';
+      return;
     }
-    selClientInfo.innerHTML = clientDet;
-    let procDet='';
-    if(pid && Array.isArray(window.KVT_PROCESS_MAP)){
-      const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
-      if(p){
-        const cl = getClientById(p.client_id);
-        const clientName = cl ? cl.name||'' : (p.client||'');
-        const title = (clientName?esc(clientName)+' + ':'')+esc(p.name||'');
-        procDet = '<strong>'+title+'</strong>';
-        if(p.creator) procDet += '<br><em>Registrado por:</em> '+esc(p.creator);
-        const contact = p.contact_name || (cl?cl.contact_name:'');
-        if(contact) procDet += '<br><em>Persona de contacto:</em> '+esc(contact);
-        if(p.job_stage) procDet += '<br><em>Etapa:</em> '+esc(p.job_stage);
-        if(p.created){
-          const cd = new Date(p.created);
-          if(!isNaN(cd)) procDet += '<br><em>Días abierto:</em> '+Math.floor((Date.now()-cd.getTime())/86400000);
-        }
-        if(p.description) procDet += '<br><em>Descripción:</em> '+esc(p.description);
-        procDet += ' <button type="button" class="kvt-edit-process-inline" data-id="'+pid+'">Editar</button>';
-      }
+    const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
+    if(!p){
+      if(selInfo) selInfo.style.display='none';
+      if(boardProcInfo) boardProcInfo.style.display='none';
+      return;
     }
-    selProcessInfo.innerHTML = procDet;
-    let boardDet='';
-    if(cid && pid){
-      const key = cid+'|'+pid;
-      const slug = CLIENT_LINKS[key];
-      if(slug){
-        const url = KVT_HOME + slug;
-        boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a>';
-      }
+    const cl = getClientById(p.client_id);
+    const clientName = cl ? cl.name||'' : (p.client||'');
+    const statusMap = {active:'Activo', completed:'Cerrado', closed:'Cancelado'};
+    const status = statusMap[p.status] || (p.status ? p.status.charAt(0).toUpperCase()+p.status.slice(1) : '');
+    let days='';
+    if(p.created){
+      const cd = new Date(p.created);
+      if(!isNaN(cd)) days = Math.floor((Date.now()-cd.getTime())/86400000)+' días';
     }
-    if(selBoardInfo) selBoardInfo.innerHTML = boardDet;
-    if(clientLink) clientLink.innerHTML = boardDet;
+    const parts = [
+      'Proceso: '+esc(p.name||''),
+      'Cliente: '+esc(clientName),
+      'Estado: '+esc(status)
+    ];
+    if(days) parts.push('Activo: '+days);
+    if(p.job_stage) parts.push('Etapa: '+esc(p.job_stage));
+    const html = parts.map(t=>'<span>'+t+'</span>').join('');
+    if(selInfo){ selInfo.style.display='flex'; selInfo.innerHTML = html; }
+    if(boardProcInfo){ boardProcInfo.style.display='flex'; boardProcInfo.innerHTML = html; }
   }
 
   const exportForm = el('#kvt_export_form');
@@ -3250,7 +3275,6 @@ function kvtInit(){
         alert('Error de red al cargar roles y empresas');
       });
   };
-  boardLoadRoles && boardLoadRoles.addEventListener('click', ()=>triggerLoadRoles(boardLoadRoles));
   navLoadRoles && navLoadRoles.addEventListener('click', e=>{ e.preventDefault(); triggerLoadRoles(navLoadRoles); });
   infoClose && infoClose.addEventListener('click', ()=>{ infoModal.style.display='none'; });
   infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
@@ -3534,12 +3558,12 @@ function kvtInit(){
           const firstLineWithCv = firstLine.replace('</a>', '</a>'+cv);
           const check = filterActive?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" aria-label="Seleccionar"></div>':'';
           const addBtn = allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'';
-          const editBtn = '<button type="button" class="kvt-btn kvt-mini-view kvt-mini-edit" data-id="'+it.id+'" data-label="Editar perfil">Editar perfil</button>';
+          const editBtn = '<button type="button" class="kvt-edit kvt-mini-view kvt-mini-edit dashicons dashicons-edit" data-id="'+it.id+'" data-label="Editar perfil" aria-label="Editar perfil"></button>';
           return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
             '<div class="kvt-row'+(filterActive?' with-check':'')+'">'+
               check+
               '<div>'+firstLineWithCv+'<br>'+infoLine+'</div>'+
-              '<div class="kvt-meta"><button type="button" class="kvt-delete kvt-mini-delete" data-id="'+it.id+'" aria-label="Eliminar"></button>'+editBtn+addBtn+'</div>'+
+              '<div class="kvt-meta"><button type="button" class="kvt-delete kvt-mini-delete dashicons dashicons-trash" data-id="'+it.id+'" aria-label="Eliminar"></button>'+editBtn+addBtn+'</div>'+
             '</div>'+
             '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
@@ -3760,7 +3784,7 @@ function kvtInit(){
           const sel = '<select class="kvt-process-status" data-id="'+escAttr(p.id)+'">'+
             Object.keys(statuses).map(s=>'<option value="'+s+'"'+(p.status===s?' selected':'')+'>'+statuses[s]+'</option>').join('')+
             '</select>';
-          const days = '<span class="kvt-sub">Activo '+p.days+' días</span>';
+          const days = '<span class="kvt-active-days">Activo '+p.days+' días</span>';
           return '<div class="kvt-row">'+
             '<div><span class="kvt-name">'+esc(p.name)+'</span>'+subHtml+'</div>'+
             '<div class="kvt-meta">'+sel+' '+days+' <button type="button" class="kvt-btn kvt-edit-process" data-id="'+escAttr(p.id)+'" data-name="'+escAttr(p.name||'')+'" data-client-id="'+escAttr(p.client_id||'')+'" data-contact-name="'+escAttr(p.contact_name||'')+'" data-contact-email="'+escAttr(p.contact_email||'')+'" data-desc="'+escAttr(p.description||'')+'">Editar</button></div>'+
@@ -4038,6 +4062,7 @@ function kvtInit(){
       }
     };
     selInfo && selInfo.addEventListener('click', handleInlineEdit);
+    boardProcInfo && boardProcInfo.addEventListener('click', handleInlineEdit);
     infoBody && infoBody.addEventListener('click', handleInlineEdit);
 
     // Nuevo menu actions
