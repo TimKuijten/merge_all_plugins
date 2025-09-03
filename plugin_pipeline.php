@@ -1231,38 +1231,37 @@ JS;
                 <h2 class="kvt-board-title">Tablero ATS</h2>
             </div>
             <div id="kvt_filters_bar" class="kvt-filters" style="display:none;">
-                <label>Cliente
+                <div class="kvt-filter-field">
+                    <label for="kvt_client">Cliente</label>
                     <select id="kvt_client">
                         <option value="">— Todos —</option>
                         <?php foreach ($clients as $c): ?>
                           <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
                         <?php endforeach; ?>
                     </select>
-                </label>
-                <label>Proceso
+                </div>
+                <div class="kvt-filter-field">
+                    <label for="kvt_process">Proceso</label>
                     <select id="kvt_process">
                         <option value="">— Todos —</option>
                         <?php foreach ($processes as $t): ?>
                           <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
                         <?php endforeach; ?>
                     </select>
-                </label>
-                <span id="kvt_client_link" class="kvt-client-link"></span>
+                </div>
             </div>
 
             <?php if (!$is_client_board): ?>
-            <div id="kvt_selected_info" style="display:none;">
-              <p id="kvt_selected_client"></p>
-              <p id="kvt_selected_process"></p>
-              <p id="kvt_selected_board"></p>
-            </div>
+            <div id="kvt_selected_info" class="kvt-selected-info" style="display:none;"></div>
             <?php endif; ?>
 
             <div class="kvt-main">
                 <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:none;">
                     <div id="kvt_stage_overview" class="kvt-stage-overview"></div>
                     <div id="kvt_ats_bar" class="kvt-ats-bar">
+                        <label for="kvt_search">Buscar</label>
                         <input type="text" id="kvt_search" placeholder="Buscar candidato, empresa, ciudad...">
+                        <label for="kvt_stage_filter">Etapa</label>
                         <select id="kvt_stage_filter"><option value="">Todas las etapas</option></select>
                         <form id="kvt_export_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank" style="display:inline;">
                             <input type="hidden" name="action" value="kvt_export">
@@ -1662,10 +1661,12 @@ JS;
         $css = "
         .kvt-wrapper{max-width:1200px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.06);display:flex}
         .kvt-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
-        .kvt-filters{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
-        .kvt-filters label{display:inline-flex;gap:6px;align-items:center;font-weight:600}
+        .kvt-filters{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;align-items:center}
+        .kvt-filter-field{display:flex;gap:6px;align-items:center;font-weight:600}
         .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
-        .kvt-client-link{margin-left:12px;display:inline-flex;align-items:center;gap:6px;font-weight:600}
+        .kvt-selected-info{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;padding:8px;border:1px solid #e5e7eb;border-radius:8px;background:#f1f5f9;font-size:14px}
+        .kvt-selected-info span{font-weight:600}
+        .kvt-selected-info span+span:before{content:'|';margin:0 4px;color:#94a3b8;font-weight:400}
         .kvt-logo{display:block;margin:0 auto 12px;max-width:300px}
         .kvt-content{flex:1;padding:16px;position:relative}
         .kvt-help{position:absolute;top:16px;right:16px;font-size:24px;color:#0A212E;cursor:pointer}
@@ -1729,7 +1730,7 @@ JS;
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
         #kvt_table_wrap{flex:0 0 70%}
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
-        .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:300px}
+        .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:360px}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
         .kvt-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
@@ -1745,9 +1746,11 @@ JS;
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
         #kvt_table tbody tr:hover{background:#f1f5f9}
         .kvt-ats-bar{display:flex;gap:8px;align-items:center;padding:8px}
+        .kvt-ats-bar label{font-weight:600}
         .kvt-activity{border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto;flex:0 1 300px;align-self:flex-start}
         #kvt_activity{flex:0 1 400px}
-        #kvt_active_wrap,#kvt_calendar_wrap{flex:0 1 260px}
+        #kvt_active_wrap{flex:0 1 260px}
+        #kvt_calendar_wrap{flex:0 1 360px}
         .kvt-widget-title{margin:0 0 8px;font-size:15px;font-weight:600;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
         #kvt_table tbody tr:nth-child(even){background:#f9fafb}
         #kvt_table tbody tr:nth-child(odd){background:#fff}
@@ -2073,10 +2076,6 @@ function kvtInit(){
     const shareGenerate   = el('#kvt_share_generate');
     const shareComments   = el('#kvt_share_comments');
     const selInfo        = el('#kvt_selected_info');
-    const selClientInfo  = el('#kvt_selected_client');
-    const selProcessInfo = el('#kvt_selected_process');
-    const selBoardInfo   = el('#kvt_selected_board');
-    const clientLink     = el('#kvt_client_link');
   const tablePager = el('#kvt_table_pager');
   const tablePrev  = el('#kvt_table_prev');
   const tableNext  = el('#kvt_table_next');
@@ -2192,7 +2191,6 @@ function kvtInit(){
     const actions = el('.kvt-actions');
     if (actions) actions.style.display = 'none';
     if (selInfo) selInfo.style.display = 'none';
-    if (clientLink) clientLink.style.display = 'none';
     if (IS_ADMIN) {
       const gear = document.createElement('button');
       gear.type = 'button';
@@ -3205,70 +3203,30 @@ function kvtInit(){
   function updateSelectedInfo(){
     const cid = selClient && selClient.value ? selClient.value : '';
     const pid = selProcess && selProcess.value ? selProcess.value : '';
-    if(clientLink) clientLink.innerHTML = '';
-    if(!selInfo){
-      if(cid && pid){
-        const key = cid+'|'+pid;
-        const slug = CLIENT_LINKS[key];
-        if(slug){
-          const url = KVT_HOME + slug;
-          const boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a>';
-          if(clientLink) clientLink.innerHTML = boardDet;
-        }
-      }
-      return;
+    if(!selInfo){ return; }
+    if(!pid){ selInfo.style.display='none'; return; }
+    if(!Array.isArray(window.KVT_PROCESS_MAP)){ selInfo.style.display='none'; return; }
+    const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
+    if(!p){ selInfo.style.display='none'; return; }
+    const cl = getClientById(p.client_id);
+    const clientName = cl ? cl.name||'' : (p.client||'');
+    const statusMap = {active:'Activo', completed:'Cerrado', closed:'Cancelado'};
+    const status = statusMap[p.status] || (p.status ? p.status.charAt(0).toUpperCase()+p.status.slice(1) : '');
+    let days='';
+    if(p.status==='active' && p.created){
+      const cd = new Date(p.created);
+      if(!isNaN(cd)) days = Math.floor((Date.now()-cd.getTime())/86400000)+' días';
     }
-    if(!cid && !pid){ selInfo.style.display='none'; if(clientLink) clientLink.innerHTML=''; return; }
-    selInfo.style.display='block';
-    let clientDet='';
-    if(cid && Array.isArray(window.KVT_CLIENT_MAP)){
-      const c = window.KVT_CLIENT_MAP.find(x=>String(x.id)===cid);
-      if(c){
-        clientDet = '<strong>Cliente:</strong> '+esc(c.name||'');
-        if(c.contact_name || c.contact_email || c.contact_phone){
-          clientDet += '<br><em>Contacto:</em> '+esc(c.contact_name||'');
-          if(c.contact_email) clientDet += ', '+esc(c.contact_email);
-          if(c.contact_phone) clientDet += ', '+esc(c.contact_phone);
-        }
-        if(c.description) clientDet += '<br><em>Descripción:</em> '+esc(c.description);
-        const procNames = Array.isArray(window.KVT_PROCESS_MAP)?window.KVT_PROCESS_MAP.filter(p=>String(p.client_id)===cid).map(p=>p.name):[];
-        if(procNames.length) clientDet += '<br><em>Procesos:</em> '+esc(procNames.join(', '));
-      }
-      clientDet += ' <button type="button" class="kvt-edit-client-inline" data-id="'+cid+'">Editar</button>';
-    }
-    selClientInfo.innerHTML = clientDet;
-    let procDet='';
-    if(pid && Array.isArray(window.KVT_PROCESS_MAP)){
-      const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
-      if(p){
-        const cl = getClientById(p.client_id);
-        const clientName = cl ? cl.name||'' : (p.client||'');
-        const title = (clientName?esc(clientName)+' + ':'')+esc(p.name||'');
-        procDet = '<strong>'+title+'</strong>';
-        if(p.creator) procDet += '<br><em>Registrado por:</em> '+esc(p.creator);
-        const contact = p.contact_name || (cl?cl.contact_name:'');
-        if(contact) procDet += '<br><em>Persona de contacto:</em> '+esc(contact);
-        if(p.job_stage) procDet += '<br><em>Etapa:</em> '+esc(p.job_stage);
-        if(p.created){
-          const cd = new Date(p.created);
-          if(!isNaN(cd)) procDet += '<br><em>Días abierto:</em> '+Math.floor((Date.now()-cd.getTime())/86400000);
-        }
-        if(p.description) procDet += '<br><em>Descripción:</em> '+esc(p.description);
-        procDet += ' <button type="button" class="kvt-edit-process-inline" data-id="'+pid+'">Editar</button>';
-      }
-    }
-    selProcessInfo.innerHTML = procDet;
-    let boardDet='';
-    if(cid && pid){
-      const key = cid+'|'+pid;
-      const slug = CLIENT_LINKS[key];
-      if(slug){
-        const url = KVT_HOME + slug;
-        boardDet = '<strong>Vista cliente:</strong> <a href="'+escAttr(url)+'" target="_blank">Ver tablero</a>';
-      }
-    }
-    if(selBoardInfo) selBoardInfo.innerHTML = boardDet;
-    if(clientLink) clientLink.innerHTML = boardDet;
+    const parts = [
+      'Cliente: '+esc(clientName),
+      'Proceso: '+esc(p.name||''),
+      'Estado: '+esc(status)
+    ];
+    if(days) parts.push('Activo: '+days);
+    if(p.creator) parts.push('Propietario: '+esc(p.creator));
+    if(p.job_stage) parts.push('Etapa: '+esc(p.job_stage));
+    selInfo.style.display='flex';
+    selInfo.innerHTML = parts.map(t=>'<span>'+t+'</span>').join('');
   }
 
   const exportForm = el('#kvt_export_form');
