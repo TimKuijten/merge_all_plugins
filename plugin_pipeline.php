@@ -1730,7 +1730,7 @@ JS;
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
         #kvt_table_wrap{flex:0 0 70%}
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
-        .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:360px}
+        .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:480px}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
         .kvt-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
@@ -1749,8 +1749,8 @@ JS;
         .kvt-ats-bar label{font-weight:600}
         .kvt-activity{border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto;flex:0 1 300px;align-self:flex-start}
         #kvt_activity{flex:0 1 400px}
-        #kvt_active_wrap{flex:0 1 260px}
-        #kvt_calendar_wrap{flex:0 1 360px}
+        #kvt_active_wrap{flex:0 1 480px}
+        #kvt_calendar_wrap{flex:0 1 480px}
         .kvt-widget-title{margin:0 0 8px;font-size:15px;font-weight:600;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
         #kvt_table tbody tr:nth-child(even){background:#f9fafb}
         #kvt_table tbody tr:nth-child(odd){background:#fff}
@@ -1767,7 +1767,7 @@ JS;
         .kvt-activity-list{list-style:none;margin:0;padding-left:16px;font-size:13px}
         .kvt-activity-list li{margin-bottom:4px}
         #kvt_active_processes li{padding:4px 8px;border-radius:4px}
-        #kvt_active_processes li:nth-child(even){background:#f9fafb}
+        #kvt_active_processes li:nth-child(even){background:#e5e7eb}
         #kvt_active_processes li:nth-child(odd){background:#fff}
         .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-stage-cell{display:flex;align-items:center;font-size:12px;flex-wrap:nowrap}
