@@ -1368,12 +1368,14 @@ JS;
                                 <h4>Notificaciones</h4>
                                 <ul id="kvt_notifications" class="kvt-activity-list"></ul>
                             </div>
-                            <div class="kvt-activity-col">
-                                <h4>Últimos candidatos</h4>
-                                <ul id="kvt_recent_candidates" class="kvt-activity-list"></ul>
-                                <h4>Calendario</h4>
-                                <div id="kvt_dashboard_calendar" class="kvt-calendar-small"></div>
-                            </div>
+                        </div>
+                        <div class="kvt-activity-block">
+                            <h4>Últimos candidatos</h4>
+                            <ul id="kvt_recent_candidates" class="kvt-activity-list"></ul>
+                        </div>
+                        <div class="kvt-activity-block">
+                            <h4>Calendario</h4>
+                            <div id="kvt_dashboard_calendar" class="kvt-calendar-small"></div>
                         </div>
                     </div>
                     <div id="kvt_activity_log" class="kvt-activity-content" style="display:none;">
@@ -1381,7 +1383,8 @@ JS;
                     </div>
                 </div>
             </div>
-            <div id="kvt_board_wrap" class="kvt-board-wrap">
+            <button type="button" class="kvt-btn" id="kvt_toggle_kanban">Mostrar Kanban</button>
+            <div id="kvt_board_wrap" class="kvt-board-wrap" style="display:none;">
                 <div id="kvt_board" class="kvt-board" aria-live="polite" style="margin-top:12px;"></div>
             </div>
             </div><!-- .kvt-content -->
@@ -2023,6 +2026,7 @@ function kvtInit(){
   const calendarWrap = el('#kvt_calendar');
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
+  const toggleKanban = el('#kvt_toggle_kanban');
 
   const selClient  = el('#kvt_client');
   const selProcess = el('#kvt_process');
@@ -2074,6 +2078,7 @@ function kvtInit(){
       const pager = el('#kvt_table_pager'); if(pager) pager.style.display='block';
       if(activityWrap) activityWrap.style.display='block';
       if(boardWrap) boardWrap.style.display='block';
+      if(toggleKanban) toggleKanban.style.display='none';
       refresh();
     } else if(view==='calendario'){
       filtersBar.style.display='none';
@@ -2081,6 +2086,7 @@ function kvtInit(){
       calendarWrap.style.display='block';
       if(activityWrap) activityWrap.style.display='none';
       if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
       renderCalendar();
     } else if(view==='base'){
       filtersBar.style.display='none';
@@ -2093,13 +2099,18 @@ function kvtInit(){
       if(boardBase) boardBase.style.display='block';
       if(activityWrap) activityWrap.style.display='none';
       if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
       switchBoardTab('candidates');
     } else if(view==='detalles'){
       filtersBar.style.display='none';
       tableWrap.style.display='none';
       calendarWrap.style.display='none';
       if(activityWrap) activityWrap.style.display='block';
-      if(boardWrap) boardWrap.style.display='block';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban){
+        toggleKanban.style.display='inline-block';
+        toggleKanban.textContent='Mostrar Kanban';
+      }
       fetchDashboard().then(d=>{ if(d.success) renderActivityDashboard(d.data); });
     } else {
       filtersBar.style.display='none';
@@ -2107,6 +2118,7 @@ function kvtInit(){
       calendarWrap.style.display='none';
       if(activityWrap) activityWrap.style.display='none';
       if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
     }
   }
 
@@ -3225,6 +3237,13 @@ function kvtInit(){
   btnToggle && btnToggle.addEventListener('click', e=>{
     e.preventDefault();
     tableWrap.style.display = (tableWrap.style.display==='none' || !tableWrap.style.display) ? 'block' : 'none';
+  });
+
+  toggleKanban && toggleKanban.addEventListener('click', () => {
+    if(!boardWrap) return;
+    const hidden = boardWrap.style.display === 'none' || !boardWrap.style.display;
+    boardWrap.style.display = hidden ? 'block' : 'none';
+    toggleKanban.textContent = hidden ? 'Ocultar Kanban' : 'Mostrar Kanban';
   });
 
   tBody && tBody.addEventListener('click', e=>{
