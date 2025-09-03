@@ -48,6 +48,7 @@ class Kovacic_Pipeline_Visualizer {
         // Frontend UI
         add_shortcode('kovacic_pipeline',        [$this, 'shortcode']);
         add_shortcode('kvt_pipeline',            [$this, 'shortcode']);
+        add_shortcode('kvt_bulk_email',          [$this, 'bulk_email_shortcode']);
         add_action('wp_enqueue_scripts',         [$this, 'enqueue_assets']);
 
         // AJAX
@@ -204,6 +205,7 @@ cv_uploaded|Fecha de subida");
             add_menu_page('Kovacic', 'Kovacic', 'manage_options', 'kovacic', '__return_null', 'dashicons-businessman', 3);
         }
         add_submenu_page('kovacic', __('ATS', 'kovacic'), __('ATS', 'kovacic'), 'manage_options', 'kvt-tracker', [$this, 'tracker_page']);
+        add_submenu_page('kovacic', __('Correo Masivo', 'kovacic'), __('Correo Masivo', 'kovacic'), 'manage_options', 'kvt-bulk-email', [$this, 'bulk_email_page']);
         add_submenu_page('kovacic', __('Ajustes', 'kovacic'), __('Ajustes', 'kovacic'), 'manage_options', 'kvt-settings', [$this, 'settings_page']);
     }
 
@@ -283,10 +285,163 @@ cv_uploaded|Fecha de subida");
         <?php
     }
 
-    public function admin_assets($hook) {
-        if (strpos($hook, 'kvt-tracker') === false) return;
+    public function bulk_email_page() {
+        if (!current_user_can('manage_options')) return;
 
-        $css = <<<'CSS'
+        $sent = 0;
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_admin_referer('kvt_bulk_email_send')) {
+            $subject = sanitize_text_field($_POST['subject'] ?? '');
+            $message = wp_kses_post($_POST['message'] ?? '');
+            $ids     = isset($_POST['candidate']) ? array_map('absint', (array)$_POST['candidate']) : [];
+            foreach ($ids as $id) {
+                $email = get_post_meta($id, 'kvt_email', true);
+                if ($email) {
+                    wp_mail($email, $subject, $message);
+                    $sent++;
+                }
+            }
+            echo '<div class="notice notice-success"><p>' . sprintf(esc_html__('%d correos enviados.', 'kovacic'), $sent) . '</p></div>';
+        }
+
+        $candidates = get_posts([
+            'post_type'      => self::CPT,
+            'posts_per_page' => -1,
+            'post_status'    => 'publish',
+        ]);
+        ?>
+        <div class="wrap kcvf">
+          <header class="k-header">
+            <div><h1 class="k-title"><?php esc_html_e('Correo Masivo', 'kovacic'); ?></h1></div>
+          </header>
+          <form method="post">
+            <?php wp_nonce_field('kvt_bulk_email_send'); ?>
+            <div class="k-tablewrap">
+              <table class="k-table">
+                <thead>
+                  <tr>
+                    <th class="checkbox"><input type="checkbox" id="kvt-select-all"></th>
+                    <th><?php esc_html_e('Email', 'kovacic'); ?></th>
+                    <th><?php esc_html_e('Candidato', 'kovacic'); ?></th>
+                  </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($candidates as $p):
+                    $email = get_post_meta($p->ID, 'kvt_email', true);
+                    if (!$email) continue; ?>
+                  <tr>
+                    <td><input type="checkbox" class="kvt-recipient" name="candidate[]" value="<?php echo esc_attr($p->ID); ?>"></td>
+                    <td><?php echo esc_html($email); ?></td>
+                    <td><?php echo esc_html(get_the_title($p)); ?></td>
+                  </tr>
+                <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              <label><?php esc_html_e('Asunto', 'kovacic'); ?><br>
+                <input type="text" name="subject" class="k-input" required>
+              </label>
+            </p>
+            <p>
+              <label><?php esc_html_e('Mensaje', 'kovacic'); ?><br>
+                <textarea name="message" class="k-textarea" rows="6" required></textarea>
+              </label>
+            </p>
+            <p><button type="submit" class="btn btn--primary"><?php esc_html_e('Enviar', 'kovacic'); ?></button></p>
+          </form>
+        </div>
+        <script>
+        document.getElementById('kvt-select-all')?.addEventListener('change', function(){
+            document.querySelectorAll('.kvt-recipient').forEach(cb => cb.checked = this.checked);
+        });
+        </script>
+        <?php
+    }
+
+    public function bulk_email_shortcode() {
+        if (!current_user_can('manage_options')) return '';
+
+        $sent = 0;
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_wpnonce']) && wp_verify_nonce($_POST['_wpnonce'], 'kvt_bulk_email_send')) {
+            $subject = sanitize_text_field($_POST['subject'] ?? '');
+            $message = wp_kses_post($_POST['message'] ?? '');
+            $ids     = isset($_POST['candidate']) ? array_map('absint', (array)$_POST['candidate']) : [];
+            foreach ($ids as $id) {
+                $email = get_post_meta($id, 'kvt_email', true);
+                if ($email) {
+                    wp_mail($email, $subject, $message);
+                    $sent++;
+                }
+            }
+        }
+
+        $candidates = get_posts([
+            'post_type'      => self::CPT,
+            'posts_per_page' => -1,
+            'post_status'    => 'publish',
+        ]);
+
+        ob_start();
+        wp_enqueue_style('dashicons');
+        wp_register_style('kvt-bulk-email', false);
+        wp_enqueue_style('kvt-bulk-email');
+        wp_add_inline_style('kvt-bulk-email', $this->kcvf_css());
+        ?>
+        <div class="kcvf">
+          <header class="k-header">
+            <div><h1 class="k-title"><?php esc_html_e('Correo Masivo', 'kovacic'); ?></h1></div>
+          </header>
+          <?php if ($sent): ?>
+            <div class="notice notice-success"><p><?php echo esc_html(sprintf(esc_html__('%d correos enviados.', 'kovacic'), $sent)); ?></p></div>
+          <?php endif; ?>
+          <form method="post">
+            <?php wp_nonce_field('kvt_bulk_email_send'); ?>
+            <div class="k-tablewrap">
+              <table class="k-table">
+                <thead>
+                  <tr>
+                    <th class="checkbox"><input type="checkbox" id="kvt-select-all"></th>
+                    <th><?php esc_html_e('Email', 'kovacic'); ?></th>
+                    <th><?php esc_html_e('Candidato', 'kovacic'); ?></th>
+                  </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($candidates as $p):
+                    $email = get_post_meta($p->ID, 'kvt_email', true);
+                    if (!$email) continue; ?>
+                  <tr>
+                    <td><input type="checkbox" class="kvt-recipient" name="candidate[]" value="<?php echo esc_attr($p->ID); ?>"></td>
+                    <td><?php echo esc_html($email); ?></td>
+                    <td><?php echo esc_html(get_the_title($p)); ?></td>
+                  </tr>
+                <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              <label><?php esc_html_e('Asunto', 'kovacic'); ?><br>
+                <input type="text" name="subject" class="k-input" required>
+              </label>
+            </p>
+            <p>
+              <label><?php esc_html_e('Mensaje', 'kovacic'); ?><br>
+                <textarea name="message" class="k-textarea" rows="6" required></textarea>
+              </label>
+            </p>
+            <p><button type="submit" class="btn btn--primary"><?php esc_html_e('Enviar', 'kovacic'); ?></button></p>
+          </form>
+        </div>
+        <script>
+        document.getElementById('kvt-select-all')?.addEventListener('change', function(){
+            document.querySelectorAll('.kvt-recipient').forEach(cb => cb.checked = this.checked);
+        });
+        </script>
+        <?php
+        return ob_get_clean();
+    }
+
+    private function kcvf_css() {
+        return <<<'CSS'
 /* Kovacic ATS UI – namespaced to avoid bleed */
 :root{
   --brand:#0A212E;           /* ink/brand */
@@ -362,6 +517,9 @@ cv_uploaded|Fecha de subida");
 .kcvf .k-input,.kcvf .k-select{
   height:36px;padding:0 10px;border:1px solid var(--divider);border-radius:6px;background:#fff
 }
+.kcvf .k-textarea{
+  padding:10px;border:1px solid var(--divider);border-radius:6px;background:#fff;width:100%
+}
 
 /* Bulk bar */
 .kcvf .k-bulkbar{
@@ -369,6 +527,8 @@ cv_uploaded|Fecha de subida");
   padding:8px 12px;background:#fff;border:1px solid var(--divider);
   border-radius:6px;margin-bottom:calc(var(--gap)*1.5)
 }
+
+.kcvf .notice{margin-bottom:var(--gap);padding:8px 12px;background:#fff;border:1px solid var(--divider);border-left:4px solid var(--green);border-radius:4px}
 
 /* Table */
 .kcvf .k-tablewrap{position:relative;overflow:auto;border:1px solid var(--divider);border-radius:var(--radius);box-shadow:var(--shadow)}
@@ -433,6 +593,11 @@ cv_uploaded|Fecha de subida");
   .kcvf .checkbox{position:absolute;right:12px;top:12px}
 }
 CSS;
+    }
+
+    public function admin_assets($hook) {
+        if (strpos($hook, 'kvt-tracker') === false && strpos($hook, 'kvt-bulk-email') === false) return;
+        $css = $this->kcvf_css();
         wp_register_style('kvt-tracker', false);
         wp_enqueue_style('kvt-tracker');
         wp_add_inline_style('kvt-tracker', $css);
