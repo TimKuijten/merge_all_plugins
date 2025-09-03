@@ -4492,9 +4492,15 @@ JS;
             'hide_empty' => false,
             'number'     => 0,
         ]);
+        $processes = get_terms([
+            'taxonomy'   => self::TAX_PROCESS,
+            'hide_empty' => false,
+            'number'     => 0,
+        ]);
 
         $notes        = [];
         $cand_lines   = [];
+        $followups    = [];
         foreach ($cands as $c) {
             $country = get_post_meta($c->ID, 'kvt_country', true);
             $role    = $this->meta_get_compat($c->ID, 'kvt_current_role', ['current_role']);
@@ -4504,6 +4510,16 @@ JS;
             $cand_lines[] = $line;
             $n = get_post_meta($c->ID, 'kvt_notes', true);
             if ($n) $notes[] = $n;
+            $next = get_post_meta($c->ID, 'kvt_next_action', true);
+            if ($next) {
+                $ts = strtotime(str_replace('/', '-', $next));
+                if ($ts && $ts <= strtotime('+3 days')) {
+                    $na_note = get_post_meta($c->ID, 'kvt_next_action_note', true);
+                    $fline = $c->post_title . ' - ' . $next;
+                    if ($na_note) $fline .= ': ' . $na_note;
+                    $followups[] = $fline;
+                }
+            }
         }
 
         $client_lines = [];
@@ -4512,6 +4528,17 @@ JS;
             $line    = $cl->name;
             if ($contact) $line .= " ($contact)";
             $client_lines[] = $line;
+        }
+
+        $process_lines = [];
+        foreach ($processes as $pr) {
+            $cid  = get_term_meta($pr->term_id, 'client_id', true);
+            $line = $pr->name;
+            if ($cid) {
+                $cl_obj = get_term_by('id', $cid, self::TAX_CLIENT);
+                if ($cl_obj) $line .= " (" . $cl_obj->name . ")";
+            }
+            $process_lines[] = $line;
         }
 
         // Fetch latest renewable energy market news
@@ -4539,6 +4566,10 @@ JS;
 
         $summary  = 'Candidatos: ' . implode('; ', $cand_lines) . '.';
         $summary .= ' Clientes: ' . implode('; ', $client_lines) . '.';
+        $summary .= ' Procesos: ' . implode('; ', $process_lines) . '.';
+        if ($followups) {
+            $summary .= ' Seguimientos pendientes: ' . implode('; ', $followups) . '.';
+        }
         if ($notes) {
             $summary .= ' Notas: ' . implode(' | ', $notes) . '.';
         }
@@ -4546,7 +4577,7 @@ JS;
             $summary .= ' Noticias del mercado: ' . implode(' | ', $news) . '.';
         }
 
-        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable en España y Chile. Con los siguientes datos: $summary Sugiere próximos pasos y posibles clientes o candidatos.";
+        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable en España y Chile. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos, y ejemplos de correos electrónicos breves para contacto o seguimiento. Si no hay recordatorios urgentes, resalta los aspectos que están funcionando bien.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -4567,7 +4598,13 @@ JS;
             ]);
         }
         $data = json_decode(wp_remote_retrieve_body($resp), true);
-        $text = $data['choices'][0]['message']['content'] ?? '';
+        $text = trim($data['choices'][0]['message']['content'] ?? '');
+        if ($text === '') {
+            $text = sprintf(
+                __('Todo marcha bien: %d candidatos, %d clientes y %d procesos activos. No hay seguimientos pendientes.', 'kovacic'),
+                count($cands), count($clients), count($processes)
+            );
+        }
         wp_send_json_success(['suggestions' => $text, 'news' => $news]);
     }
 
