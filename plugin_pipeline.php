@@ -1369,18 +1369,18 @@ JS;
                                 <ul id="kvt_notifications" class="kvt-activity-list"></ul>
                             </div>
                         </div>
-                        <div class="kvt-activity-block">
-                            <h4>Últimos candidatos</h4>
-                            <ul id="kvt_recent_candidates" class="kvt-activity-list"></ul>
-                        </div>
-                        <div class="kvt-activity-block">
-                            <h4>Calendario</h4>
-                            <div id="kvt_dashboard_calendar" class="kvt-calendar-small"></div>
-                        </div>
                     </div>
                     <div id="kvt_activity_log" class="kvt-activity-content" style="display:none;">
                         <ul id="kvt_activity_log_list" class="kvt-activity-list"></ul>
                     </div>
+                </div>
+                <div id="kvt_recent_wrap" class="kvt-activity">
+                    <h4>Últimos candidatos</h4>
+                    <ul id="kvt_recent_candidates" class="kvt-activity-list"></ul>
+                </div>
+                <div id="kvt_calendar_wrap" class="kvt-activity">
+                    <h4>Calendario</h4>
+                    <div id="kvt_dashboard_calendar" class="kvt-calendar-small"></div>
                 </div>
             </div>
             <button type="button" class="kvt-btn" id="kvt_toggle_kanban">Mostrar Kanban</button>
@@ -2004,6 +2004,8 @@ function kvtInit(){
   const activityLog = el('#kvt_activity_log_list');
   const recentList = el('#kvt_recent_candidates');
   const calendarSmall = el('#kvt_dashboard_calendar');
+  const recentWrap = el('#kvt_recent_wrap');
+  const calendarMiniWrap = el('#kvt_calendar_wrap');
   const activityTabs = document.querySelectorAll('.kvt-activity-tab');
   const activityViews = document.querySelectorAll('.kvt-activity-content');
   const overview = el('#kvt_stage_overview');
@@ -2067,6 +2069,8 @@ function kvtInit(){
 
   function showView(view){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
+    if(recentWrap) recentWrap.style.display='none';
+    if(calendarMiniWrap) calendarMiniWrap.style.display='none';
     if(view==='ats'){
       filtersBar.style.display='flex';
       tableWrap.style.display='block';
@@ -2111,6 +2115,8 @@ function kvtInit(){
         toggleKanban.style.display='inline-block';
         toggleKanban.textContent='Mostrar Kanban';
       }
+      if(recentWrap) recentWrap.style.display='block';
+      if(calendarMiniWrap) calendarMiniWrap.style.display='block';
       fetchDashboard().then(d=>{ if(d.success) renderActivityDashboard(d.data); });
     } else {
       filtersBar.style.display='none';
