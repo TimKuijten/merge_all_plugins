@@ -1318,6 +1318,7 @@ JS;
                       </div>
                       <div id="kvt_board_tab_processes" class="kvt-tab-panel">
                         <div class="kvt-head">
+                          <div id="kvt_board_proc_info" class="kvt-selected-info" style="display:none;"></div>
                           <div class="kvt-toolbar">
                             <label>Estado
                               <select id="kvt_proc_status">
@@ -2080,6 +2081,7 @@ function kvtInit(){
     const shareGenerate   = el('#kvt_share_generate');
     const shareComments   = el('#kvt_share_comments');
     const selInfo        = el('#kvt_selected_info');
+    const boardProcInfo  = el('#kvt_board_proc_info');
   const tablePager = el('#kvt_table_pager');
   const tablePrev  = el('#kvt_table_prev');
   const tableNext  = el('#kvt_table_next');
@@ -3212,32 +3214,43 @@ function kvtInit(){
   }
 
   function updateSelectedInfo(){
-    const cid = selClient && selClient.value ? selClient.value : '';
     const pid = selProcess && selProcess.value ? selProcess.value : '';
-    if(!selInfo){ return; }
-    if(!pid){ selInfo.style.display='none'; return; }
-    if(!Array.isArray(window.KVT_PROCESS_MAP)){ selInfo.style.display='none'; return; }
+    if(!selInfo && !boardProcInfo){ return; }
+    if(!pid){
+      if(selInfo) selInfo.style.display='none';
+      if(boardProcInfo) boardProcInfo.style.display='none';
+      return;
+    }
+    if(!Array.isArray(window.KVT_PROCESS_MAP)){
+      if(selInfo) selInfo.style.display='none';
+      if(boardProcInfo) boardProcInfo.style.display='none';
+      return;
+    }
     const p = window.KVT_PROCESS_MAP.find(x=>String(x.id)===pid);
-    if(!p){ selInfo.style.display='none'; return; }
+    if(!p){
+      if(selInfo) selInfo.style.display='none';
+      if(boardProcInfo) boardProcInfo.style.display='none';
+      return;
+    }
     const cl = getClientById(p.client_id);
     const clientName = cl ? cl.name||'' : (p.client||'');
     const statusMap = {active:'Activo', completed:'Cerrado', closed:'Cancelado'};
     const status = statusMap[p.status] || (p.status ? p.status.charAt(0).toUpperCase()+p.status.slice(1) : '');
     let days='';
-    if(p.status==='active' && p.created){
+    if(p.created){
       const cd = new Date(p.created);
       if(!isNaN(cd)) days = Math.floor((Date.now()-cd.getTime())/86400000)+' días';
     }
     const parts = [
-      'Cliente: '+esc(clientName),
       'Proceso: '+esc(p.name||''),
+      'Cliente: '+esc(clientName),
       'Estado: '+esc(status)
     ];
     if(days) parts.push('Activo: '+days);
-    if(p.creator) parts.push('Propietario: '+esc(p.creator));
     if(p.job_stage) parts.push('Etapa: '+esc(p.job_stage));
-    selInfo.style.display='flex';
-    selInfo.innerHTML = parts.map(t=>'<span>'+t+'</span>').join('');
+    const html = parts.map(t=>'<span>'+t+'</span>').join('');
+    if(selInfo){ selInfo.style.display='flex'; selInfo.innerHTML = html; }
+    if(boardProcInfo){ boardProcInfo.style.display='flex'; boardProcInfo.innerHTML = html; }
   }
 
   const exportForm = el('#kvt_export_form');
@@ -4049,6 +4062,7 @@ function kvtInit(){
       }
     };
     selInfo && selInfo.addEventListener('click', handleInlineEdit);
+    boardProcInfo && boardProcInfo.addEventListener('click', handleInlineEdit);
     infoBody && infoBody.addEventListener('click', handleInlineEdit);
 
     // Nuevo menu actions
