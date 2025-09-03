@@ -1400,6 +1400,7 @@ JS;
                 <a href="#" id="kvt_nav_export"><span class="dashicons dashicons-download"></span> Exportar</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
+                <a href="#" data-view="correo"><span class="dashicons dashicons-email"></span> Correo</a>
                 <a href="#"><span class="dashicons dashicons-filter"></span> Nuevo filtro</a>
             </nav>
             <div class="kvt-content">
@@ -1536,6 +1537,9 @@ JS;
                     <h4>Assistente MIT</h4>
                     <p id="kvt_mit_content"></p>
                     <ul id="kvt_mit_news"></ul>
+                </div>
+                <div id="kvt_correo_wrap" style="display:none;">
+                    <?php echo $this->bulk_email_shortcode(); ?>
                 </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
@@ -2252,6 +2256,7 @@ function kvtInit(){
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
   const toggleKanban = el('#kvt_toggle_kanban');
+  const correoWrap  = el('#kvt_correo_wrap');
 
   const selClient  = el('#kvt_client');
   const selProcess = el('#kvt_process');
@@ -2330,6 +2335,7 @@ function kvtInit(){
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
     if(widgetsWrap) widgetsWrap.style.display='flex';
+    if(correoWrap) correoWrap.style.display='none';
     if(view==='ats'){
       filtersBar.style.display='flex';
       tableWrap.style.display='block';
@@ -2383,6 +2389,15 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(mitWrap) { mitWrap.style.display='block'; loadMit(); }
+    } else if(view==='correo'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(correoWrap) correoWrap.style.display='block';
     } else {
       filtersBar.style.display='none';
       tableWrap.style.display='none';
