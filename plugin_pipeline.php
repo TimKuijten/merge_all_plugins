@@ -2,7 +2,7 @@
 /*
 Plugin Name: Kovacic Pipeline Visualizer
 Description: Kanban de procesos con relación Cliente→Proceso y candidatos vinculados. Subida de CV (admin y UI), edición en tarjeta, notas, exportación CSV/XLS en orden fijo, y estados/columnas configurables. Incluye también envío de correo masivo con IA y deduplicación.
-Version: 1.8.0
+Version: 1.8.1
 Author: Tim Kuijten - Kovacic Executive Talent Research
 */
 
@@ -6062,24 +6062,29 @@ class KT_AIBulkMailer_ES {
     }
 
     public function menu() {
-        add_menu_page(
+        add_submenu_page(
+            'kovacic',
             __('Correo con IA', 'kt-abm'),
             __('Correo con IA', 'kt-abm'),
             self::CAPABILITY,
             'kt-abm',
-            [$this, 'page'],
-            'dashicons-email-alt2',
-            58
+            [$this, 'page']
         );
 
         add_submenu_page(
-            'kt-abm',
+            'kovacic',
             __('Correos enviados', 'kt-abm'),
             __('Correos enviados', 'kt-abm'),
             self::CAPABILITY,
             'kt-abm-sent',
             [$this, 'sent_page']
         );
+
+        add_action('admin_head', [$this, 'submenu_icon']);
+    }
+
+    public function submenu_icon() {
+        echo '<style>#toplevel_page_kovacic .wp-submenu a[href="admin.php?page=kt-abm"]:before{content:"\f467";font-family:dashicons;margin-right:6px;}</style>';
     }
 
     public function register_settings() {
