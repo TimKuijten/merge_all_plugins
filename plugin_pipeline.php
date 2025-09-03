@@ -1730,7 +1730,7 @@ JS;
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
         #kvt_table_wrap{flex:0 0 70%}
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
-        .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:480px}
+        .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:576px}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
         .kvt-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
@@ -1738,7 +1738,8 @@ JS;
         .kvt-cal-event{display:block;margin-top:16px;font-size:12px;text-align:left}
         .kvt-cal-cell.has-event{background:#f1f5f9}
         .kvt-cal-controls{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
-        .kvt-cal-add{display:flex;gap:8px;margin-bottom:8px}
+        .kvt-cal-add{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+        .kvt-cal-add label{display:flex;flex-direction:column;font-size:12px}
         .kvt-cal-event.done{text-decoration:line-through;color:#9ca3af}
         .kvt-cal-remove{background:none;border:0;color:#ef4444;margin-left:4px;cursor:pointer}
         #kvt_table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
@@ -1750,7 +1751,7 @@ JS;
         .kvt-activity{border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto;flex:0 1 300px;align-self:flex-start}
         #kvt_activity{flex:0 1 400px}
         #kvt_active_wrap{flex:0 1 480px}
-        #kvt_calendar_wrap{flex:0 1 480px}
+        #kvt_calendar_wrap{flex:0 1 576px}
         .kvt-widget-title{margin:0 0 8px;font-size:15px;font-weight:600;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
         #kvt_table tbody tr:nth-child(even){background:#f9fafb}
         #kvt_table tbody tr:nth-child(odd){background:#fff}
@@ -3061,7 +3062,14 @@ function kvtInit(){
       const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
       const monthName = first.toLocaleString('default',{month:'long'});
       let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><button type="button" id="kvt_cal_next_s">&gt;</button></div>';
-      html += '<div class="kvt-cal-add"><input type="date" id="kvt_cal_date_s"><input type="time" id="kvt_cal_time_s"><input type="text" id="kvt_cal_text_s" placeholder="Evento"><select id="kvt_cal_process_s"><option value="">Proceso (opcional)</option></select><select id="kvt_cal_candidate_s"><option value="">Candidato (opcional)</option></select><button type="button" id="kvt_cal_add_s">Añadir</button></div>';
+      html += '<div class="kvt-cal-add">'
+        +'<label>Fecha<input type="date" id="kvt_cal_date_s"></label>'
+        +'<label>Hora<input type="time" id="kvt_cal_time_s"></label>'
+        +'<label>Tarea<input type="text" id="kvt_cal_text_s" placeholder="Descripción"></label>'
+        +'<label>Proceso<select id="kvt_cal_process_s"><option value="">(opcional)</option></select></label>'
+        +'<label>Candidato<select id="kvt_cal_candidate_s"><option value="">(opcional)</option></select></label>'
+        +'<button type="button" id="kvt_cal_add_s">Añadir</button>'
+      +'</div><span class="kvt-hint">Proceso y candidato son opcionales</span>';
       html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
       for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
       for(let d=1; d<=last.getDate(); d++){
