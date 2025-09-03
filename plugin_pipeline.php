@@ -22,7 +22,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('admin_init',                 [$this, 'register_settings']);
         add_action('admin_menu',                 [$this, 'admin_menu']);
         add_action('admin_enqueue_scripts',      [$this, 'admin_assets']);
-        add_action('admin_footer',               [$this, 'mit_lightbulb']);
+        add_action('wp_footer',                  [$this, 'mit_lightbulb']);
 
         // Term meta: Proceso -> Cliente
         add_action(self::TAX_PROCESS . '_add_form_fields',  [$this, 'process_add_fields']);
@@ -200,7 +200,6 @@ cv_uploaded|Fecha de subida");
             add_menu_page('Kovacic', 'Kovacic', 'manage_options', 'kovacic', '__return_null', 'dashicons-businessman', 3);
         }
         add_submenu_page('kovacic', __('ATS', 'kovacic'), __('ATS', 'kovacic'), 'manage_options', 'kvt-tracker', [$this, 'tracker_page']);
-        add_submenu_page('kovacic', __('Assistente MIT', 'kovacic'), __('Assistente MIT', 'kovacic'), 'manage_options', 'kvt-mit', [$this, 'mit_page']);
         add_submenu_page('kovacic', __('Ajustes', 'kovacic'), __('Ajustes', 'kovacic'), 'manage_options', 'kvt-settings', [$this, 'settings_page']);
     }
 
@@ -225,7 +224,6 @@ cv_uploaded|Fecha de subida");
             <div class="k-tab" aria-selected="false"><?php esc_html_e('Contrataciones', 'kovacic'); ?></div>
             <div class="k-tab" aria-selected="false"><?php esc_html_e('Notas', 'kovacic'); ?></div>
             <div class="k-tab" aria-selected="false"><?php esc_html_e('Candidaturas', 'kovacic'); ?></div>
-            <div class="k-tab" aria-selected="false"><?php esc_html_e('Assistente MIT', 'kovacic'); ?></div>
           </nav>
           <section class="k-tabpanel">
             <div class="k-filters">
@@ -581,26 +579,6 @@ JS;
                 </table>
                 <?php submit_button('Guardar ajustes'); ?>
             </form>
-        </div>
-        <?php
-    }
-
-    public function mit_page() {
-        ?>
-        <div class="wrap">
-            <h1><?php esc_html_e('Assistente MIT', 'kovacic'); ?></h1>
-            <p id="k-mit-page-content"><?php esc_html_e('Obteniendo sugerencias...', 'kovacic'); ?></p>
-            <script>
-            (function($){
-                $.post(ajaxurl, {action:'kvt_mit_suggestions', nonce:'<?php echo wp_create_nonce('kvt_mit'); ?>'}, function(resp){
-                    if(resp && resp.success && resp.data && resp.data.suggestions){
-                        $('#k-mit-page-content').text(resp.data.suggestions);
-                    } else {
-                        $('#k-mit-page-content').text('<?php echo esc_js(__('No hay sugerencias disponibles.', 'kovacic')); ?>');
-                    }
-                });
-            })(jQuery);
-            </script>
         </div>
         <?php
     }
@@ -1244,6 +1222,7 @@ JS;
                 <a href="#" data-view="ats" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
                 <a href="#" id="kvt_nav_export"><span class="dashicons dashicons-download"></span> Exportar</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
+                <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
                 <a href="#"><span class="dashicons dashicons-filter"></span> Nuevo filtro</a>
             </nav>
             <div class="kvt-content">
@@ -1376,6 +1355,10 @@ JS;
                     </div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
+                <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
+                    <h4>Assistente MIT</h4>
+                    <p id="kvt_mit_content"></p>
+                </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
                     <h4 class="kvt-widget-title">Actividad</h4>
@@ -1760,6 +1743,7 @@ JS;
         #kvt_table_wrap{flex:0 0 70%}
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
         .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:750px}
+        .kvt-mit{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-top:16px}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
         .kvt-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
@@ -1920,6 +1904,7 @@ JS;
         wp_add_inline_script('kvt-app', 'const KVT_AJAX="'.esc_js(admin_url('admin-ajax.php')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/view-board/')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_MIT_NONCE="'.esc_js(wp_create_nonce('kvt_mit')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($is_client_board?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_STEPS='.wp_json_encode($sel_steps).';', 'before');
@@ -2079,8 +2064,11 @@ function kvtInit(){
 
   const filtersBar = el('#kvt_filters_bar');
   const calendarWrap = el('#kvt_calendar');
+  const mitWrap = el('#kvt_mit_view');
+  const mitContent = el('#kvt_mit_content');
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
+  const widgetsWrap  = el('.kvt-widgets');
   const toggleKanban = el('#kvt_toggle_kanban');
 
   const selClient  = el('#kvt_client');
@@ -2119,10 +2107,33 @@ function kvtInit(){
 
   function formatInputDate(v){ const p=v.split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : v; }
 
+  async function loadMit(){
+    if(!mitContent) return;
+    mitContent.textContent = 'Obteniendo sugerencias...';
+    try {
+      const resp = await fetch(KVT_AJAX, {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        credentials:'same-origin',
+        body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:KVT_MIT_NONCE})
+      });
+      const json = await resp.json();
+      if(json && json.success && json.data && json.data.suggestions){
+        mitContent.textContent = json.data.suggestions;
+      } else {
+        mitContent.textContent = 'No hay sugerencias disponibles.';
+      }
+    } catch(e){
+      mitContent.textContent = 'No hay sugerencias disponibles.';
+    }
+  }
+
   function showView(view){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
     if(activeWrap) activeWrap.style.display='none';
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
+    if(mitWrap) mitWrap.style.display='none';
+    if(widgetsWrap) widgetsWrap.style.display='flex';
     if(view==='ats'){
       filtersBar.style.display='flex';
       tableWrap.style.display='block';
@@ -2167,6 +2178,15 @@ function kvtInit(){
       if(activeWrap) activeWrap.style.display='block';
       if(calendarMiniWrap) calendarMiniWrap.style.display='block';
       fetchDashboard().then(d=>{ if(d.success) renderActivityDashboard(d.data); });
+    } else if(view==='mit'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(mitWrap) { mitWrap.style.display='block'; loadMit(); }
     } else {
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -4477,23 +4497,30 @@ JS;
     }
 
     public function mit_lightbulb() {
-        $screen = get_current_screen();
-        if (!$screen || strpos($screen->id, 'kvt') === false) return;
+        if (!wp_script_is('kvt-app', 'enqueued')) return;
         ?>
         <div id="k-mit-bulb" class="dashicons dashicons-lightbulb"></div>
         <div id="k-mit-box" style="display:none;"><strong><?php esc_html_e('Assistente MIT', 'kovacic'); ?></strong><div id="k-mit-box-content"></div></div>
         <script>
-        (function($){
-            $('#k-mit-bulb').on('click', function(){ $('#k-mit-box').toggle(); });
-            $.post(ajaxurl, {action:'kvt_mit_suggestions', nonce:'<?php echo wp_create_nonce('kvt_mit'); ?>'}, function(resp){
-                if(resp && resp.success){
-                    $('#k-mit-box-content').text(resp.data.suggestions || '');
-                    if(resp.data.suggestions){
-                        $('#k-mit-bulb').css('color','#f1c40f');
-                    }
+        (function(){
+            const bulb = document.getElementById('k-mit-bulb');
+            const box  = document.getElementById('k-mit-box');
+            if(!bulb || !box) return;
+            bulb.addEventListener('click', ()=>{
+                box.style.display = box.style.display === 'none' ? 'block' : 'none';
+            });
+            fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>', {
+                method:'POST',
+                headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                credentials:'same-origin',
+                body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:'<?php echo wp_create_nonce('kvt_mit'); ?>'})
+            }).then(r=>r.json()).then(resp=>{
+                if(resp && resp.success && resp.data && resp.data.suggestions){
+                    document.getElementById('k-mit-box-content').textContent = resp.data.suggestions;
+                    bulb.style.color = '#f1c40f';
                 }
             });
-        })(jQuery);
+        })();
         </script>
         <style>
         #k-mit-bulb{position:fixed;left:10px;bottom:10px;font-size:24px;color:#ccc;cursor:pointer;z-index:100000;}
