@@ -16,12 +16,14 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_STATUSES  = 'kvt_statuses';
     const OPT_COLUMNS   = 'kvt_columns';
     const OPT_OPENAI_KEY= 'kvt_openai_key';
+    const OPT_NEWS_KEY  = 'kvt_newsapi_key';
 
     public function __construct() {
         add_action('init',                       [$this, 'register_types']);
         add_action('admin_init',                 [$this, 'register_settings']);
         add_action('admin_menu',                 [$this, 'admin_menu']);
         add_action('admin_enqueue_scripts',      [$this, 'admin_assets']);
+        add_action('wp_footer',                  [$this, 'mit_lightbulb']);
 
         // Term meta: Proceso -> Cliente
         add_action(self::TAX_PROCESS . '_add_form_fields',  [$this, 'process_add_fields']);
@@ -113,6 +115,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_dismiss_comment',[$this, 'ajax_dismiss_comment']);
         add_action('wp_ajax_kvt_generate_roles',       [$this, 'ajax_generate_roles']);
         add_action('wp_ajax_nopriv_kvt_generate_roles',[$this, 'ajax_generate_roles']);
+        add_action('wp_ajax_kvt_mit_suggestions',      [$this, 'ajax_mit_suggestions']);
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
@@ -191,6 +194,7 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_STATUSES);
         register_setting(self::OPT_GROUP, self::OPT_COLUMNS);
         register_setting(self::OPT_GROUP, self::OPT_OPENAI_KEY);
+        register_setting(self::OPT_GROUP, self::OPT_NEWS_KEY);
     }
     public function admin_menu() {
         global $admin_page_hooks;
@@ -545,6 +549,7 @@ JS;
         $statuses = get_option(self::OPT_STATUSES, "");
         $columns  = get_option(self::OPT_COLUMNS, "");
         $openai   = get_option(self::OPT_OPENAI_KEY, "");
+        $newskey  = get_option(self::OPT_NEWS_KEY, "");
         ?>
         <div class="wrap">
             <h1>Kovacic Pipeline — Ajustes</h1>
@@ -563,6 +568,13 @@ JS;
                         <td>
                             <input type="text" name="<?php echo self::OPT_OPENAI_KEY; ?>" id="<?php echo self::OPT_OPENAI_KEY; ?>" class="regular-text" value="<?php echo esc_attr($openai); ?>">
                             <p class="description">Clave utilizada para las búsquedas avanzadas.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_NEWS_KEY; ?>">News API Key</label></th>
+                        <td>
+                            <input type="text" name="<?php echo self::OPT_NEWS_KEY; ?>" id="<?php echo self::OPT_NEWS_KEY; ?>" class="regular-text" value="<?php echo esc_attr($newskey); ?>">
+                            <p class="description">Clave para obtener noticias del sector de energía renovable.</p>
                         </td>
                     </tr>
                     <tr>
@@ -1220,6 +1232,7 @@ JS;
                 <a href="#" data-view="ats" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
                 <a href="#" id="kvt_nav_export"><span class="dashicons dashicons-download"></span> Exportar</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
+                <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
                 <a href="#"><span class="dashicons dashicons-filter"></span> Nuevo filtro</a>
             </nav>
             <div class="kvt-content">
@@ -1352,6 +1365,11 @@ JS;
                     </div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
+                <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
+                    <h4>Assistente MIT</h4>
+                    <p id="kvt_mit_content"></p>
+                    <ul id="kvt_mit_news"></ul>
+                </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
                     <h4 class="kvt-widget-title">Actividad</h4>
@@ -1736,6 +1754,7 @@ JS;
         #kvt_table_wrap{flex:0 0 70%}
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
         .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:750px}
+        .kvt-mit{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-top:16px}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
         .kvt-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
@@ -1896,6 +1915,7 @@ JS;
         wp_add_inline_script('kvt-app', 'const KVT_AJAX="'.esc_js(admin_url('admin-ajax.php')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/view-board/')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_MIT_NONCE="'.esc_js(wp_create_nonce('kvt_mit')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($is_client_board?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_STEPS='.wp_json_encode($sel_steps).';', 'before');
@@ -2055,8 +2075,12 @@ function kvtInit(){
 
   const filtersBar = el('#kvt_filters_bar');
   const calendarWrap = el('#kvt_calendar');
+  const mitWrap = el('#kvt_mit_view');
+  const mitContent = el('#kvt_mit_content');
+  const mitNews = el('#kvt_mit_news');
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
+  const widgetsWrap  = el('.kvt-widgets');
   const toggleKanban = el('#kvt_toggle_kanban');
 
   const selClient  = el('#kvt_client');
@@ -2095,10 +2119,47 @@ function kvtInit(){
 
   function formatInputDate(v){ const p=v.split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : v; }
 
+  async function loadMit(){
+    if(!mitContent) return;
+    mitContent.textContent = 'Obteniendo sugerencias...';
+    try {
+      const resp = await fetch(KVT_AJAX, {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        credentials:'same-origin',
+        body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:KVT_MIT_NONCE})
+      });
+      const json = await resp.json();
+      if(json && json.success && json.data){
+        if(json.data.suggestions){
+          mitContent.textContent = json.data.suggestions;
+        } else {
+          mitContent.textContent = 'No hay sugerencias disponibles.';
+        }
+        if(mitNews){
+          mitNews.innerHTML = '';
+          (json.data.news || []).forEach(n=>{
+            const li = document.createElement('li');
+            li.textContent = n;
+            mitNews.appendChild(li);
+          });
+        }
+      } else {
+        mitContent.textContent = 'No hay sugerencias disponibles.';
+        if(mitNews) mitNews.innerHTML='';
+      }
+    } catch(e){
+      mitContent.textContent = 'No hay sugerencias disponibles.';
+      if(mitNews) mitNews.innerHTML='';
+    }
+  }
+
   function showView(view){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
     if(activeWrap) activeWrap.style.display='none';
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
+    if(mitWrap) mitWrap.style.display='none';
+    if(widgetsWrap) widgetsWrap.style.display='flex';
     if(view==='ats'){
       filtersBar.style.display='flex';
       tableWrap.style.display='block';
@@ -2143,6 +2204,15 @@ function kvtInit(){
       if(activeWrap) activeWrap.style.display='block';
       if(calendarMiniWrap) calendarMiniWrap.style.display='block';
       fetchDashboard().then(d=>{ if(d.success) renderActivityDashboard(d.data); });
+    } else if(view==='mit'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(mitWrap) { mitWrap.style.display='block'; loadMit(); }
     } else {
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -4402,6 +4472,184 @@ JS;
             $this->update_profile_from_cv($p->ID, $key);
         }
         wp_send_json_success(['ok' => true]);
+    }
+
+    public function ajax_mit_suggestions() {
+        check_ajax_referer('kvt_mit', 'nonce');
+        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        if (!$key) {
+            wp_send_json_success(['suggestions' => __('Falta la clave de OpenAI', 'kovacic')]);
+        }
+
+        $cands = get_posts([
+            'post_type'   => self::CPT,
+            'post_status' => 'any',
+            'numberposts' => -1,
+        ]);
+        $clients = get_terms([
+            'taxonomy'   => self::TAX_CLIENT,
+            'hide_empty' => false,
+            'number'     => 0,
+        ]);
+        $processes = get_terms([
+            'taxonomy'   => self::TAX_PROCESS,
+            'hide_empty' => false,
+            'number'     => 0,
+        ]);
+
+        $notes        = [];
+        $cand_lines   = [];
+        $followups    = [];
+        foreach ($cands as $c) {
+            $country = get_post_meta($c->ID, 'kvt_country', true);
+            $role    = $this->meta_get_compat($c->ID, 'kvt_current_role', ['current_role']);
+            $line    = $c->post_title;
+            if ($role)    $line .= " ($role)";
+            if ($country) $line .= " - $country";
+            $cand_lines[] = $line;
+            $n = get_post_meta($c->ID, 'kvt_notes', true);
+            if ($n) $notes[] = $n;
+            $next = get_post_meta($c->ID, 'kvt_next_action', true);
+            if ($next) {
+                $ts = strtotime(str_replace('/', '-', $next));
+                if ($ts && $ts <= strtotime('+3 days')) {
+                    $na_note = get_post_meta($c->ID, 'kvt_next_action_note', true);
+                    $fline = $c->post_title . ' - ' . $next;
+                    if ($na_note) $fline .= ': ' . $na_note;
+                    $followups[] = $fline;
+                }
+            }
+        }
+
+        $client_lines = [];
+        foreach ($clients as $cl) {
+            $contact = get_term_meta($cl->term_id, 'contact_name', true);
+            $line    = $cl->name;
+            if ($contact) $line .= " ($contact)";
+            $client_lines[] = $line;
+        }
+
+        $process_lines = [];
+        foreach ($processes as $pr) {
+            $cid  = get_term_meta($pr->term_id, 'client_id', true);
+            $line = $pr->name;
+            if ($cid) {
+                $cl_obj = get_term_by('id', $cid, self::TAX_CLIENT);
+                if ($cl_obj) $line .= " (" . $cl_obj->name . ")";
+            }
+            $process_lines[] = $line;
+        }
+
+        // Fetch latest renewable energy market news
+        $news_key = get_option(self::OPT_NEWS_KEY, '');
+        $news     = [];
+        if ($news_key) {
+            $news_url = add_query_arg([
+                'apikey'   => $news_key,
+                'q'        => 'energia renovable',
+                'language' => 'es',
+                'country'  => 'es,cl',
+            ], 'https://newsdata.io/api/1/news');
+            $news_resp = wp_remote_get($news_url, ['timeout' => 15]);
+            if (!is_wp_error($news_resp)) {
+                $news_data = json_decode(wp_remote_retrieve_body($news_resp), true);
+                if (!empty($news_data['results'])) {
+                    foreach (array_slice($news_data['results'], 0, 3) as $item) {
+                        if (!empty($item['title'])) {
+                            $news[] = sanitize_text_field($item['title']);
+                        }
+                    }
+                }
+            }
+        }
+
+        $summary  = 'Candidatos: ' . implode('; ', $cand_lines) . '.';
+        $summary .= ' Clientes: ' . implode('; ', $client_lines) . '.';
+        $summary .= ' Procesos: ' . implode('; ', $process_lines) . '.';
+        if ($followups) {
+            $summary .= ' Seguimientos pendientes: ' . implode('; ', $followups) . '.';
+        }
+        if ($notes) {
+            $summary .= ' Notas: ' . implode(' | ', $notes) . '.';
+        }
+        if ($news) {
+            $summary .= ' Noticias del mercado: ' . implode(' | ', $news) . '.';
+        }
+
+        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable en España y Chile. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos, y ejemplos de correos electrónicos breves para contacto o seguimiento. Si no hay recordatorios urgentes, resalta los aspectos que están funcionando bien.";
+        $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => json_encode([
+                // Use ChatGPT 5 model instead of the previous 4 mini
+                'model'   => 'chatgpt-5',
+                'messages'=> [
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+            ]),
+        ]);
+        if (is_wp_error($resp)) {
+            $err = $resp->get_error_message();
+            wp_send_json_success([
+                'suggestions' => sprintf(__('No se pudo conectar con OpenAI: %s', 'kovacic'), $err)
+            ]);
+        }
+        $data = json_decode(wp_remote_retrieve_body($resp), true);
+        $text = trim($data['choices'][0]['message']['content'] ?? '');
+        if ($text === '') {
+            $text = sprintf(
+                __('Todo marcha bien: %d candidatos, %d clientes y %d procesos activos. No hay seguimientos pendientes.', 'kovacic'),
+                count($cands), count($clients), count($processes)
+            );
+        }
+        wp_send_json_success(['suggestions' => $text, 'news' => $news]);
+    }
+
+    public function mit_lightbulb() {
+        if (!wp_script_is('kvt-app', 'enqueued')) return;
+        ?>
+        <div id="k-mit-bulb" class="dashicons dashicons-lightbulb"></div>
+        <div id="k-mit-box" style="display:none;"><strong><?php esc_html_e('Assistente MIT', 'kovacic'); ?></strong><div id="k-mit-box-content"></div><ul id="k-mit-news"></ul></div>
+        <script>
+        (function(){
+            const bulb = document.getElementById('k-mit-bulb');
+            const box  = document.getElementById('k-mit-box');
+            if(!bulb || !box) return;
+            bulb.addEventListener('click', ()=>{
+                box.style.display = box.style.display === 'none' ? 'block' : 'none';
+            });
+            fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>', {
+                method:'POST',
+                headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                credentials:'same-origin',
+                body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:'<?php echo wp_create_nonce('kvt_mit'); ?>'})
+            }).then(r=>r.json()).then(resp=>{
+                if(resp && resp.success && resp.data){
+                    if(resp.data.suggestions){
+                        document.getElementById('k-mit-box-content').textContent = resp.data.suggestions;
+                        bulb.style.color = '#f1c40f';
+                    }
+                    const newsList = document.getElementById('k-mit-news');
+                    if(newsList){
+                        newsList.innerHTML = '';
+                        (resp.data.news || []).forEach(n=>{
+                            const li = document.createElement('li');
+                            li.textContent = n;
+                            newsList.appendChild(li);
+                        });
+                    }
+                }
+            });
+        })();
+        </script>
+        <style>
+        #k-mit-bulb{position:fixed;left:10px;bottom:10px;font-size:24px;color:#ccc;cursor:pointer;z-index:100000;}
+        #k-mit-box{position:fixed;left:50px;bottom:10px;background:#fff;border:1px solid #ccc;padding:10px;max-width:300px;max-height:200px;overflow:auto;z-index:100000;box-shadow:0 2px 6px rgba(0,0,0,.2);}
+        </style>
+        <?php
     }
 
     public function ajax_update_status() {
