@@ -22,6 +22,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('admin_init',                 [$this, 'register_settings']);
         add_action('admin_menu',                 [$this, 'admin_menu']);
         add_action('admin_enqueue_scripts',      [$this, 'admin_assets']);
+        add_action('admin_footer',               [$this, 'mit_lightbulb']);
 
         // Term meta: Proceso -> Cliente
         add_action(self::TAX_PROCESS . '_add_form_fields',  [$this, 'process_add_fields']);
@@ -113,6 +114,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_dismiss_comment',[$this, 'ajax_dismiss_comment']);
         add_action('wp_ajax_kvt_generate_roles',       [$this, 'ajax_generate_roles']);
         add_action('wp_ajax_nopriv_kvt_generate_roles',[$this, 'ajax_generate_roles']);
+        add_action('wp_ajax_kvt_mit_suggestions',      [$this, 'ajax_mit_suggestions']);
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
@@ -198,6 +200,7 @@ cv_uploaded|Fecha de subida");
             add_menu_page('Kovacic', 'Kovacic', 'manage_options', 'kovacic', '__return_null', 'dashicons-businessman', 3);
         }
         add_submenu_page('kovacic', __('ATS', 'kovacic'), __('ATS', 'kovacic'), 'manage_options', 'kvt-tracker', [$this, 'tracker_page']);
+        add_submenu_page('kovacic', __('Assistente MIT', 'kovacic'), __('Assistente MIT', 'kovacic'), 'manage_options', 'kvt-mit', [$this, 'mit_page']);
         add_submenu_page('kovacic', __('Ajustes', 'kovacic'), __('Ajustes', 'kovacic'), 'manage_options', 'kvt-settings', [$this, 'settings_page']);
     }
 
@@ -222,6 +225,7 @@ cv_uploaded|Fecha de subida");
             <div class="k-tab" aria-selected="false"><?php esc_html_e('Contrataciones', 'kovacic'); ?></div>
             <div class="k-tab" aria-selected="false"><?php esc_html_e('Notas', 'kovacic'); ?></div>
             <div class="k-tab" aria-selected="false"><?php esc_html_e('Candidaturas', 'kovacic'); ?></div>
+            <div class="k-tab" aria-selected="false"><?php esc_html_e('Assistente MIT', 'kovacic'); ?></div>
           </nav>
           <section class="k-tabpanel">
             <div class="k-filters">
@@ -577,6 +581,26 @@ JS;
                 </table>
                 <?php submit_button('Guardar ajustes'); ?>
             </form>
+        </div>
+        <?php
+    }
+
+    public function mit_page() {
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Assistente MIT', 'kovacic'); ?></h1>
+            <p id="k-mit-page-content"><?php esc_html_e('Obteniendo sugerencias...', 'kovacic'); ?></p>
+            <script>
+            (function($){
+                $.post(ajaxurl, {action:'kvt_mit_suggestions', nonce:'<?php echo wp_create_nonce('kvt_mit'); ?>'}, function(resp){
+                    if(resp && resp.success && resp.data && resp.data.suggestions){
+                        $('#k-mit-page-content').text(resp.data.suggestions);
+                    } else {
+                        $('#k-mit-page-content').text('<?php echo esc_js(__('No hay sugerencias disponibles.', 'kovacic')); ?>');
+                    }
+                });
+            })(jQuery);
+            </script>
         </div>
         <?php
     }
@@ -4402,6 +4426,80 @@ JS;
             $this->update_profile_from_cv($p->ID, $key);
         }
         wp_send_json_success(['ok' => true]);
+    }
+
+    public function ajax_mit_suggestions() {
+        check_ajax_referer('kvt_mit', 'nonce');
+        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        if (!$key) {
+            wp_send_json_success(['suggestions' => __('Falta la clave de OpenAI', 'kovacic')]);
+        }
+        $cands = get_posts([
+            'post_type'   => self::CPT,
+            'post_status' => 'any',
+            'numberposts' => 5,
+        ]);
+        $clients = get_terms([
+            'taxonomy'   => self::TAX_CLIENT,
+            'hide_empty' => false,
+            'number'     => 5,
+        ]);
+        $notes = [];
+        foreach ($cands as $c) {
+            $n = get_post_meta($c->ID, 'kvt_notes', true);
+            if ($n) $notes[] = $n;
+        }
+        $summary  = 'Candidatos: ' . implode(', ', wp_list_pluck($cands, 'post_title')) . '.';
+        $summary .= ' Clientes: ' . implode(', ', wp_list_pluck($clients, 'name')) . '.';
+        if ($notes) {
+            $summary .= ' Notas: ' . implode(' | ', $notes) . '.';
+        }
+        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable en España y Chile. Con los siguientes datos: $summary Sugiere próximos pasos y posibles clientes o candidatos.";
+        $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => json_encode([
+                'model' => 'gpt-4o-mini',
+                'messages' => [
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+            ]),
+        ]);
+        if (is_wp_error($resp)) {
+            wp_send_json_success(['suggestions' => __('No se pudo conectar con OpenAI.', 'kovacic')]);
+        }
+        $data = json_decode(wp_remote_retrieve_body($resp), true);
+        $text = $data['choices'][0]['message']['content'] ?? '';
+        wp_send_json_success(['suggestions' => $text]);
+    }
+
+    public function mit_lightbulb() {
+        $screen = get_current_screen();
+        if (!$screen || strpos($screen->id, 'kvt') === false) return;
+        ?>
+        <div id="k-mit-bulb" class="dashicons dashicons-lightbulb"></div>
+        <div id="k-mit-box" style="display:none;"><strong><?php esc_html_e('Assistente MIT', 'kovacic'); ?></strong><div id="k-mit-box-content"></div></div>
+        <script>
+        (function($){
+            $('#k-mit-bulb').on('click', function(){ $('#k-mit-box').toggle(); });
+            $.post(ajaxurl, {action:'kvt_mit_suggestions', nonce:'<?php echo wp_create_nonce('kvt_mit'); ?>'}, function(resp){
+                if(resp && resp.success){
+                    $('#k-mit-box-content').text(resp.data.suggestions || '');
+                    if(resp.data.suggestions){
+                        $('#k-mit-bulb').css('color','#f1c40f');
+                    }
+                }
+            });
+        })(jQuery);
+        </script>
+        <style>
+        #k-mit-bulb{position:fixed;left:10px;bottom:10px;font-size:24px;color:#ccc;cursor:pointer;z-index:100000;}
+        #k-mit-box{position:fixed;left:50px;bottom:10px;background:#fff;border:1px solid #ccc;padding:10px;max-width:300px;max-height:200px;overflow:auto;z-index:100000;box-shadow:0 2px 6px rgba(0,0,0,.2);}
+        </style>
+        <?php
     }
 
     public function ajax_update_status() {
