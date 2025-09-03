@@ -1354,9 +1354,10 @@ JS;
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
+                    <h4 class="kvt-widget-title">Actividad</h4>
                     <div class="kvt-activity-tabs">
-                        <button type="button" class="kvt-activity-tab active" data-target="tasks">Actividad</button>
-                        <button type="button" class="kvt-activity-tab" data-target="log">Activity</button>
+                        <button type="button" class="kvt-activity-tab active" data-target="tasks">Tareas</button>
+                        <button type="button" class="kvt-activity-tab" data-target="log">Registro</button>
                     </div>
                     <div id="kvt_activity_tasks" class="kvt-activity-content">
                         <div class="kvt-activity-columns">
@@ -1377,11 +1378,11 @@ JS;
                     </div>
                 </div>
                 <div id="kvt_active_wrap" class="kvt-activity">
-                    <h4>Procesos activos</h4>
+                    <h4 class="kvt-widget-title">Procesos activos</h4>
                     <ul id="kvt_active_processes" class="kvt-activity-list"></ul>
                 </div>
                 <div id="kvt_calendar_wrap" class="kvt-activity">
-                    <h4>Calendario</h4>
+                    <h4 class="kvt-widget-title">Calendario</h4>
                     <div id="kvt_dashboard_calendar" class="kvt-calendar-small"></div>
                 </div>
                 </div>
@@ -1724,7 +1725,7 @@ JS;
         .kvt-delete:hover{color:#7f1d1d !important}
         .kvt-delete.dashicons{vertical-align:middle}
         .kvt-main{display:flex;gap:16px;align-items:flex-start}
-        .kvt-widgets{display:flex;flex-direction:column;gap:16px;flex:1}
+        .kvt-widgets{display:flex;flex-wrap:wrap;gap:16px;flex:1}
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
         #kvt_table_wrap{flex:0 0 70%}
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
@@ -1744,7 +1745,10 @@ JS;
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
         #kvt_table tbody tr:hover{background:#f1f5f9}
         .kvt-ats-bar{display:flex;gap:8px;align-items:center;padding:8px}
-        .kvt-activity{border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto}
+        .kvt-activity{border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto;flex:1 1 300px}
+        #kvt_activity{flex:2 1 400px}
+        #kvt_active_wrap,#kvt_calendar_wrap{flex:1 1 260px}
+        .kvt-widget-title{margin:0 0 8px;font-size:15px;font-weight:600;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
         #kvt_table tbody tr:nth-child(even){background:#f9fafb}
         #kvt_table tbody tr:nth-child(odd){background:#fff}
         .kvt-base .kvt-row:nth-child(even){background:#f9fafb}
