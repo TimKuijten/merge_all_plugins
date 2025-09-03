@@ -1216,7 +1216,6 @@ JS;
                 <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendar</a>
                 <a href="#" id="kvt_add_profile"><span class="dashicons dashicons-id-alt"></span> Base</a>
                 <a href="#" id="kvt_toggle_table"><span class="dashicons dashicons-editor-table"></span> Tabla</a>
-                <a href="#" id="kvt_mandar_correos"><span class="dashicons dashicons-email"></span> Correos</a>
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" data-view="ats" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
                 <a href="#" id="kvt_nav_export"><span class="dashicons dashicons-download"></span> Exportar</a>
@@ -1318,6 +1317,26 @@ JS;
                         <div id="kvt_board_clients_list" class="kvt-list"></div>
                       </div>
                       <div id="kvt_board_tab_processes" class="kvt-tab-panel">
+                        <div class="kvt-head">
+                          <div class="kvt-toolbar">
+                            <label>Estado
+                              <select id="kvt_proc_status">
+                                <option value="">Todos</option>
+                                <option value="active">Activo</option>
+                                <option value="completed">Cerrado</option>
+                                <option value="closed">Cancelado</option>
+                              </select>
+                            </label>
+                            <label>Empresa
+                              <select id="kvt_proc_client">
+                                <option value="">Todas</option>
+                                <?php foreach ($clients as $c): ?>
+                                  <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
+                                <?php endforeach; ?>
+                              </select>
+                            </label>
+                          </div>
+                        </div>
                         <div id="kvt_board_processes_list" class="kvt-list"></div>
                       </div>
                     </div>
@@ -1336,7 +1355,6 @@ JS;
                     <div class="kvt-activity-tabs">
                         <button type="button" class="kvt-activity-tab active" data-target="tasks">Actividad</button>
                         <button type="button" class="kvt-activity-tab" data-target="log">Activity</button>
-                        <button type="button" class="kvt-activity-tab" data-target="mail">Correos</button>
                     </div>
                     <div id="kvt_activity_tasks" class="kvt-activity-content">
                         <div class="kvt-activity-columns">
@@ -1350,19 +1368,21 @@ JS;
                                 <h4>Notificaciones</h4>
                                 <ul id="kvt_notifications" class="kvt-activity-list"></ul>
                             </div>
+                            <div class="kvt-activity-col">
+                                <h4>Últimos candidatos</h4>
+                                <ul id="kvt_recent_candidates" class="kvt-activity-list"></ul>
+                                <h4>Calendario</h4>
+                                <div id="kvt_dashboard_calendar" class="kvt-calendar-small"></div>
+                            </div>
                         </div>
                     </div>
                     <div id="kvt_activity_log" class="kvt-activity-content" style="display:none;">
                         <ul id="kvt_activity_log_list" class="kvt-activity-list"></ul>
                     </div>
-                    <div id="kvt_activity_mail" class="kvt-activity-content" style="display:none;">
-                        <iframe id="kvt_correo_iframe" style="width:100%;border:0;min-height:600px;"></iframe>
-                    </div>
                 </div>
             </div>
             <div id="kvt_board_wrap" class="kvt-board-wrap">
-                <button class="kvt-btn" type="button" id="kvt_board_toggle">Mostrar Kanban</button>
-                <div id="kvt_board" class="kvt-board" aria-live="polite" style="display:none;margin-top:12px;"></div>
+                <div id="kvt_board" class="kvt-board" aria-live="polite" style="margin-top:12px;"></div>
             </div>
             </div><!-- .kvt-content -->
         </div>
@@ -1699,6 +1719,7 @@ JS;
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
         #kvt_table_wrap{flex:0 0 70%}
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
+        .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px;max-width:300px}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
         .kvt-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
@@ -1953,7 +1974,6 @@ function kvtInit(){
 
   const board = el('#kvt_board');
   if (!board) return;
-  const boardToggle = el('#kvt_board_toggle');
 
   const tableWrap = el('#kvt_table_wrap');
   const tHead = el('#kvt_table_head');
@@ -1979,9 +1999,10 @@ function kvtInit(){
   const activityUpcoming = el('#kvt_tasks_upcoming');
   const activityNotify = el('#kvt_notifications');
   const activityLog = el('#kvt_activity_log_list');
+  const recentList = el('#kvt_recent_candidates');
+  const calendarSmall = el('#kvt_dashboard_calendar');
   const activityTabs = document.querySelectorAll('.kvt-activity-tab');
   const activityViews = document.querySelectorAll('.kvt-activity-content');
-  const correoFrame = el('#kvt_correo_iframe');
   const overview = el('#kvt_stage_overview');
   const atsBar   = el('#kvt_ats_bar');
   const btnTaskOpen = el('#kvt_task_open');
@@ -2014,7 +2035,6 @@ function kvtInit(){
   const btnAllXLS  = el('#kvt_export_all_xls');
   const exportAllForm   = el('#kvt_export_all_form');
   const exportAllFormat = el('#kvt_export_all_format');
-  const btnMail    = el('#kvt_mandar_correos');
   const btnShare   = el('#kvt_share_board');
   const btnProcesses = el('#kvt_open_processes');
   const shareModal = el('#kvt_share_modal');
@@ -2074,6 +2094,13 @@ function kvtInit(){
       if(activityWrap) activityWrap.style.display='none';
       if(boardWrap) boardWrap.style.display='none';
       switchBoardTab('candidates');
+    } else if(view==='detalles'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='block';
+      if(boardWrap) boardWrap.style.display='block';
+      fetchDashboard().then(d=>{ if(d.success) renderActivityDashboard(d.data); });
     } else {
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -2115,6 +2142,8 @@ function kvtInit(){
   const boardTabProcesses = el('#kvt_board_tab_processes');
   const boardClientsList = el('#kvt_board_clients_list');
   const boardProcessesList = el('#kvt_board_processes_list');
+  const procStatusFilter = el('#kvt_proc_status');
+  const procClientFilter = el('#kvt_proc_client');
   const aiInput = el('#kvt_ai_input', modal);
   const aiBtn = el('#kvt_ai_search', modal);
   const aiResults = el('#kvt_ai_results', modal);
@@ -2190,6 +2219,8 @@ function kvtInit(){
     if(target==='candidates') listProfiles(1, boardCtx);
   }
   boardTabs.forEach(b=>b.addEventListener('click', ()=>switchBoardTab(b.dataset.target)));
+  procStatusFilter && procStatusFilter.addEventListener('change', ()=>listProcesses());
+  procClientFilter && procClientFilter.addEventListener('change', ()=>listProcesses());
 
   function openModal(){
     modal.style.display = 'flex';
@@ -2913,11 +2944,19 @@ function kvtInit(){
     const notifs = (data.comments||[]).map(c=>{
       return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> — '+esc(c.comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
     });
+    const recent = (data.recent||[]).map(c=>{
+      const info = [esc(c.date)];
+      if(c.email) info.push(esc(c.email));
+      if(c.phone) info.push(esc(c.phone));
+      return '<li>'+esc(c.name)+' — '+info.join(' / ')+'</li>';
+    });
     const logs = (data.logs||[]).sort((a,b)=>a.time<b.time?1:-1);
     activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
     activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
     activityNotify.innerHTML = notifs.join('') || '<li>No hay notificaciones</li>';
+    if(recentList) recentList.innerHTML = recent.join('') || '<li>No hay candidatos recientes</li>';
     if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(l.time)+' - '+esc(l.text)+'</li>').join('') : '<li>No hay actividad</li>';
+    renderCalendarSmall();
   }
 
   function renderCalendar(){
@@ -2927,7 +2966,7 @@ function kvtInit(){
     const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     const monthName = first.toLocaleString('default',{month:'long'});
     let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><button type="button" id="kvt_cal_next">&gt;</button></div>';
-    html += '<div class="kvt-cal-add"><input type="date" id="kvt_cal_date"><input type="text" id="kvt_cal_text" placeholder="Evento"><button type="button" id="kvt_cal_add">Añadir</button></div>';
+    html += '<div class="kvt-cal-add"><input type="date" id="kvt_cal_date"><input type="time" id="kvt_cal_time"><input type="text" id="kvt_cal_text" placeholder="Evento"><select id="kvt_cal_assign"><option value="">Sin asignar</option><option value="candidate">Candidato</option><option value="process">Proceso</option><option value="client">Cliente</option></select><input type="text" id="kvt_cal_assign_val" placeholder="ID o nombre"><button type="button" id="kvt_cal_add">Añadir</button></div>';
     html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
     for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
     for(let d=1; d<=last.getDate(); d++){
@@ -2936,7 +2975,7 @@ function kvtInit(){
       let cls = 'kvt-cal-cell';
       if(ev.length) cls += ' has-event';
       html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
-      ev.forEach(e=>{ html += '<span class="kvt-cal-event'+(e.done?' done':'')+'" data-idx="'+e.idx+'">'+esc(e.text)+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>'; });
+      ev.forEach(e=>{ let lbl=esc(e.text); if(e.time) lbl+=' '+esc(e.time); if(e.assign&&e.assign_val) lbl+=' ('+esc(e.assign)+': '+esc(e.assign_val)+')'; html += '<span class="kvt-cal-event'+(e.done?' done':'')+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>'; });
       html += '</div>';
     }
     const fill = (first.getDay()+last.getDate())%7;
@@ -2947,16 +2986,47 @@ function kvtInit(){
     const nextBtn = el('#kvt_cal_next', calendarWrap);
     const addBtn  = el('#kvt_cal_add', calendarWrap);
     const dateInp = el('#kvt_cal_date', calendarWrap);
+    const timeInp = el('#kvt_cal_time', calendarWrap);
     const textInp = el('#kvt_cal_text', calendarWrap);
+    const assignSel = el('#kvt_cal_assign', calendarWrap);
+    const assignVal = el('#kvt_cal_assign_val', calendarWrap);
     prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendar(); });
     nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendar(); });
-    addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ calendarEvents.push({date:dateInp.value, text:textInp.value.trim(), done:false}); renderCalendar(); }});
+    addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ calendarEvents.push({date:dateInp.value, time:timeInp.value, text:textInp.value.trim(), assign:assignSel.value, assign_val:assignVal.value.trim(), done:false}); renderCalendar(); }});
     calendarWrap.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
       evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); calendarEvents[idx].done=!calendarEvents[idx].done; renderCalendar(); });
     });
     calendarWrap.querySelectorAll('.kvt-cal-remove').forEach(btn=>{
       btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendar(); });
     });
+  }
+
+  function renderCalendarSmall(){
+    if(!calendarSmall) return;
+    const first = new Date(calYear, calMonth, 1);
+    const last = new Date(calYear, calMonth+1, 0);
+    const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    const monthName = first.toLocaleString('default',{month:'long'});
+    let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><button type="button" id="kvt_cal_next_s">&gt;</button></div>';
+    html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
+    for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
+    for(let d=1; d<=last.getDate(); d++){
+      const ds = (d<10?'0'+d:d)+'-'+(calMonth+1<10?'0'+(calMonth+1):(calMonth+1))+'-'+calYear;
+      const ev = calendarEvents.filter(e=>e.date===ds);
+      let cls = 'kvt-cal-cell';
+      if(ev.length) cls += ' has-event';
+      html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
+      ev.forEach(e=>{ let lbl=esc(e.text); if(e.time) lbl+=' '+esc(e.time); if(e.assign&&e.assign_val) lbl+=' ('+esc(e.assign)+': '+esc(e.assign_val)+')'; html += '<span class="kvt-cal-event'+(e.done?' done':'')+'">'+lbl+'</span>'; });
+      html += '</div>';
+    }
+    const fill = (first.getDay()+last.getDate())%7;
+    if(fill!==0){ for(let i=0;i<7-fill;i++) html += '<div class="kvt-cal-cell"></div>'; }
+    html += '</div>';
+    calendarSmall.innerHTML = html;
+    const prevBtn = el('#kvt_cal_prev_s', calendarSmall);
+    const nextBtn = el('#kvt_cal_next_s', calendarSmall);
+    prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendarSmall(); });
+    nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendarSmall(); });
   }
 
   function renderOverview(rows){
@@ -3180,21 +3250,6 @@ function kvtInit(){
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(()=>{ if(stageModal) stageModal.style.display='none'; refresh(); });
   });
-  boardToggle && boardToggle.addEventListener('click', ()=>{
-    const hidden = board.style.display === 'none';
-    board.style.display = hidden ? 'flex' : 'none';
-    boardToggle.textContent = hidden ? 'Ocultar Kanban' : 'Mostrar Kanban';
-  });
-
-  const loadCorreos = ()=>{
-    if(!correoFrame) return;
-    const pid = selProcess ? selProcess.value : '';
-    correoFrame.src = KVT_BULKREADER_URL + (pid ? '&process='+encodeURIComponent(pid) : '');
-  };
-
-  selProcess && selProcess.addEventListener('change', ()=>{ loadCorreos(); });
-  loadCorreos();
-
   activityTabs.forEach(tab=>{
     tab.addEventListener('click', ()=>{
       activityTabs.forEach(t=>t.classList.remove('active'));
@@ -3202,7 +3257,6 @@ function kvtInit(){
       tab.classList.add('active');
       const pane = el('#kvt_activity_'+tab.dataset.target);
       if(pane) pane.style.display='block';
-      if(tab.dataset.target==='mail') loadCorreos();
     });
   });
 
@@ -3301,10 +3355,6 @@ function kvtInit(){
   btnTaskOpen && btnTaskOpen.addEventListener('click', e=>{ e.preventDefault(); if(taskModalWrap) taskModalWrap.style.display='flex'; });
   taskClose && taskClose.addEventListener('click', ()=>{ if(taskModalWrap) taskModalWrap.style.display='none'; });
   taskModalWrap && taskModalWrap.addEventListener('click', e=>{ if(e.target===taskModalWrap) taskModalWrap.style.display='none'; });
-  btnMail && btnMail.addEventListener('click', e=>{
-    e.preventDefault();
-    window.open('https://kovacictalent.com/wp-admin/admin.php?page=kt-abm','_blank','noopener');
-  });
   btnShare && btnShare.addEventListener('click', e=>{
     e.preventDefault();
     if (!selClient || !selClient.value || !selProcess || !selProcess.value) {
@@ -3588,6 +3638,10 @@ function kvtInit(){
     const params = new URLSearchParams();
     params.set('action','kvt_list_processes');
     params.set('_ajax_nonce', KVT_NONCE);
+    const st = procStatusFilter ? procStatusFilter.value : '';
+    const cl = procClientFilter ? procClientFilter.value : '';
+    if(st) params.set('status', st);
+    if(cl) params.set('client', cl);
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(j=>{
         if(!j.success) return alert('No se pudo cargar la lista.');
@@ -3623,7 +3677,7 @@ function kvtInit(){
           const sel = '<select class="kvt-process-status" data-id="'+escAttr(p.id)+'">'+
             Object.keys(statuses).map(s=>'<option value="'+s+'"'+(p.status===s?' selected':'')+'>'+statuses[s]+'</option>').join('')+
             '</select>';
-          const days = '<span class="kvt-sub">'+p.days+' días</span>';
+          const days = '<span class="kvt-sub">Activo '+p.days+' días</span>';
           return '<div class="kvt-row">'+
             '<div><span class="kvt-name">'+esc(p.name)+'</span>'+subHtml+'</div>'+
             '<div class="kvt-meta">'+sel+' '+days+' <button type="button" class="kvt-btn kvt-edit-process" data-id="'+escAttr(p.id)+'" data-name="'+escAttr(p.name||'')+'" data-client-id="'+escAttr(p.client_id||'')+'" data-contact-name="'+escAttr(p.contact_name||'')+'" data-contact-email="'+escAttr(p.contact_email||'')+'" data-desc="'+escAttr(p.description||'')+'">Editar</button></div>'+
@@ -4177,11 +4231,30 @@ JS;
             }
         }
 
+        $recent_posts = get_posts([
+            'post_type'   => self::CPT,
+            'post_status' => 'any',
+            'numberposts' => 10,
+            'orderby'     => 'date',
+            'order'       => 'DESC',
+        ]);
+        $recent = [];
+        foreach ($recent_posts as $rp) {
+            $recent[] = [
+                'id'    => $rp->ID,
+                'name'  => get_the_title($rp),
+                'date'  => get_the_date('d-m-Y', $rp),
+                'email' => $this->meta_get_compat($rp->ID, 'kvt_email', ['email']),
+                'phone' => $this->meta_get_compat($rp->ID, 'kvt_phone', ['phone']),
+            ];
+        }
+
         wp_send_json_success([
             'comments' => $comments,
             'upcoming' => $upcoming,
             'overdue'  => $overdue,
             'logs'     => $logs,
+            'recent'   => $recent,
         ]);
     }
 
@@ -4628,12 +4701,15 @@ JS;
 
     public function ajax_list_processes() {
         check_ajax_referer('kvt_nonce');
+        $status_filter = isset($_POST['status']) ? sanitize_text_field($_POST['status']) : '';
+        $client_filter = isset($_POST['client']) ? intval($_POST['client']) : 0;
         $terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
         $items = [];
         $statuses = array_values(array_filter(array_map('trim', explode("\n", get_option(self::OPT_STATUSES, '')))));
         foreach ($terms as $t) {
             $client_id = (int) get_term_meta($t->term_id,'kvt_process_client',true);
             $client_name = $client_id ? get_term($client_id)->name : '';
+            if ($client_filter && $client_id !== $client_filter) continue;
             $creator_id = (int) get_term_meta($t->term_id,'kvt_process_creator',true);
             $creator = '';
             if ($creator_id) {
@@ -4644,6 +4720,7 @@ JS;
             $created_fmt = $created ? date_i18n('d-m-Y', strtotime($created)) : '';
             $status  = get_term_meta($t->term_id,'kvt_process_status',true);
             if (!$status) $status = 'active';
+            if ($status_filter && $status !== $status_filter) continue;
             $end     = get_term_meta($t->term_id,'kvt_process_end',true);
             $start_ts = $created ? strtotime($created) : 0;
             $end_ts   = ($status === 'active') ? current_time('timestamp') : ($end ? strtotime($end) : current_time('timestamp'));
