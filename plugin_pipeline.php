@@ -1725,7 +1725,7 @@ JS;
         .kvt-delete:hover{color:#7f1d1d !important}
         .kvt-delete.dashicons{vertical-align:middle}
         .kvt-main{display:flex;gap:16px;align-items:flex-start}
-        .kvt-widgets{display:flex;flex-wrap:wrap;gap:16px;flex:1}
+        .kvt-widgets{display:flex;flex-wrap:wrap;gap:16px;flex:1;align-items:flex-start;align-content:flex-start}
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
         #kvt_table_wrap{flex:0 0 70%}
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
