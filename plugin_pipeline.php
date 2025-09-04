@@ -1281,6 +1281,8 @@ JS;
                         <input type="text" id="kvt_search" placeholder="Buscar candidato, empresa, ciudad...">
                         <label for="kvt_stage_filter">Etapa</label>
                         <select id="kvt_stage_filter"><option value="">Todas las etapas</option></select>
+                        <label for="kvt_country_filter">País</label>
+                        <select id="kvt_country_filter" multiple></select>
                         <form id="kvt_export_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank" style="display:inline;">
                             <input type="hidden" name="action" value="kvt_export">
                             <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
@@ -2058,6 +2060,7 @@ function kvtInit(){
   const tBody = el('#kvt_table_body');
   const searchInput = el('#kvt_search');
   const stageSelect = el('#kvt_stage_filter');
+  const countrySelect = el('#kvt_country_filter');
   const assignSearch = el('#kvt_assign_search');
   const boardBase   = el('#kvt_board_base');
   const boardList   = el('#kvt_board_list');
@@ -2997,6 +3000,7 @@ function kvtInit(){
 
     if (!CLIENT_VIEW) enableDnD();
     allRows = Array.isArray(data) ? data : [];
+    populateCountryOptions(allRows);
     filterTable();
   }
 
@@ -3101,6 +3105,14 @@ function kvtInit(){
       logs.sort((a,b)=>a.time<b.time?1:-1);
       activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+l.time+' - '+l.text+'</li>').join('') : '<li>No hay actividad</li>';
     }
+  }
+
+  function populateCountryOptions(rows){
+    if(!countrySelect) return;
+    const selected = Array.from(countrySelect.selectedOptions).map(o=>o.value);
+    const countries = [...new Set(rows.map(r=>(r.meta.country||'').trim()).filter(Boolean))].sort();
+    countrySelect.innerHTML = countries.map(c=>'<option value="'+escAttr(c)+'">'+esc(c)+'</option>').join('');
+    selected.forEach(v=>{ const opt = els('option', countrySelect).find(o=>o.value===v); if(opt) opt.selected = true; });
   }
 
   function renderActivityDashboard(data){
@@ -3317,6 +3329,8 @@ function kvtInit(){
     }
     const st = (!selClient.value && !selProcess.value) ? '' : (stageSelect ? stageSelect.value : '');
     if(st){ rows = rows.filter(r=>r.status===st); }
+    const cs = countrySelect ? Array.from(countrySelect.selectedOptions).map(o=>o.value).filter(Boolean) : [];
+    if(cs.length){ rows = rows.filter(r=>cs.includes(r.meta.country||'')); }
     renderTable(rows);
   }
 
@@ -3623,6 +3637,7 @@ function kvtInit(){
 
   searchInput && searchInput.addEventListener('input', filterTable);
   stageSelect && stageSelect.addEventListener('change', filterTable);
+  countrySelect && countrySelect.addEventListener('change', filterTable);
   document.addEventListener('click', e=>{
     if(e.target.classList.contains('kvt-row-view')){
       const id = e.target.dataset.id;
