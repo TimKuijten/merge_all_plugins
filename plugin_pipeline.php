@@ -2017,7 +2017,7 @@ function kvtInit(){
   const CLIENT_SLUG = typeof KVT_CLIENT_SLUG !== 'undefined' ? KVT_CLIENT_SLUG : '';
   const IS_ADMIN = typeof KVT_IS_ADMIN !== 'undefined' && KVT_IS_ADMIN;
   const CLIENT_LINKS = (typeof KVT_CLIENT_LINKS === 'object' && KVT_CLIENT_LINKS) ? KVT_CLIENT_LINKS : {};
-  const COUNTRY_OPTIONS = Array.isArray(window.KVT_COUNTRIES) ? window.KVT_COUNTRIES : [];
+  const COUNTRY_OPTIONS = Array.isArray(KVT_COUNTRIES) ? KVT_COUNTRIES : [];
 
   const helpBtn = el('.kvt-help');
   const helpModal = el('#kvt_help_modal');
