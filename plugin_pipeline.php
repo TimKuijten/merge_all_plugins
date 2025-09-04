@@ -1232,6 +1232,7 @@ JS;
                 <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendar</a>
                 <a href="#" id="kvt_add_profile"><span class="dashicons dashicons-id-alt"></span> Base</a>
                 <a href="#" data-view="keyword"><span class="dashicons dashicons-search"></span> <?php esc_html_e('Búsqueda de palabras', 'kovacic'); ?></a>
+                <a href="#" data-view="ai"><span class="dashicons dashicons-search"></span> Buscador IA</a>
                 <a href="#" id="kvt_toggle_table"><span class="dashicons dashicons-editor-table"></span> Tabla</a>
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" data-view="ats" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
@@ -1386,6 +1387,13 @@ JS;
                     <button type="button" class="kvt-btn" id="kvt_keyword_board_search"><?php esc_html_e('Buscar', 'kovacic'); ?></button>
                   </div>
                   <div id="kvt_keyword_board_results" class="kvt-modal-list"></div>
+                </div>
+                <div id="kvt_ai_view" style="display:none;">
+                  <div class="kvt-modal-controls">
+                    <textarea id="kvt_ai_board_input" rows="6" style="width:100%;" placeholder="Describe el perfil o pega la descripción del trabajo para que la IA sugiera candidatos"></textarea>
+                    <button type="button" class="kvt-btn" id="kvt_ai_board_search">Buscar</button>
+                  </div>
+                  <div id="kvt_ai_board_results" class="kvt-modal-list"></div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
                 <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
@@ -2107,6 +2115,7 @@ function kvtInit(){
   const calendarWrap = el('#kvt_calendar');
   const mitWrap = el('#kvt_mit_view');
   const keywordBoard = el('#kvt_keyword_view');
+  const aiBoard = el('#kvt_ai_view');
   const mitContent = el('#kvt_mit_content');
   const mitNews = el('#kvt_mit_news');
   const activityWrap = el('#kvt_activity');
@@ -2188,6 +2197,7 @@ function kvtInit(){
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
     if(keywordBoard) keywordBoard.style.display='none';
+    if(aiBoard) aiBoard.style.display='none';
     if(widgetsWrap) widgetsWrap.style.display='flex';
     if(view==='ats'){
       filtersBar.style.display='flex';
@@ -2242,6 +2252,18 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(mitWrap) { mitWrap.style.display='block'; loadMit(); }
+    } else if(view==='ai'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(overview) overview.style.display='none';
+      if(atsBar) atsBar.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(boardBase) boardBase.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(aiBoard) aiBoard.style.display='block';
     } else if(view==='keyword'){
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -2308,6 +2330,9 @@ function kvtInit(){
   const keywordBoardInput = el('#kvt_keyword_board_input');
   const keywordBoardBtn = el('#kvt_keyword_board_search');
   const keywordBoardResults = el('#kvt_keyword_board_results');
+  const aiBoardInput = el('#kvt_ai_board_input');
+  const aiBoardBtn = el('#kvt_ai_board_search');
+  const aiBoardResults = el('#kvt_ai_board_results');
 
   if (CLIENT_VIEW) {
     if (selClient) { selClient.value = CLIENT_ID; selClient.disabled = true; }
@@ -3446,6 +3471,46 @@ function kvtInit(){
           });
         });
       }).catch(()=>{ aiBtn.disabled=false; aiResults.innerHTML=''; });
+  });
+
+  aiBoardBtn && aiBoardBtn.addEventListener('click', ()=>{
+    const desc = (aiBoardInput.value||'').trim();
+    if(!desc) return;
+    aiBoardResults.innerHTML = '<div class="kvt-loading">Buscando...</div>';
+    aiBoardBtn.disabled = true;
+    const params = new URLSearchParams();
+    params.set('action','kvt_ai_search');
+    params.set('_ajax_nonce', KVT_NONCE);
+    params.set('description', desc);
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json()).then(j=>{
+        aiBoardBtn.disabled = false;
+        if(!j.success){ alert('No se pudo buscar.'); aiBoardResults.innerHTML=''; return; }
+        const items = Array.isArray(j.data.items)?j.data.items:[];
+        if(!items.length){ aiBoardResults.innerHTML = '<p>No hay coincidencias reales.</p>'; return; }
+        aiBoardResults.innerHTML = items.map(it=>{
+          const m = it.meta||{};
+          const name = esc((m.first_name||'')+' '+(m.last_name||''));
+          const cv = m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'';
+          const roleLoc = [m.current_role||'', [m.country||'', m.city||''].map(s=>s.trim()).filter(Boolean).join(', ')].filter(Boolean).join(' / ');
+          return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
+            '<h4>'+name+cv+'</h4>'+
+            (roleLoc?'<p class="kvt-ai-meta">'+esc(roleLoc)+'</p>':'')+
+            '<p class="kvt-ai-summary">'+esc(it.summary||'')+'</p>'+
+            '<div class="kvt-mini-actions"><button type="button" class="kvt-btn kvt-secondary kvt-mini-view">Ver perfil</button></div>'+
+            '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
+          '</div>';
+        }).join('');
+        els('.kvt-mini-view', aiBoardResults).forEach(b=>{
+          b.addEventListener('click', ()=>{
+            const card = b.closest('.kvt-card-mini');
+            const panel = card.querySelector('.kvt-mini-panel');
+            const show = panel.style.display==='block';
+            panel.style.display = show?'none':'block';
+            b.textContent = show?'Ver perfil':'Ocultar';
+          });
+        });
+      }).catch(()=>{ aiBoardBtn.disabled=false; aiBoardResults.innerHTML=''; });
   });
 
   keywordBtn && keywordBtn.addEventListener('click', ()=>{
