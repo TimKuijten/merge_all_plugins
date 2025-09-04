@@ -5633,45 +5633,69 @@ JS;
         if (!$query) wp_send_json_error(['msg' => 'Consulta vacía'], 400);
         $query = strtolower($query);
 
-        $or_parts = preg_split('/\s+or\s+/', $query);
-        $keywords = array_unique(array_filter(preg_split('/\s+(?:and|or)\s+/', $query)));
+        $required = [];
+        $optional = [];
+
+        if (strpos($query, ' or ') !== false && strpos($query, ' and ') !== false) {
+            $first_or = strpos($query, ' or ');
+            $before_or = substr($query, 0, $first_or);
+            $last_and = strrpos($before_or, ' and ');
+            if ($last_and !== false) {
+                $required_part = substr($query, 0, $last_and);
+                $required = array_filter(array_map('trim', preg_split('/\s+and\s+/', $required_part)));
+                $optional_part = substr($query, $last_and + 5);
+                $optional = array_filter(array_map('trim', preg_split('/\s+or\s+/', $optional_part)));
+            } else {
+                $optional = array_filter(array_map('trim', preg_split('/\s+or\s+/', $query)));
+            }
+        } elseif (strpos($query, ' or ') !== false) {
+            $optional = array_filter(array_map('trim', preg_split('/\s+or\s+/', $query)));
+        } else {
+            $required = array_filter(array_map('trim', preg_split('/\s+and\s+/', $query)));
+        }
+
+        $keywords = array_unique(array_merge($required, $optional));
 
         $candidates = get_posts(['post_type' => self::CPT, 'posts_per_page' => -1]);
         $items = [];
         foreach ($candidates as $c) {
             $cv_text = strtolower($this->get_candidate_cv_text($c->ID));
             if (!$cv_text) continue;
-            $matched = false;
-            foreach ($or_parts as $part) {
-                $and_tokens = array_filter(array_map('trim', preg_split('/\s+and\s+/', $part)));
-                $ok = true;
-                foreach ($and_tokens as $tok) {
-                    if ($tok === '' || strpos($cv_text, $tok) === false) { $ok = false; break; }
-                }
-                if ($ok) { $matched = true; break; }
+
+            $ok = true;
+            foreach ($required as $tok) {
+                if ($tok === '' || strpos($cv_text, $tok) === false) { $ok = false; break; }
             }
-            if ($matched) {
-                $meta = [
-                    'first_name'  => $this->meta_get_compat($c->ID,'kvt_first_name',['first_name']),
-                    'last_name'   => $this->meta_get_compat($c->ID,'kvt_last_name',['last_name']),
-                    'email'       => $this->meta_get_compat($c->ID,'kvt_email',['email']),
-                    'phone'       => $this->meta_get_compat($c->ID,'kvt_phone',['phone']),
-                    'country'     => $this->meta_get_compat($c->ID,'kvt_country',['country']),
-                    'city'        => $this->meta_get_compat($c->ID,'kvt_city',['city']),
-                    'cv_url'      => $this->meta_get_compat($c->ID,'kvt_cv_url',['cv_url']),
-                    'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($c->ID,'kvt_cv_uploaded',['cv_uploaded'])),
-                    'tags'        => $this->meta_get_compat($c->ID,'kvt_tags',['tags']),
-                ];
-                $matches = [];
-                foreach ($keywords as $kw) {
-                    if (strpos($cv_text, $kw) !== false) $matches[] = $kw;
+            if (!$ok) continue;
+
+            if ($optional) {
+                $match_any = false;
+                foreach ($optional as $tok) {
+                    if ($tok !== '' && strpos($cv_text, $tok) !== false) { $match_any = true; break; }
                 }
-                $items[] = [
-                    'id'      => $c->ID,
-                    'meta'    => $meta,
-                    'matches' => $matches,
-                ];
+                if (!$match_any) continue;
             }
+
+            $meta = [
+                'first_name'  => $this->meta_get_compat($c->ID,'kvt_first_name',['first_name']),
+                'last_name'   => $this->meta_get_compat($c->ID,'kvt_last_name',['last_name']),
+                'email'       => $this->meta_get_compat($c->ID,'kvt_email',['email']),
+                'phone'       => $this->meta_get_compat($c->ID,'kvt_phone',['phone']),
+                'country'     => $this->meta_get_compat($c->ID,'kvt_country',['country']),
+                'city'        => $this->meta_get_compat($c->ID,'kvt_city',['city']),
+                'cv_url'      => $this->meta_get_compat($c->ID,'kvt_cv_url',['cv_url']),
+                'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($c->ID,'kvt_cv_uploaded',['cv_uploaded'])),
+                'tags'        => $this->meta_get_compat($c->ID,'kvt_tags',['tags']),
+            ];
+            $matches = [];
+            foreach ($keywords as $kw) {
+                if (strpos($cv_text, $kw) !== false) $matches[] = $kw;
+            }
+            $items[] = [
+                'id'      => $c->ID,
+                'meta'    => $meta,
+                'matches' => $matches,
+            ];
         }
 
         wp_send_json_success(['items' => $items]);
