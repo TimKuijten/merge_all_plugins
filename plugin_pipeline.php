@@ -1117,6 +1117,7 @@ JS;
                     $max = $idx;
                 }
             }
+            $candidate_count = count($posts);
             if ($max >= 0 && isset($statuses[$max])) $job_stage = $statuses[$max];
 
             $out[] = [
@@ -1129,6 +1130,7 @@ JS;
                 'contact_email' => get_term_meta($t->term_id, 'contact_email', true),
                 'creator'       => get_the_author_meta('display_name', (int) get_term_meta($t->term_id, 'kvt_process_creator', true)),
                 'created'       => get_term_meta($t->term_id, 'kvt_process_created', true),
+                'candidates'    => $candidate_count,
                 'job_stage'     => $job_stage,
             ];
         }
@@ -1359,24 +1361,6 @@ JS;
                       <div id="kvt_board_tab_processes" class="kvt-tab-panel">
                         <div class="kvt-head">
                           <div id="kvt_board_proc_info" class="kvt-selected-info" style="display:none;"></div>
-                          <div class="kvt-toolbar">
-                            <label>Estado
-                              <select id="kvt_proc_status">
-                                <option value="">Todos</option>
-                                <option value="active">Activo</option>
-                                <option value="completed">Cerrado</option>
-                                <option value="closed">Cancelado</option>
-                              </select>
-                            </label>
-                            <label>Empresa
-                              <select id="kvt_proc_client">
-                                <option value="">Todas</option>
-                                <?php foreach ($clients as $c): ?>
-                                  <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
-                                <?php endforeach; ?>
-                              </select>
-                            </label>
-                          </div>
                         </div>
                         <div id="kvt_board_processes_list" class="kvt-list"></div>
                       </div>
@@ -1620,6 +1604,26 @@ JS;
                 <div id="kvt_clients_list" class="kvt-list"></div>
               </div>
               <div id="kvt_tab_processes" class="kvt-tab-panel kvt-base">
+                <div class="kvt-head">
+                  <div class="kvt-toolbar">
+                    <label>Estado
+                      <select id="kvt_proc_status">
+                        <option value="">Todos</option>
+                        <option value="active">Activo</option>
+                        <option value="completed">Cerrado</option>
+                        <option value="closed">Cancelado</option>
+                      </select>
+                    </label>
+                    <label>Empresa
+                      <select id="kvt_proc_client">
+                        <option value="">Todas</option>
+                        <?php foreach ($clients as $c): ?>
+                          <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
+                        <?php endforeach; ?>
+                      </select>
+                    </label>
+                  </div>
+                </div>
                 <div id="kvt_processes_list" class="kvt-list"></div>
               </div>
               <div id="kvt_tab_ai" class="kvt-tab-panel">
@@ -1871,7 +1875,7 @@ JS;
         .kvt-task-done,.kvt-task-delete{margin-left:8px;cursor:pointer}
         .kvt-task-done{color:#16a34a}
         .kvt-task-delete{color:#dc2626}
-        .kvt-row-remove{color:#fff;background:#dc2626;border-radius:4px;padding:2px;margin-right:4px;cursor:pointer;vertical-align:middle}
+        .kvt-row-remove{color:#000;background:none;border-radius:0;padding:0;margin-right:4px;font-size:14px;cursor:pointer;vertical-align:middle}
         .kvt-profile-activity{margin-bottom:16px;font-size:13px}
         .kvt-profile-activity ul{list-style:disc;margin-left:20px}
         .kvt-board-wrap{margin-top:40px}
@@ -2204,6 +2208,8 @@ function kvtInit(){
   let calYear  = (new Date()).getFullYear();
   let shareMode = 'client';
   let selectedCandidateId = CANDIDATE_VIEW ? CANDIDATE_ID : 0;
+  let selectedCandidateIds = [];
+  let forceSelect = false;
 
   function formatInputDate(v){ const p=v.split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : v; }
 
@@ -3200,8 +3206,8 @@ function kvtInit(){
 
   function renderTable(rows){
     if(!tHead || !tBody) return;
-    const showSelect = searchInput && searchInput.value.trim() !== '';
-    tHead.innerHTML = (showSelect?'<th></th>':'')+'<th>Candidato/a</th><th>Etapas</th>';
+    const showSelect = forceSelect || (searchInput && searchInput.value.trim() !== '');
+    tHead.innerHTML = (showSelect?'<th><input type="checkbox" id="kvt_select_all"></th>':'')+'<th>Candidato/a</th><th>Etapas</th>';
     tBody.innerHTML = rows.map(r=>{
         const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
         const icons=[];
@@ -3239,6 +3245,14 @@ function kvtInit(){
         const checkCell = showSelect?'<td><input type="checkbox" class="kvt-row-select" value="'+escAttr(r.id)+'"></td>':'';
         return '<tr>'+checkCell+'<td>'+name+'</td><td class="kvt-stage-cell">'+parts+'</td></tr>';
       }).join('');
+    if(showSelect){
+      const selAll = el('#kvt_select_all');
+      if(selAll){
+        selAll.addEventListener('change', ()=>{ els('.kvt-row-select', tBody).forEach(cb=>cb.checked = selAll.checked); });
+        if(forceSelect) selAll.checked = true;
+      }
+      if(forceSelect) els('.kvt-row-select', tBody).forEach(cb=>cb.checked = true);
+    }
     if(assignSearch) assignSearch.style.display = (showSelect && selProcess && selProcess.value) ? 'inline-block' : 'none';
   }
 
@@ -3562,6 +3576,7 @@ function kvtInit(){
       'Estado: '+esc(status)
     ];
     if(days) parts.push('Activo: '+days);
+    if(typeof p.candidates!=='undefined') parts.push('Candidatos: '+p.candidates);
     if(p.job_stage) parts.push('Etapa: '+esc(p.job_stage));
     const html = parts.map(t=>'<span>'+t+'</span>').join('');
     if(selInfo){ selInfo.style.display='flex'; selInfo.innerHTML = html; }
@@ -3880,6 +3895,7 @@ function kvtInit(){
     if(e.target.classList.contains('kvt-row-view')){
       const id = e.target.dataset.id;
       selectedCandidateId = parseInt(id,10) || 0;
+      selectedCandidateIds = [selectedCandidateId];
       const cand = allRows.find(r=>String(r.id)===id);
       if(cand) openProfile(cand);
     }
@@ -3935,18 +3951,23 @@ function kvtInit(){
       alert('Selecciona un cliente y un proceso.');
       return;
     }
-    if (!selectedCandidateId) {
-      alert('Selecciona un candidato.');
+    const ids = Array.from(els('.kvt-row-select:checked', tBody)).map(cb=>cb.value);
+    if(!ids.length){
+      forceSelect = true;
+      refresh();
+      alert('Selecciona candidatos y vuelve a pulsar el botón (puedes usar la casilla superior para seleccionar todos).');
       return;
     }
+    selectedCandidateIds = ids.map(id=>parseInt(id,10));
+    selectedCandidateId = selectedCandidateIds[0] || 0;
     shareMode = 'candidate';
     buildShareOptions();
     if(shareModal) shareModal.style.display='flex';
   });
   tablePrev && tablePrev.addEventListener('click', ()=>{ if(currentPage>1){ currentPage--; refresh(); } });
   tableNext && tableNext.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage++; refresh(); } });
-  shareClose && shareClose.addEventListener('click', ()=>{ shareModal.style.display='none'; });
-  shareModal && shareModal.addEventListener('click', e=>{ if(e.target===shareModal) shareModal.style.display='none'; });
+  shareClose && shareClose.addEventListener('click', ()=>{ shareModal.style.display='none'; forceSelect=false; selectedCandidateIds=[]; selectedCandidateId=0; });
+  shareModal && shareModal.addEventListener('click', e=>{ if(e.target===shareModal){ shareModal.style.display='none'; forceSelect=false; selectedCandidateIds=[]; selectedCandidateId=0; }});
   shareFieldsAll && shareFieldsAll.addEventListener('change', ()=>{
     els('input[type="checkbox"]', shareFieldsWrap).forEach(cb=>cb.checked = shareFieldsAll.checked);
   });
@@ -3962,16 +3983,38 @@ function kvtInit(){
     shareGenerate && shareGenerate.addEventListener('click', ()=>{
       const fields = els('input[type="checkbox"]', shareFieldsWrap).filter(cb=>cb.checked).map(cb=>cb.value);
       const steps  = els('input[type="checkbox"]', shareStepsWrap).filter(cb=>cb.checked).map(cb=>cb.value);
-      const params = new URLSearchParams();
-      params.set('action','kvt_generate_share_link');
-      params.set('_ajax_nonce', KVT_NONCE);
-      params.set('client', selClient.value);
-      params.set('process', selProcess.value);
-      params.set('page', '');
-      fields.forEach(f=>params.append('fields[]', f));
-      steps.forEach(s=>params.append('steps[]', s));
-      if(shareComments && shareComments.checked) params.set('comments','1');
-      if(CLIENT_VIEW && CLIENT_SLUG) params.set('slug', CLIENT_SLUG);
+      const baseParams = () => {
+        const params = new URLSearchParams();
+        params.set('action','kvt_generate_share_link');
+        params.set('_ajax_nonce', KVT_NONCE);
+        params.set('client', selClient.value);
+        params.set('process', selProcess.value);
+        params.set('page', '');
+        fields.forEach(f=>params.append('fields[]', f));
+        steps.forEach(s=>params.append('steps[]', s));
+        if(shareComments && shareComments.checked) params.set('comments','1');
+        if(CLIENT_VIEW && CLIENT_SLUG) params.set('slug', CLIENT_SLUG);
+        return params;
+      };
+      if(shareMode==='candidate' && selectedCandidateIds.length>1){
+        const promises = selectedCandidateIds.map(id=>{
+          const params = baseParams();
+          params.set('candidate', id);
+          return fetch(KVT_AJAX,{method:'POST',body:params}).then(r=>r.json());
+        });
+        Promise.all(promises).then(res=>{
+          const urls = res.filter(j=>j.success && j.data && j.data.slug).map(j=>KVT_HOME + j.data.slug);
+          if(urls.length) prompt('Enlaces para compartir', urls.join('\n'));
+          else alert('Error generando enlace');
+          shareModal.style.display='none';
+          forceSelect = false;
+          selectedCandidateIds = [];
+          selectedCandidateId = 0;
+          refresh();
+        });
+        return;
+      }
+      const params = baseParams();
       if(shareMode==='candidate') params.set('candidate', selectedCandidateId);
       fetch(KVT_AJAX,{method:'POST',body:params}).then(r=>r.json()).then(j=>{
         if(j.success && j.data && j.data.slug){
@@ -3991,6 +4034,10 @@ function kvtInit(){
             shareModal.style.display='none';
             location.reload();
           }
+          forceSelect = false;
+          selectedCandidateIds = [];
+          selectedCandidateId = 0;
+          refresh();
         } else {
           alert('Error generando enlace');
         }
@@ -4230,6 +4277,7 @@ function kvtInit(){
               window.KVT_PROCESS_MAP[idx].status = p.status;
               window.KVT_PROCESS_MAP[idx].days = p.days;
               window.KVT_PROCESS_MAP[idx].job_stage = p.job_stage;
+              window.KVT_PROCESS_MAP[idx].candidates = p.candidates;
               if(typeof p.client!=='undefined') window.KVT_PROCESS_MAP[idx].client = p.client;
               if(typeof p.client_id!=='undefined') window.KVT_PROCESS_MAP[idx].client_id = p.client_id;
             } else {
@@ -4243,6 +4291,7 @@ function kvtInit(){
           const subs=[];
           if(p.client) subs.push('Empresa: '+esc(p.client));
           subs.push('Creado por '+esc(p.creator||'')+(p.created?' el '+esc(p.created):''));
+          subs.push('Candidatos: '+(p.candidates||0)+' / Etapa: '+esc(p.job_stage||''));
           const subHtml = '<br><span class="kvt-sub">'+subs.join(' / ')+'</span>';
           const sel = '<select class="kvt-process-status" data-id="'+escAttr(p.id)+'">'+
             Object.keys(statuses).map(s=>'<option value="'+s+'"'+(p.status===s?' selected':'')+'>'+statuses[s]+'</option>').join('')+
@@ -5528,6 +5577,7 @@ JS;
                     $max = $idx;
                 }
             }
+            $candidate_count = count($posts);
             if ($max >= 0 && isset($statuses[$max])) $job_stage = $statuses[$max];
 
             $items[] = [
@@ -5542,6 +5592,7 @@ JS;
                 'created'       => $created_fmt,
                 'status'        => $status,
                 'days'          => $days_active,
+                'candidates'    => $candidate_count,
                 'job_stage'     => $job_stage,
                 'edit_url'      => admin_url('term.php?taxonomy=' . self::TAX_PROCESS . '&tag_ID=' . $t->term_id),
             ];
