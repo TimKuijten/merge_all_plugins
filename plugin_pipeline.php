@@ -1134,6 +1134,18 @@ JS;
         }
         return $out;
     }
+
+    private function get_candidate_countries() {
+        global $wpdb;
+        $sql = $wpdb->prepare(
+            "SELECT DISTINCT pm.meta_value FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID WHERE pm.meta_key = %s AND p.post_type = %s AND p.post_status <> 'trash' AND pm.meta_value <> ''",
+            'kvt_country',
+            self::CPT
+        );
+        $countries = $wpdb->get_col($sql);
+        sort($countries);
+        return $countries;
+    }
     private function get_term_name($post_id, $tax){
         $terms = wp_get_object_terms($post_id, $tax);
         if (is_wp_error($terms) || empty($terms)) return '';
@@ -1282,8 +1294,6 @@ JS;
                         <input type="text" id="kvt_search" placeholder="Buscar candidato, empresa, ciudad...">
                         <label for="kvt_stage_filter">Etapa</label>
                         <select id="kvt_stage_filter"><option value="">Todas las etapas</option></select>
-                        <label for="kvt_country_filter">País</label>
-                        <select id="kvt_country_filter" multiple></select>
                         <form id="kvt_export_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank" style="display:inline;">
                             <input type="hidden" name="action" value="kvt_export">
                             <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
@@ -1384,6 +1394,7 @@ JS;
                       </ul>
                     </div>
                     <input type="text" id="kvt_keyword_board_input" placeholder="<?php esc_attr_e('Introduce palabras clave (usa Y/O)', 'kovacic'); ?>">
+                    <select id="kvt_keyword_board_country"><option value=""><?php esc_html_e('Todos los países', 'kovacic'); ?></option></select>
                     <button type="button" class="kvt-btn" id="kvt_keyword_board_search"><?php esc_html_e('Buscar', 'kovacic'); ?></button>
                   </div>
                   <div id="kvt_keyword_board_results" class="kvt-modal-list"></div>
@@ -1391,6 +1402,7 @@ JS;
                 <div id="kvt_ai_view" style="display:none;">
                   <div class="kvt-modal-controls">
                     <textarea id="kvt_ai_board_input" rows="6" style="width:100%;" placeholder="Describe el perfil o pega la descripción del trabajo para que la IA sugiera candidatos"></textarea>
+                    <select id="kvt_ai_board_country"><option value=""><?php esc_html_e('Todos los países', 'kovacic'); ?></option></select>
                     <button type="button" class="kvt-btn" id="kvt_ai_board_search">Buscar</button>
                   </div>
                   <div id="kvt_ai_board_results" class="kvt-modal-list"></div>
@@ -1600,6 +1612,7 @@ JS;
               <div id="kvt_tab_ai" class="kvt-tab-panel">
                 <div class="kvt-modal-controls">
                   <textarea id="kvt_ai_input" rows="6" style="width:100%;" placeholder="Describe el perfil o pega la descripción del trabajo para que la IA sugiera candidatos"></textarea>
+                  <select id="kvt_ai_country"><option value=""><?php esc_html_e('Todos los países', 'kovacic'); ?></option></select>
                   <button type="button" class="kvt-btn" id="kvt_ai_search">Buscar</button>
                 </div>
                 <div id="kvt_ai_results" class="kvt-modal-list"></div>
@@ -1616,6 +1629,7 @@ JS;
                     </ul>
                   </div>
                   <input type="text" id="kvt_keyword_input" placeholder="<?php esc_attr_e('Introduce palabras clave (usa Y/O)', 'kovacic'); ?>">
+                  <select id="kvt_keyword_country"><option value=""><?php esc_html_e('Todos los países', 'kovacic'); ?></option></select>
                   <button type="button" class="kvt-btn" id="kvt_keyword_search"><?php esc_html_e('Buscar', 'kovacic'); ?></button>
                 </div>
                 <div id="kvt_keyword_results" class="kvt-modal-list"></div>
@@ -1949,6 +1963,8 @@ JS;
         $fields   = $is_client_board ? array_map('sanitize_text_field', (array) ($link_cfg['fields'] ?? [])) : [];
         wp_add_inline_script('kvt-app', 'const KVT_STATUSES='.wp_json_encode($statuses).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_COLUMNS='.wp_json_encode($columns).';',  'before');
+        $countries = $this->get_candidate_countries();
+        wp_add_inline_script('kvt-app', 'const KVT_COUNTRIES='.wp_json_encode($countries).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_AJAX="'.esc_js(admin_url('admin-ajax.php')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/view-board/')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
@@ -1994,6 +2010,7 @@ function kvtInit(){
   const CLIENT_SLUG = typeof KVT_CLIENT_SLUG !== 'undefined' ? KVT_CLIENT_SLUG : '';
   const IS_ADMIN = typeof KVT_IS_ADMIN !== 'undefined' && KVT_IS_ADMIN;
   const CLIENT_LINKS = (typeof KVT_CLIENT_LINKS === 'object' && KVT_CLIENT_LINKS) ? KVT_CLIENT_LINKS : {};
+  const COUNTRY_OPTIONS = Array.isArray(window.KVT_COUNTRIES) ? window.KVT_COUNTRIES : [];
 
   const helpBtn = el('.kvt-help');
   const helpModal = el('#kvt_help_modal');
@@ -2068,7 +2085,6 @@ function kvtInit(){
   const tBody = el('#kvt_table_body');
   const searchInput = el('#kvt_search');
   const stageSelect = el('#kvt_stage_filter');
-  const countrySelect = el('#kvt_country_filter');
   const assignSearch = el('#kvt_assign_search');
   const boardBase   = el('#kvt_board_base');
   const boardList   = el('#kvt_board_list');
@@ -2333,6 +2349,19 @@ function kvtInit(){
   const aiBoardInput = el('#kvt_ai_board_input');
   const aiBoardBtn = el('#kvt_ai_board_search');
   const aiBoardResults = el('#kvt_ai_board_results');
+  const keywordCountry = el('#kvt_keyword_country', modal);
+  const keywordBoardCountry = el('#kvt_keyword_board_country');
+  const aiCountry = el('#kvt_ai_country', modal);
+  const aiBoardCountry = el('#kvt_ai_board_country');
+
+  function renderCountrySelect(sel){
+    if(!sel) return;
+    sel.innerHTML = '<option value="">Todos los países</option>' + COUNTRY_OPTIONS.map(c=>'<option value="'+escAttr(c)+'">'+esc(c)+'</option>').join('');
+  }
+  renderCountrySelect(keywordCountry);
+  renderCountrySelect(keywordBoardCountry);
+  renderCountrySelect(aiCountry);
+  renderCountrySelect(aiBoardCountry);
 
   if (CLIENT_VIEW) {
     if (selClient) { selClient.value = CLIENT_ID; selClient.disabled = true; }
@@ -3025,7 +3054,6 @@ function kvtInit(){
 
     if (!CLIENT_VIEW) enableDnD();
     allRows = Array.isArray(data) ? data : [];
-    populateCountryOptions(allRows);
     filterTable();
   }
 
@@ -3130,14 +3158,6 @@ function kvtInit(){
       logs.sort((a,b)=>a.time<b.time?1:-1);
       activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+l.time+' - '+l.text+'</li>').join('') : '<li>No hay actividad</li>';
     }
-  }
-
-  function populateCountryOptions(rows){
-    if(!countrySelect) return;
-    const selected = Array.from(countrySelect.selectedOptions).map(o=>o.value);
-    const countries = [...new Set(rows.map(r=>(r.meta.country||'').trim()).filter(Boolean))].sort();
-    countrySelect.innerHTML = countries.map(c=>'<option value="'+escAttr(c)+'">'+esc(c)+'</option>').join('');
-    selected.forEach(v=>{ const opt = els('option', countrySelect).find(o=>o.value===v); if(opt) opt.selected = true; });
   }
 
   function renderActivityDashboard(data){
@@ -3354,8 +3374,6 @@ function kvtInit(){
     }
     const st = (!selClient.value && !selProcess.value) ? '' : (stageSelect ? stageSelect.value : '');
     if(st){ rows = rows.filter(r=>r.status===st); }
-    const cs = countrySelect ? Array.from(countrySelect.selectedOptions).map(o=>o.value).filter(Boolean) : [];
-    if(cs.length){ rows = rows.filter(r=>cs.includes(r.meta.country||'')); }
     renderTable(rows);
   }
 
@@ -3442,6 +3460,8 @@ function kvtInit(){
     params.set('action','kvt_ai_search');
     params.set('_ajax_nonce', KVT_NONCE);
     params.set('description', desc);
+    const c = aiCountry ? aiCountry.value : '';
+    if(c) params.set('country', c);
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(j=>{
         aiBtn.disabled = false;
@@ -3482,6 +3502,8 @@ function kvtInit(){
     params.set('action','kvt_ai_search');
     params.set('_ajax_nonce', KVT_NONCE);
     params.set('description', desc);
+    const c = aiBoardCountry ? aiBoardCountry.value : '';
+    if(c) params.set('country', c);
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(j=>{
         aiBoardBtn.disabled = false;
@@ -3522,6 +3544,8 @@ function kvtInit(){
     params.set('action','kvt_keyword_search');
     params.set('_ajax_nonce', KVT_NONCE);
     params.set('query', query);
+    const c = keywordCountry ? keywordCountry.value : '';
+    if(c) params.set('country', c);
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(j=>{
         keywordBtn.disabled = false;
@@ -3563,6 +3587,8 @@ function kvtInit(){
     params.set('action','kvt_keyword_search');
     params.set('_ajax_nonce', KVT_NONCE);
     params.set('query', query);
+    const c = keywordBoardCountry ? keywordBoardCountry.value : '';
+    if(c) params.set('country', c);
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(j=>{
         keywordBoardBtn.disabled = false;
@@ -3702,7 +3728,6 @@ function kvtInit(){
 
   searchInput && searchInput.addEventListener('input', filterTable);
   stageSelect && stageSelect.addEventListener('change', filterTable);
-  countrySelect && countrySelect.addEventListener('change', filterTable);
   document.addEventListener('click', e=>{
     if(e.target.classList.contains('kvt-row-view')){
       const id = e.target.dataset.id;
@@ -5621,6 +5646,7 @@ JS;
         $contact_name  = isset($_POST['contact_name']) ? sanitize_text_field($_POST['contact_name']) : '';
         $contact_email = isset($_POST['contact_email']) ? sanitize_email($_POST['contact_email']) : '';
         $desc = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+        $country = isset($_POST['country']) ? sanitize_text_field(wp_unslash($_POST['country'])) : '';
         if ($name === '') wp_send_json_error(['msg'=>'Nombre requerido'],400);
 
         $term = wp_insert_term($name, self::TAX_PROCESS, ['description'=>$desc]);
@@ -5708,17 +5734,27 @@ JS;
         }
 
         $desc = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+        $country = isset($_POST['country']) ? sanitize_text_field(wp_unslash($_POST['country'])) : '';
         if (!$desc) wp_send_json_error(['msg' => 'Descripción vacía'], 400);
 
         $key = get_option(self::OPT_OPENAI_KEY, '');
         if (!$key) wp_send_json_error(['msg' => 'Falta la clave'], 400);
 
         // Fetch only candidate IDs to reduce memory footprint during the scan
-        $candidate_ids = get_posts([
+        $args = [
             'post_type'      => self::CPT,
             'posts_per_page' => -1,
             'fields'         => 'ids',
-        ]);
+        ];
+        if ($country) {
+            $args['meta_query'] = [
+                [
+                    'key'   => 'kvt_country',
+                    'value' => $country,
+                ]
+            ];
+        }
+        $candidate_ids = get_posts($args);
         $items = [];
         foreach ($candidate_ids as $cid) {
             $cv_text = $this->get_candidate_cv_text($cid);
@@ -5782,7 +5818,17 @@ JS;
 
         $keywords = array_unique(array_merge($required, $optional));
 
-        $candidates = get_posts(['post_type' => self::CPT, 'posts_per_page' => -1]);
+        $country = isset($_POST['country']) ? sanitize_text_field(wp_unslash($_POST['country'])) : '';
+        $args = ['post_type' => self::CPT, 'posts_per_page' => -1];
+        if ($country) {
+            $args['meta_query'] = [
+                [
+                    'key'   => 'kvt_country',
+                    'value' => $country,
+                ]
+            ];
+        }
+        $candidates = get_posts($args);
         $items = [];
         foreach ($candidates as $c) {
             $cv_text = strtolower($this->get_candidate_cv_text($c->ID));
