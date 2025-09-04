@@ -1371,9 +1371,17 @@ JS;
                 </div>
                 <div id="kvt_keyword_view" style="display:none;">
                   <div class="kvt-modal-controls">
+                    <div class="kvt-hint">
+                      <p><?php esc_html_e('Escribe las palabras clave separadas por Y si todas deben aparecer o por O si basta con alguna.', 'kovacic'); ?></p>
+                      <p><?php esc_html_e('Ejemplos:', 'kovacic'); ?></p>
+                      <ul>
+                        <li><?php esc_html_e('PPA Y minería Y Chile O Holanda', 'kovacic'); ?></li>
+                        <li><?php esc_html_e('energía solar Y fotovoltaica', 'kovacic'); ?></li>
+                        <li><?php esc_html_e('litio O cobre O níquel', 'kovacic'); ?></li>
+                      </ul>
+                    </div>
                     <input type="text" id="kvt_keyword_board_input" placeholder="<?php esc_attr_e('Introduce palabras clave (usa Y/O)', 'kovacic'); ?>">
                     <button type="button" class="kvt-btn" id="kvt_keyword_board_search"><?php esc_html_e('Buscar', 'kovacic'); ?></button>
-                    <small class="kvt-hint"><?php esc_html_e('Separa las palabras clave con Y si todas deben aparecer o con O si basta alguna. Ejemplo: "PPA Y minería Y Chile O Holanda" buscará perfiles con PPA y minería y además Chile o Holanda.', 'kovacic'); ?></small>
                   </div>
                   <div id="kvt_keyword_board_results" class="kvt-modal-list"></div>
                 </div>
@@ -1588,9 +1596,17 @@ JS;
               </div>
               <div id="kvt_tab_keyword" class="kvt-tab-panel">
                 <div class="kvt-modal-controls">
+                  <div class="kvt-hint">
+                    <p><?php esc_html_e('Escribe las palabras clave separadas por Y si todas deben aparecer o por O si basta con alguna.', 'kovacic'); ?></p>
+                    <p><?php esc_html_e('Ejemplos:', 'kovacic'); ?></p>
+                    <ul>
+                      <li><?php esc_html_e('PPA Y minería Y Chile O Holanda', 'kovacic'); ?></li>
+                      <li><?php esc_html_e('energía solar Y fotovoltaica', 'kovacic'); ?></li>
+                      <li><?php esc_html_e('litio O cobre O níquel', 'kovacic'); ?></li>
+                    </ul>
+                  </div>
                   <input type="text" id="kvt_keyword_input" placeholder="<?php esc_attr_e('Introduce palabras clave (usa Y/O)', 'kovacic'); ?>">
                   <button type="button" class="kvt-btn" id="kvt_keyword_search"><?php esc_html_e('Buscar', 'kovacic'); ?></button>
-                  <small class="kvt-hint"><?php esc_html_e('Separa las palabras clave con Y si todas deben aparecer o con O si basta alguna. Ejemplo: "PPA Y minería Y Chile O Holanda" buscará perfiles con PPA y minería y además Chile o Holanda.', 'kovacic'); ?></small>
                 </div>
                 <div id="kvt_keyword_results" class="kvt-modal-list"></div>
               </div>
