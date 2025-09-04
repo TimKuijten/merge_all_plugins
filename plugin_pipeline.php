@@ -1257,6 +1257,7 @@ JS;
                 <a href="#" data-view="ats" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
                 <a href="#" id="kvt_nav_export"><span class="dashicons dashicons-download"></span> Exportar</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
+                <a href="#" data-view="bulkemail"><span class="dashicons dashicons-email-alt"></span> Bulk Email</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
                 <a href="#"><span class="dashicons dashicons-filter"></span> Nuevo filtro</a>
             </nav>
@@ -1423,6 +1424,13 @@ JS;
                     <h4>Assistente MIT</h4>
                     <p id="kvt_mit_content"></p>
                     <ul id="kvt_mit_news"></ul>
+                </div>
+                <div id="kvt_bulkemail_view" style="display:none;">
+                  <?php if (class_exists('KT_AIBulkMailer_ES')) {
+                    ob_start();
+                    (new KT_AIBulkMailer_ES())->page();
+                    echo ob_get_clean();
+                  } ?>
                 </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
@@ -2143,15 +2151,16 @@ function kvtInit(){
   let stageNext = '';
 
   const filtersBar = el('#kvt_filters_bar');
-  const calendarWrap = el('#kvt_calendar');
-  const mitWrap = el('#kvt_mit_view');
-  const keywordBoard = el('#kvt_keyword_view');
-  const aiBoard = el('#kvt_ai_view');
-  const mitContent = el('#kvt_mit_content');
-  const mitNews = el('#kvt_mit_news');
-  const activityWrap = el('#kvt_activity');
-  const boardWrap    = el('#kvt_board_wrap');
-  const widgetsWrap  = el('.kvt-widgets');
+    const calendarWrap = el('#kvt_calendar');
+    const mitWrap = el('#kvt_mit_view');
+    const keywordBoard = el('#kvt_keyword_view');
+    const aiBoard = el('#kvt_ai_view');
+    const bulkEmailWrap = el('#kvt_bulkemail_view');
+    const mitContent = el('#kvt_mit_content');
+    const mitNews = el('#kvt_mit_news');
+    const activityWrap = el('#kvt_activity');
+    const boardWrap    = el('#kvt_board_wrap');
+    const widgetsWrap  = el('.kvt-widgets');
   const toggleKanban = el('#kvt_toggle_kanban');
 
   const selClient  = el('#kvt_client');
@@ -2229,6 +2238,7 @@ function kvtInit(){
     if(mitWrap) mitWrap.style.display='none';
     if(keywordBoard) keywordBoard.style.display='none';
     if(aiBoard) aiBoard.style.display='none';
+    if(bulkEmailWrap) bulkEmailWrap.style.display='none';
     if(widgetsWrap) widgetsWrap.style.display='flex';
     if(view==='ats'){
       filtersBar.style.display='flex';
@@ -2307,6 +2317,18 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(keywordBoard) keywordBoard.style.display='block';
+    } else if(view==='bulkemail'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(overview) overview.style.display='none';
+      if(atsBar) atsBar.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(boardBase) boardBase.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(bulkEmailWrap) bulkEmailWrap.style.display='block';
     } else {
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -6533,3 +6555,10 @@ JS;
 
 register_activation_hook(__FILE__, ['Kovacic_Pipeline_Visualizer', 'activate']);
 new Kovacic_Pipeline_Visualizer();
+
+require_once __DIR__.'/bulkemail';
+if (isset($bulkMailer)) {
+  add_action('wp_enqueue_scripts', function() use ($bulkMailer) {
+    $bulkMailer->enqueue('toplevel_page_kt-abm');
+  });
+}
