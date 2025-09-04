@@ -1138,13 +1138,20 @@ JS;
     private function get_candidate_countries() {
         global $wpdb;
         $sql = $wpdb->prepare(
-            "SELECT DISTINCT pm.meta_value FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID WHERE pm.meta_key = %s AND p.post_type = %s AND p.post_status <> 'trash' AND pm.meta_value <> ''",
-            'kvt_country',
+            "SELECT DISTINCT pm.meta_value FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID WHERE pm.meta_key IN ('kvt_country','country') AND p.post_type = %s AND p.post_status <> 'trash' AND pm.meta_value <> ''",
             self::CPT
         );
-        $countries = $wpdb->get_col($sql);
-        sort($countries);
-        return $countries;
+        $raw = $wpdb->get_col($sql);
+        $countries = [];
+        foreach ($raw as $c) {
+            $c = trim($c);
+            $norm = strtolower(remove_accents($c));
+            if (!isset($countries[$norm])) {
+                $countries[$norm] = $c;
+            }
+        }
+        ksort($countries);
+        return array_values($countries);
     }
     private function get_term_name($post_id, $tax){
         $terms = wp_get_object_terms($post_id, $tax);
