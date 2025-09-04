@@ -8,6 +8,8 @@ Author: Tim Kuijten - Kovacic Executive Talent Research
 
 if (!defined('ABSPATH')) exit;
 
+require_once __DIR__ . '/bulkemail-service.php';
+
 class Kovacic_Pipeline_Visualizer {
     const CPT           = 'kvt_candidate';
     const TAX_CLIENT    = 'kvt_client';
@@ -118,6 +120,14 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_generate_roles',       [$this, 'ajax_generate_roles']);
         add_action('wp_ajax_nopriv_kvt_generate_roles',[$this, 'ajax_generate_roles']);
         add_action('wp_ajax_kvt_mit_suggestions',      [$this, 'ajax_mit_suggestions']);
+        add_action('wp_ajax_kvt_bulk_import',          [$this, 'ajax_bulk_import']);
+        add_action('wp_ajax_nopriv_kvt_bulk_import',   [$this, 'ajax_bulk_import']);
+        add_action('wp_ajax_kvt_bulk_generate',        [$this, 'ajax_bulk_generate']);
+        add_action('wp_ajax_nopriv_kvt_bulk_generate', [$this, 'ajax_bulk_generate']);
+        add_action('wp_ajax_kvt_bulk_send',            [$this, 'ajax_bulk_send']);
+        add_action('wp_ajax_nopriv_kvt_bulk_send',     [$this, 'ajax_bulk_send']);
+        add_action('wp_ajax_kvt_bulk_eml_zip',         [$this, 'ajax_bulk_eml_zip']);
+        add_action('wp_ajax_nopriv_kvt_bulk_eml_zip',  [$this, 'ajax_bulk_eml_zip']);
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
@@ -1235,6 +1245,7 @@ JS;
                 <a href="#" id="kvt_nav_export"><span class="dashicons dashicons-download"></span> Exportar</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
+                <a href="#" data-view="bulk"><span class="dashicons dashicons-email-alt"></span> Correo masivo</a>
                 <a href="#"><span class="dashicons dashicons-filter"></span> Nuevo filtro</a>
             </nav>
             <div class="kvt-content">
@@ -1371,6 +1382,19 @@ JS;
                     <h4>Assistente MIT</h4>
                     <p id="kvt_mit_content"></p>
                     <ul id="kvt_mit_news"></ul>
+                </div>
+                <div id="kvt_bulk_view" class="kvt-bulk" style="display:none;">
+                    <h4>Correo masivo</h4>
+                    <div class="kvt-bulk-panel">
+                        <input type="file" id="kvt_bulk_csv">
+                        <button type="button" class="kvt-btn" id="kvt_bulk_import">Importar</button>
+                        <textarea id="kvt_bulk_prompt" placeholder="Prompt de IA"></textarea>
+                        <button type="button" class="kvt-btn" id="kvt_bulk_generate">Generar</button>
+                        <div id="kvt_bulk_preview"></div>
+                        <button type="button" class="kvt-btn kvt-primary" id="kvt_bulk_send">Enviar</button>
+                        <button type="button" class="kvt-btn kvt-secondary" id="kvt_bulk_export">Descargar EML</button>
+                        <ul id="kvt_bulk_list"></ul>
+                    </div>
                 </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
@@ -1702,6 +1726,9 @@ JS;
         .kvt-nav a.active{background:#0A212E;color:#fff}
         .kvt-nav a:hover{background:#e2e8f0;color:#0A212E}
         .kvt-nav a .dashicons{font-size:20px}
+        .kvt-bulk-panel{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+        .kvt-bulk textarea{width:100%;min-height:120px}
+        .kvt-bulk-panel ul{list-style:disc;padding-left:20px}
         .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
         .kvt-btn:hover{opacity:.95}
           .kvt-secondary{background:#475569}
@@ -1944,6 +1971,7 @@ JS;
             wp_add_inline_script('kvt-app', 'const KVT_PROCESS_ID='.$pid.';', 'before');
         }
         wp_add_inline_script('kvt-app', 'const KVT_BULKREADER_URL="'.esc_url(admin_url('admin.php?page=kt-abm')).'";', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_BULK_NONCE="'.esc_js(wp_create_nonce('kvt_bulk_email')).'";', 'before');
 
             // App JS
             $js = <<<'JS'
@@ -2087,6 +2115,17 @@ function kvtInit(){
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
   const toggleKanban = el('#kvt_toggle_kanban');
+  const bulkWrap = el('#kvt_bulk_view');
+  const bulkCsv = el('#kvt_bulk_csv');
+  const bulkImportBtn = el('#kvt_bulk_import');
+  const bulkGenerateBtn = el('#kvt_bulk_generate');
+  const bulkSendBtn = el('#kvt_bulk_send');
+  const bulkExportBtn = el('#kvt_bulk_export');
+  const bulkPrompt = el('#kvt_bulk_prompt');
+  const bulkPreview = el('#kvt_bulk_preview');
+  const bulkList = el('#kvt_bulk_list');
+  let bulkRecipients = [];
+  let bulkTemplates = {subject_template:'', body_template:''};
 
   const selClient  = el('#kvt_client');
   const selProcess = el('#kvt_process');
@@ -2121,6 +2160,58 @@ function kvtInit(){
   let calendarEvents = [];
   let calMonth = (new Date()).getMonth();
   let calYear  = (new Date()).getFullYear();
+
+  function renderBulkList(){
+    if(!bulkList) return;
+    bulkList.innerHTML = bulkRecipients.map(r=>'<li>'+esc(r.email)+'</li>').join('');
+  }
+
+  bulkImportBtn && bulkImportBtn.addEventListener('click', async ()=>{
+    const fd = new FormData();
+    fd.append('action','kvt_bulk_import');
+    fd.append('nonce', KVT_BULK_NONCE);
+    const r = await fetch(KVT_AJAX,{method:'POST', body:fd});
+    const j = await r.json();
+    if(j.success){ bulkRecipients = j.data; renderBulkList(); }
+  });
+
+  bulkGenerateBtn && bulkGenerateBtn.addEventListener('click', async ()=>{
+    const fd = new FormData();
+    fd.append('action','kvt_bulk_generate');
+    fd.append('nonce', KVT_BULK_NONCE);
+    fd.append('prompt', bulkPrompt ? bulkPrompt.value : '');
+    const r = await fetch(KVT_AJAX,{method:'POST', body:fd});
+    const j = await r.json();
+    if(j.success){ bulkTemplates = j.data; if(bulkPreview) bulkPreview.innerHTML = j.data.body_template; }
+  });
+
+  bulkSendBtn && bulkSendBtn.addEventListener('click', async ()=>{
+    const payload = {...bulkTemplates, recipients: bulkRecipients};
+    const fd = new FormData();
+    fd.append('action','kvt_bulk_send');
+    fd.append('nonce', KVT_BULK_NONCE);
+    fd.append('payload', JSON.stringify(payload));
+    const r = await fetch(KVT_AJAX,{method:'POST', body:fd});
+    const j = await r.json();
+    if(j.success){ alert('Enviados: '+j.data.sent); }
+  });
+
+  bulkExportBtn && bulkExportBtn.addEventListener('click', ()=>{
+    const payload = {...bulkTemplates, recipients: bulkRecipients};
+    const fd = new FormData();
+    fd.append('action','kvt_bulk_eml_zip');
+    fd.append('nonce', KVT_BULK_NONCE);
+    fd.append('payload', JSON.stringify(payload));
+    fetch(KVT_AJAX,{method:'POST', body:fd})
+      .then(r=>r.blob()).then(b=>{
+        const url = URL.createObjectURL(b);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'bulk_emails.zip';
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+  });
 
   function formatInputDate(v){ const p=v.split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : v; }
 
@@ -2165,6 +2256,7 @@ function kvtInit(){
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
     if(widgetsWrap) widgetsWrap.style.display='flex';
+    if(bulkWrap) bulkWrap.style.display='none';
     if(view==='ats'){
       filtersBar.style.display='flex';
       tableWrap.style.display='block';
@@ -2218,6 +2310,16 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(mitWrap) { mitWrap.style.display='block'; loadMit(); }
+    } else if(view==='bulk'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(mitWrap) mitWrap.style.display='none';
+      if(bulkWrap) bulkWrap.style.display='block';
     } else {
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -4629,6 +4731,47 @@ JS;
             );
         }
         wp_send_json_success(['suggestions' => $text, 'news' => $news]);
+    }
+
+    public function ajax_bulk_import() {
+        check_ajax_referer('kvt_bulk_email', 'nonce');
+        $rows = KVT_BulkEmail_Service::import_candidates();
+        wp_send_json_success($rows);
+    }
+
+    public function ajax_bulk_generate() {
+        check_ajax_referer('kvt_bulk_email', 'nonce');
+        $prompt = isset($_POST['prompt']) ? wp_unslash($_POST['prompt']) : '';
+        $res = KVT_BulkEmail_Service::generate($prompt);
+        if (is_wp_error($res)) {
+            wp_send_json_error(['error' => $res->get_error_message()], 400);
+        }
+        wp_send_json_success($res);
+    }
+
+    public function ajax_bulk_send() {
+        check_ajax_referer('kvt_bulk_email', 'nonce');
+        if (!current_user_can('edit_posts')) wp_send_json_error(['error' => 'No autorizado'], 403);
+        $payload_json = isset($_POST['payload']) ? wp_unslash($_POST['payload']) : '';
+        $payload = json_decode($payload_json, true);
+        if (!$payload) wp_send_json_error(['error' => 'Payload inválido'], 400);
+        $res = KVT_BulkEmail_Service::send($payload);
+        wp_send_json_success($res);
+    }
+
+    public function ajax_bulk_eml_zip() {
+        check_ajax_referer('kvt_bulk_email', 'nonce');
+        if (!current_user_can('edit_posts')) { status_header(403); echo 'No autorizado'; exit; }
+        $payload_json = isset($_POST['payload']) ? wp_unslash($_POST['payload']) : '';
+        $payload = json_decode($payload_json, true);
+        if (!$payload) { status_header(400); echo 'Payload inválido'; exit; }
+        $zip = KVT_BulkEmail_Service::create_eml_zip($payload);
+        if (is_wp_error($zip) || !$zip) { status_header(500); echo 'No se pudo crear el ZIP'; exit; }
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="drafts.zip"');
+        readfile($zip);
+        @unlink($zip);
+        exit;
     }
 
     public function mit_lightbulb() {
