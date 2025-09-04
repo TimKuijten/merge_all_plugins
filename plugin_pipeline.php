@@ -1529,7 +1529,7 @@ JS;
                 <button type="button" class="kvt-tab" data-target="clients">Clientes</button>
                 <button type="button" class="kvt-tab" data-target="processes">Procesos</button>
                 <button type="button" class="kvt-tab" data-target="ai">Buscador IA</button>
-                <button type="button" class="kvt-tab" data-target="keyword">Keyword Search</button>
+                <button type="button" class="kvt-tab" data-target="keyword"><?php esc_html_e('Búsqueda de palabras', 'kovacic'); ?></button>
               </div>
               <div class="kvt-new" id="kvt_new_container">
                 <button type="button" class="kvt-btn" id="kvt_new_btn">Nuevo</button>
@@ -1589,8 +1589,9 @@ JS;
               </div>
               <div id="kvt_tab_keyword" class="kvt-tab-panel">
                 <div class="kvt-modal-controls">
-                  <input type="text" id="kvt_keyword_input" placeholder="Enter keywords (use AND/OR)">
-                  <button type="button" class="kvt-btn" id="kvt_keyword_search">Search</button>
+                  <input type="text" id="kvt_keyword_input" placeholder="<?php esc_attr_e('Introduce palabras clave (usa Y/O)', 'kovacic'); ?>">
+                  <button type="button" class="kvt-btn" id="kvt_keyword_search"><?php esc_html_e('Buscar', 'kovacic'); ?></button>
+                  <small class="kvt-hint"><?php esc_html_e('Usa Y para exigir todas las palabras y O para que coincida cualquiera de ellas', 'kovacic'); ?></small>
                 </div>
                 <div id="kvt_keyword_results" class="kvt-modal-list"></div>
               </div>
@@ -3432,7 +3433,7 @@ function kvtInit(){
           return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
             '<h4>'+name+cv+'</h4>'+
             (roleLoc?'<p class="kvt-ai-meta">'+esc(roleLoc)+'</p>':'')+
-            '<p class="kvt-ai-summary"><strong>Keywords:</strong> '+esc(matches)+'</p>'+
+            '<p class="kvt-ai-summary"><strong>Palabras clave:</strong> '+esc(matches)+'</p>'+
             '<div class="kvt-mini-actions"><button type="button" class="kvt-btn kvt-secondary kvt-mini-view">Ver perfil</button></div>'+
             '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
@@ -5636,22 +5637,22 @@ JS;
         $required = [];
         $optional = [];
 
-        if (strpos($query, ' or ') !== false && strpos($query, ' and ') !== false) {
-            $first_or = strpos($query, ' or ');
+        if (strpos($query, ' o ') !== false && strpos($query, ' y ') !== false) {
+            $first_or = strpos($query, ' o ');
             $before_or = substr($query, 0, $first_or);
-            $last_and = strrpos($before_or, ' and ');
+            $last_and = strrpos($before_or, ' y ');
             if ($last_and !== false) {
                 $required_part = substr($query, 0, $last_and);
-                $required = array_filter(array_map('trim', preg_split('/\s+and\s+/', $required_part)));
-                $optional_part = substr($query, $last_and + 5);
-                $optional = array_filter(array_map('trim', preg_split('/\s+or\s+/', $optional_part)));
+                $required = array_filter(array_map('trim', preg_split('/\s+y\s+/', $required_part)));
+                $optional_part = substr($query, $last_and + 3);
+                $optional = array_filter(array_map('trim', preg_split('/\s+o\s+/', $optional_part)));
             } else {
-                $optional = array_filter(array_map('trim', preg_split('/\s+or\s+/', $query)));
+                $optional = array_filter(array_map('trim', preg_split('/\s+o\s+/', $query)));
             }
-        } elseif (strpos($query, ' or ') !== false) {
-            $optional = array_filter(array_map('trim', preg_split('/\s+or\s+/', $query)));
+        } elseif (strpos($query, ' o ') !== false) {
+            $optional = array_filter(array_map('trim', preg_split('/\s+o\s+/', $query)));
         } else {
-            $required = array_filter(array_map('trim', preg_split('/\s+and\s+/', $query)));
+            $required = array_filter(array_map('trim', preg_split('/\s+y\s+/', $query)));
         }
 
         $keywords = array_unique(array_merge($required, $optional));
