@@ -1880,6 +1880,10 @@ JS;
         .kvt-tabs button.active{background:#0A212E;color:#fff}
         .kvt-tab-panel{display:none}
         .kvt-tab-panel.active{display:block}
+        #kvt_info_modal .kvt-profile-cols{display:flex;gap:20px;flex-wrap:wrap}
+        #kvt_info_modal .kvt-profile-col{flex:1;min-width:220px}
+        #kvt_info_modal .kvt-notes-list{list-style:disc;margin-left:20px;margin-bottom:10px}
+        #kvt_info_modal .kvt-notes-list li{margin-bottom:4px}
         .kvt-modal-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
         .kvt-modal-controls select,.kvt-modal-controls input{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-modal-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;max-height:420px;overflow:auto}
@@ -2680,39 +2684,25 @@ function kvtInit(){
       }).join('');
       return '<dl>'+html+'</dl>';
     }
-    const input = (val,type='text',ph='',cls='')=>'<input class="kvt-input'+(cls?' '+cls:'')+'" type="'+type+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'">';
+    const input = (field,val,type='text',ph='',cls='')=>'<input class="kvt-input'+(cls?' '+cls:'')+'" data-field="'+field+'" type="'+type+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'">';
     const kvInp = (label, html)=>'<dt>'+esc(label)+'</dt><dd>'+html+'</dd>';
 
-    const dl =
-      kvInp('Nombre',       input((m.first_name||''))) +
-      kvInp('Apellidos',    input((m.last_name||''))) +
-      kvInp('Email',        input((m.email||''), 'email')) +
-      kvInp('Teléfono',     input((m.phone||''))) +
-      kvInp('País',         input((m.country||''))) +
-      kvInp('Ciudad',       input((m.city||''))) +
-      kvInp('Current role', input((m.current_role||''))) +
-      kvInp('Tags',         input((m.tags||''))) +
-      kvInp('CV (URL)',     input((m.cv_url||''), 'url', 'https://...')) +
+    const left =
+      kvInp('Nombre',       input('first_name', m.first_name||'')) +
+      kvInp('Apellidos',    input('last_name', m.last_name||'')) +
+      kvInp('Email',        input('email', m.email||'', 'email')) +
+      kvInp('Teléfono',     input('phone', m.phone||'')) +
+      kvInp('País',         input('country', m.country||'')) +
+      kvInp('Ciudad',       input('city', m.city||'')) +
       kvInp('Subir CV',     '<input class=\"kvt-input kvt-cv-file\" type=\"file\" accept=\".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document\">'+
-                            '<button type=\"button\" class=\"kvt-upload-cv\" style=\"margin-top:6px\">Subir y guardar</button>') +
-      kvInp('Fecha subida', input((m.cv_uploaded||''), 'text', 'DD/MM/YYYY', 'kvt-date')) +
-      kvInp('Próxima acción', input((m.next_action||''), 'text', 'DD/MM/YYYY', 'kvt-date')) +
-      kvInp('Comentario próxima acción', input((m.next_action_note||'')));
+                            '<button type=\"button\" class=\"kvt-upload-cv\" style=\"margin-top:6px\">Subir y guardar</button>');
 
-    const notesVal = m.notes || '';
-    const notes =
-      '<div class="kvt-notes">'+
-        '<label><strong>Notas</strong></label>'+
-        '<textarea class="kvt-notes-text">'+esc(notesVal)+'</textarea>'+
-      '</div>';
-    const pubNotesVal = m.public_notes || '';
-    const publicNotes =
-      '<div class="kvt-public-notes">'+
-        '<label><strong>Notas públicas</strong></label>'+
-        '<textarea class="kvt-public-notes-text">'+esc(pubNotesVal)+'</textarea>'+
-      '</div>';
-
-    const assign = '<div class="kvt-assign"><label><strong>Proceso</strong></label><select class="kvt-assign-process"></select><button type="button" class="kvt-assign-btn">Asignar</button></div>';
+    const right =
+      kvInp('Proceso', '<select class="kvt-assign-process"></select><button type="button" class="kvt-assign-btn">Asignar</button>') +
+      kvInp('Current role', input('current_role', m.current_role||'')) +
+      kvInp('Tags',         input('tags', m.tags||'')) +
+      kvInp('CV (URL)',     input('cv_url', m.cv_url||'', 'url', 'https://...')) +
+      kvInp('Fecha subida', input('cv_uploaded', m.cv_uploaded||'', 'text', 'DD/MM/YYYY', 'kvt-date'));
 
     const log = Array.isArray(m.activity_log) ? m.activity_log : [];
     const logItems = log.map(it=>{
@@ -2737,15 +2727,40 @@ function kvtInit(){
     }).join('');
     const logSection = '<div class="kvt-profile-activity"><h3>Actividad</h3>'+(logItems?('<ul>'+logItems+'</ul>'):'<p>No hay actividad</p>')+'</div>';
 
-    const saveBtn = '<button type="button" class="kvt-save-profile">Guardar perfil</button>';
+    const notesRaw = btoa(unescape(encodeURIComponent(m.notes||'')));
+    const notesArr = String(m.notes||'').split('\n').filter(Boolean);
+    const notesList = notesArr.map(line=>{
+      const parts = line.split('|');
+      return '<li>'+esc(parts[0]||'')+' — '+esc(parts[1]||'')+': '+esc(parts[2]||'')+'</li>';
+    }).join('');
 
-    return logSection+'<dl>'+dl+'</dl>'+notes+publicNotes+assign+saveBtn;
+    const tabs = '<div class="kvt-tabs">'+
+      '<button type="button" class="kvt-tab active" data-target="info">Info</button>'+
+      '<button type="button" class="kvt-tab" data-target="notes">Notas</button>'+
+      '<button type="button" class="kvt-tab" data-target="next">Próxima acción</button>'+
+      '</div>';
+
+    const infoTab = '<div id="kvt_profile_tab_info" class="kvt-tab-panel active">'+
+      '<div class="kvt-profile-cols"><dl class="kvt-profile-col">'+left+'</dl><dl class="kvt-profile-col">'+right+'</dl></div>'+logSection+
+      '<button type="button" class="kvt-save-profile">Guardar perfil</button>'+
+      '</div>';
+
+    const notesTab = '<div id="kvt_profile_tab_notes" class="kvt-tab-panel" data-notes="'+notesRaw+'">'+
+      '<ul class="kvt-notes-list">'+notesList+'</ul>'+
+      '<textarea class="kvt-new-note" placeholder="Añadir nota"></textarea>'+
+      '<button type="button" class="kvt-add-note">Guardar nota</button>'+
+      '</div>';
+
+    const nextTab = '<div id="kvt_profile_tab_next" class="kvt-tab-panel"><dl>'+ 
+      kvInp('Fecha', input('next_action', m.next_action||'', 'text', 'DD/MM/YYYY', 'kvt-date'))+
+      kvInp('Comentario', input('next_action_note', m.next_action_note||''))+
+      '</dl><button type="button" class="kvt-save-next">Guardar próxima acción</button></div>';
+
+    return tabs + infoTab + notesTab + nextTab;
   }
 
   function enableProfileEditHandlers(card, id){
-    const inputs = card.querySelectorAll('dl .kvt-input');
-    const txtNotes = card.querySelector('.kvt-notes-text');
-    const txtPubNotes = card.querySelector('.kvt-public-notes-text');
+    const inputs = card.querySelectorAll('.kvt-input[data-field]:not([type="file"])');
     const btnSaveProfile = card.querySelector('.kvt-save-profile');
     if (!btnSaveProfile) return;
 
@@ -2758,36 +2773,13 @@ function kvtInit(){
     card.querySelectorAll('.kvt-date').forEach(i=>i.addEventListener('input', maskDate));
 
     btnSaveProfile.addEventListener('click', ()=>{
-      const vals = Array.from(inputs).map(i=>i.value || '');
-      const payload = {
-        first_name: vals[0] || '',
-        last_name:  vals[1] || '',
-        email:      vals[2] || '',
-        phone:      vals[3] || '',
-        country:    vals[4] || '',
-        city:       vals[5] || '',
-        current_role: vals[6] || '',
-        tags:       vals[7] || '',
-        cv_url:     vals[8] || '',
-        cv_uploaded:vals[10] || '',
-        next_action:vals[11] || '',
-        next_action_note:vals[12] || '',
-        notes:      txtNotes ? txtNotes.value : '',
-        public_notes: txtPubNotes ? txtPubNotes.value : '',
-      };
+      const payload = {};
+      inputs.forEach(i=>{ payload[i.dataset.field] = i.value || ''; });
       fetch(KVT_AJAX, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:new URLSearchParams({action:'kvt_update_profile', _ajax_nonce:KVT_NONCE, id, ...payload}).toString()})
         .then(r=>r.json()).then(j=>{
           if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo guardar el perfil.');
           const title = card.querySelector('.kvt-title');
           if (title) title.textContent = (payload.first_name+' '+payload.last_name).trim() || title.textContent;
-          const sub = card.querySelector('.kvt-sub');
-          if (sub){
-            if (CLIENT_VIEW && ALLOWED_FIELDS.includes('public_notes') && !ALLOWED_FIELDS.includes('notes')) {
-              sub.textContent = payload.public_notes ? lastNoteSnippet(payload.public_notes) : '';
-            } else {
-              sub.textContent = payload.notes ? lastNoteSnippet(payload.notes) : '';
-            }
-          }
           const tagWrap = card.querySelector('.kvt-tags');
           if (tagWrap){
             tagWrap.innerHTML = '';
@@ -2811,36 +2803,6 @@ function kvtInit(){
             const head = card.querySelector('.kvt-card-head');
             if(head) head.after(rl);
           }
-          const follow = card.querySelector('.kvt-followup');
-          if (payload.next_action){
-            const txt = 'Próxima acción: ' + payload.next_action + (payload.next_action_note ? ' — ' + payload.next_action_note : '');
-            if (follow){
-              follow.innerHTML = '';
-              const ico = document.createElement('span');
-              ico.className = 'dashicons dashicons-clock';
-              follow.appendChild(ico);
-              follow.appendChild(document.createTextNode(' ' + txt));
-            } else {
-              const tagsWrap = card.querySelector('.kvt-tags');
-              const f = document.createElement('p');
-              f.className = 'kvt-followup';
-              const ico = document.createElement('span');
-              ico.className = 'dashicons dashicons-clock';
-              f.appendChild(ico);
-              f.appendChild(document.createTextNode(' ' + txt));
-              if (tagsWrap) tagsWrap.after(f); else card.prepend(f);
-            }
-            const parts = payload.next_action.split('/');
-            card.classList.remove('kvt-overdue');
-            if(parts.length===3){
-              const dt = new Date(parts[2], parts[1]-1, parts[0]);
-              const today = new Date(); today.setHours(0,0,0,0);
-              if(dt <= today) card.classList.add('kvt-overdue');
-            }
-          } else if (follow){
-            follow.remove();
-            card.classList.remove('kvt-overdue');
-          }
           alert('Perfil guardado.');
           refresh();
         });
@@ -2849,8 +2811,8 @@ function kvtInit(){
 
   function enableCvUploadHandlers(card, id){
     const fileInput = card.querySelector('.kvt-cv-file');
-    const urlInput  = card.querySelector('dl .kvt-input[type="url"]');
-    const dateInput = card.querySelectorAll('dl .kvt-input')[10];
+    const urlInput  = card.querySelector('.kvt-input[data-field="cv_url"]');
+    const dateInput = card.querySelector('.kvt-input[data-field="cv_uploaded"]');
     const btnUpload = card.querySelector('.kvt-upload-cv');
     if (!fileInput || !btnUpload) return;
     btnUpload.addEventListener('click', async ()=>{
@@ -2872,17 +2834,79 @@ function kvtInit(){
       if (urlInput) urlInput.value = j.data.url || '';
       if (dateInput) dateInput.value = j.data.date || '';
       if(j.data.fields){
-        const inputs = card.querySelectorAll('dl .kvt-input');
-        if(inputs[0] && j.data.fields.first_name) inputs[0].value = j.data.fields.first_name;
-        if(inputs[1] && j.data.fields.last_name) inputs[1].value = j.data.fields.last_name;
-        if(inputs[2] && j.data.fields.email) inputs[2].value = j.data.fields.email;
-        if(inputs[3] && j.data.fields.phone) inputs[3].value = j.data.fields.phone;
-        if(inputs[4] && j.data.fields.country) inputs[4].value = j.data.fields.country;
-        if(inputs[5] && j.data.fields.city) inputs[5].value = j.data.fields.city;
-        if(inputs[6] && j.data.fields.current_role) inputs[6].value = j.data.fields.current_role;
+        ['first_name','last_name','email','phone','country','city','current_role'].forEach(f=>{
+          const inp = card.querySelector('.kvt-input[data-field="'+f+'"]');
+          if(inp && j.data.fields[f]) inp.value = j.data.fields[f];
+        });
       }
       alert('CV subido y guardado.');
       refresh();
+    });
+  }
+
+  function setupInfoTabs(container){
+    const tabs = container.querySelectorAll('.kvt-tabs .kvt-tab');
+    const panels = container.querySelectorAll('.kvt-tab-panel');
+    tabs.forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const target = btn.dataset.target;
+        tabs.forEach(b=>b.classList.toggle('active', b===btn));
+        panels.forEach(p=>p.classList.toggle('active', p.id==='kvt_profile_tab_'+target));
+      });
+    });
+  }
+
+  function enableNotesTab(container, id){
+    const tab = container.querySelector('#kvt_profile_tab_notes');
+    if(!tab) return;
+    const list = tab.querySelector('.kvt-notes-list');
+    const txt = tab.querySelector('.kvt-new-note');
+    const btn = tab.querySelector('.kvt-add-note');
+    let raw = '';
+    try{ raw = tab.dataset.notes ? decodeURIComponent(escape(atob(tab.dataset.notes))) : ''; } catch(e){ raw=''; }
+    if(btn) btn.addEventListener('click', ()=>{
+      const note = txt.value.trim();
+      if(!note){ alert('Escribe una nota.'); return; }
+      const now = new Date();
+      const stamp = now.toLocaleString();
+      const user = KVT_CURRENT_USER || '';
+      const line = stamp+'|'+user+'|'+note;
+      const newRaw = raw ? raw+'\n'+line : line;
+      const params = new URLSearchParams();
+      params.set('action','kvt_update_notes');
+      params.set('_ajax_nonce', KVT_NONCE);
+      params.set('id', id);
+      params.set('notes', newRaw);
+      fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+        .then(r=>r.json()).then(j=>{
+          if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo guardar la nota.');
+          raw = newRaw;
+          const li = document.createElement('li');
+          li.textContent = stamp+' — '+user+': '+note;
+          if(list) list.prepend(li);
+          txt.value='';
+          refresh();
+        });
+    });
+  }
+
+  function enableNextActionTab(container, id){
+    const tab = container.querySelector('#kvt_profile_tab_next');
+    if(!tab) return;
+    const dateInput = tab.querySelector('.kvt-input[data-field="next_action"]');
+    const noteInput = tab.querySelector('.kvt-input[data-field="next_action_note"]');
+    const btn = tab.querySelector('.kvt-save-next');
+    if(!dateInput || !btn) return;
+    const maskDate = e => { let v = e.target.value.replace(/[^0-9]/g,'').slice(0,8); if (v.length>4) v = v.replace(/(\d{2})(\d{2})(\d+)/,'$1-$2-$3'); else if (v.length>2) v = v.replace(/(\d{2})(\d+)/,'$1-$2'); e.target.value = v; };
+    dateInput.addEventListener('input', maskDate);
+    btn.addEventListener('click', ()=>{
+      const payload = { next_action: dateInput.value || '', next_action_note: noteInput ? noteInput.value || '' : '' };
+      fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_update_profile', _ajax_nonce:KVT_NONCE, id, ...payload}).toString()})
+        .then(r=>r.json()).then(j=>{
+          if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo guardar la próxima acción.');
+          alert('Próxima acción guardada.');
+          refresh();
+        });
     });
   }
 
@@ -2923,10 +2947,13 @@ function kvtInit(){
   function openProfile(c){
     if(!c) return;
     infoBody.innerHTML = buildProfileHTML(c);
+    setupInfoTabs(infoBody);
     if(!CLIENT_VIEW){
       enableProfileEditHandlers(infoBody, String(c.id));
       enableCvUploadHandlers(infoBody, String(c.id));
       setupAssignProcess(infoBody, String(c.id));
+      enableNotesTab(infoBody, String(c.id));
+      enableNextActionTab(infoBody, String(c.id));
     }
     infoModal.style.display='flex';
   }
