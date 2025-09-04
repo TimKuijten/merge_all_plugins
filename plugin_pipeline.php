@@ -1231,6 +1231,7 @@ JS;
                 <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidates</a>
                 <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendar</a>
                 <a href="#" id="kvt_add_profile"><span class="dashicons dashicons-id-alt"></span> Base</a>
+                <a href="#" id="kvt_nav_keyword"><span class="dashicons dashicons-search"></span> <?php esc_html_e('Búsqueda de palabras', 'kovacic'); ?></a>
                 <a href="#" id="kvt_toggle_table"><span class="dashicons dashicons-editor-table"></span> Tabla</a>
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" data-view="ats" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
@@ -1531,16 +1532,6 @@ JS;
                 <button type="button" class="kvt-tab" data-target="ai">Buscador IA</button>
                 <button type="button" class="kvt-tab" data-target="keyword"><?php esc_html_e('Búsqueda de palabras', 'kovacic'); ?></button>
               </div>
-              <div class="kvt-new" id="kvt_new_container">
-                <button type="button" class="kvt-btn" id="kvt_new_btn">Nuevo</button>
-                <div class="kvt-new-menu" id="kvt_new_menu">
-                  <button type="button" data-action="candidate">Nuevo candidato</button>
-                  <button type="button" data-action="client">Nuevo cliente</button>
-                  <button type="button" data-action="process">Nuevo proceso</button>
-                  <button type="button" data-action="bulk_cv">Subir CVs</button>
-                </div>
-              </div>
-              <input type="file" id="kvt_bulk_cv_input" multiple style="display:none;">
               <div id="kvt_tab_candidates" class="kvt-tab-panel active kvt-base">
                 <div class="kvt-head">
                   <h3 class="kvt-title">Base de candidatos</h3>
@@ -1591,7 +1582,7 @@ JS;
                 <div class="kvt-modal-controls">
                   <input type="text" id="kvt_keyword_input" placeholder="<?php esc_attr_e('Introduce palabras clave (usa Y/O)', 'kovacic'); ?>">
                   <button type="button" class="kvt-btn" id="kvt_keyword_search"><?php esc_html_e('Buscar', 'kovacic'); ?></button>
-                  <small class="kvt-hint"><?php esc_html_e('Usa Y para exigir todas las palabras y O para que coincida cualquiera de ellas', 'kovacic'); ?></small>
+                  <small class="kvt-hint"><?php esc_html_e('Separa las palabras clave con Y si todas deben aparecer o con O si basta alguna. Ejemplo: "PPA Y minería Y Chile O Holanda" buscará perfiles con PPA y minería y además Chile o Holanda.', 'kovacic'); ?></small>
                 </div>
                 <div id="kvt_keyword_results" class="kvt-modal-list"></div>
               </div>
@@ -1716,10 +1707,6 @@ JS;
         .kvt-btn{background:#0A212E;color:#fff;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;text-decoration:none}
         .kvt-btn:hover{opacity:.95}
           .kvt-secondary{background:#475569}
-          .kvt-new{position:relative;display:inline-block}
-          .kvt-new-menu{position:absolute;right:0;top:100%;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 5px 15px rgba(0,0,0,.1);display:none;flex-direction:column;z-index:1000}
-          .kvt-new-menu button{background:none;color:#0A212E;border:none;padding:8px 12px;text-align:left;cursor:pointer}
-          .kvt-new-menu button:hover{background:#f1f5f9}
           .kvt-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px}
         .kvt-col{min-width:260px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:10px;flex:0 0 260px}
         .kvt-col h3{margin:0 0 8px;font-size:16px;color:#0A212E}
@@ -2104,9 +2091,7 @@ function kvtInit(){
   const btnToggle  = el('#kvt_toggle_table');
   const btnXLS     = el('#kvt_export_xls');
   const btnAdd     = el('#kvt_add_profile');
-  const btnNew     = el('#kvt_new_btn');
-  const newMenu    = el('#kvt_new_menu');
-  const bulkCvInput = el('#kvt_bulk_cv_input');
+  const btnKeyword = el('#kvt_nav_keyword');
   const btnAllXLS  = el('#kvt_export_all_xls');
   const exportAllForm   = el('#kvt_export_all_form');
   const exportAllFormat = el('#kvt_export_all_format');
@@ -2355,12 +2340,12 @@ function kvtInit(){
   procStatusFilter && procStatusFilter.addEventListener('change', ()=>listProcesses());
   procClientFilter && procClientFilter.addEventListener('change', ()=>listProcesses());
 
-  function openModal(){
+  function openModal(tab='candidates'){
     modal.style.display = 'flex';
     if(modalName) modalName.value = '';
     if(modalRole) modalRole.value = '';
     if(modalLoc) modalLoc.value = '';
-    switchTab('candidates');
+    switchTab(tab);
   }
   function closeModal(){ modal.style.display = 'none'; }
   modalClose && modalClose.addEventListener('click', closeModal);
@@ -3942,6 +3927,7 @@ function kvtInit(){
   }
 
   btnAdd && btnAdd.addEventListener('click', e=>{ e.preventDefault(); openModal(); });
+  btnKeyword && btnKeyword.addEventListener('click', e=>{ e.preventDefault(); openModal('keyword'); });
   // Create candidate modal
     const cmodal = el('#kvt_create_modal');
   const cclose = el('#kvt_create_close');
@@ -4215,42 +4201,7 @@ function kvtInit(){
     boardProcInfo && boardProcInfo.addEventListener('click', handleInlineEdit);
     infoBody && infoBody.addEventListener('click', handleInlineEdit);
 
-    // Nuevo menu actions
-    btnNew && btnNew.addEventListener('click', ()=>{ newMenu.style.display = newMenu.style.display==='flex' ? 'none' : 'flex'; });
-    document.addEventListener('click', e=>{ if(!btnNew.contains(e.target) && !newMenu.contains(e.target)) newMenu.style.display='none'; });
-    els('#kvt_new_menu button').forEach(b=>{
-      b.addEventListener('click', e=>{
-        e.preventDefault();
-        e.stopPropagation();
-        const act = b.dataset.action;
-        newMenu.style.display='none';
-        setTimeout(()=>{
-          if(act==='candidate') openCModal();
-          if(act==='client') openClModal();
-          if(act==='process') openPModal();
-          if(act==='bulk_cv' && bulkCvInput) bulkCvInput.click();
-        },0);
-      });
-    });
-
-    bulkCvInput && bulkCvInput.addEventListener('change', async ()=>{
-      if(!bulkCvInput.files.length) return;
-      const fd = new FormData();
-      fd.append('action','kvt_bulk_upload_cvs');
-      fd.append('_ajax_nonce', KVT_NONCE);
-      Array.from(bulkCvInput.files).forEach(f=>fd.append('files[]', f));
-      const res = await fetch(KVT_AJAX, {method:'POST', body: fd});
-      const j = await res.json();
-      if(!j.success){
-        alert(j.data && j.data.msg ? j.data.msg : 'No se pudieron procesar los CVs.');
-      } else {
-        alert('Se crearon ' + j.data.count + ' candidatos.');
-        refresh();
-      }
-      bulkCvInput.value = '';
-    });
-
-  // Easier drag & drop: allow drop anywhere in column and highlight
+    // Easier drag & drop: allow drop anywhere in column and highlight
   els('.kvt-col').forEach(col=>{
     col.addEventListener('dragover', e=>{ e.preventDefault(); col.classList.add('dragover'); });
     col.addEventListener('dragleave', ()=>{ col.classList.remove('dragover'); });
