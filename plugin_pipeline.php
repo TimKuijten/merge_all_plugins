@@ -1235,6 +1235,7 @@ JS;
                 <a href="#" id="kvt_nav_export"><span class="dashicons dashicons-download"></span> Exportar</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
+                <a href="#" data-view="bulkemail"><span class="dashicons dashicons-email-alt2"></span> Correo</a>
                 <a href="#"><span class="dashicons dashicons-filter"></span> Nuevo filtro</a>
             </nav>
             <div class="kvt-content">
@@ -1410,6 +1411,15 @@ JS;
             <button type="button" class="kvt-btn" id="kvt_toggle_kanban" style="display:none;">Mostrar Kanban</button>
             <div id="kvt_board_wrap" class="kvt-board-wrap" style="display:none;">
                 <div id="kvt_board" class="kvt-board" aria-live="polite" style="margin-top:12px;"></div>
+            </div>
+            <div id="kvt_bulkemail_wrap" style="display:none;">
+            <?php
+            if (class_exists('KT_AIBulkMailer_ES')) {
+                $mailer = KT_AIBulkMailer_ES::$instance ?? new KT_AIBulkMailer_ES();
+                $mailer->enqueue('kt-abm-front');
+                echo $mailer->render_frontend();
+            }
+            ?>
             </div>
             </div><!-- .kvt-content -->
         </div>
@@ -2087,6 +2097,7 @@ function kvtInit(){
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
   const toggleKanban = el('#kvt_toggle_kanban');
+  const bulkWrap     = el('#kvt_bulkemail_wrap');
 
   const selClient  = el('#kvt_client');
   const selProcess = el('#kvt_process');
@@ -2165,6 +2176,7 @@ function kvtInit(){
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
     if(widgetsWrap) widgetsWrap.style.display='flex';
+    if(bulkWrap) bulkWrap.style.display='none';
     if(view==='ats'){
       filtersBar.style.display='flex';
       tableWrap.style.display='block';
@@ -2218,6 +2230,15 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(mitWrap) { mitWrap.style.display='block'; loadMit(); }
+    } else if(view==='bulkemail'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(bulkWrap) bulkWrap.style.display='block';
     } else {
       filtersBar.style.display='none';
       tableWrap.style.display='none';

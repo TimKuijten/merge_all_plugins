@@ -16,7 +16,10 @@ class KT_AIBulkMailer_ES {
     const SENT_LOG     = 'kt_abm_sent_log';
     const CAPABILITY   = 'edit_posts';
 
+    public static $instance = null;
+
     public function __construct() {
+        self::$instance = $this;
         add_action('admin_menu',               [$this, 'menu']);
         add_action('admin_init',               [$this, 'register_settings']);
         add_action('admin_enqueue_scripts',    [$this, 'enqueue']);
@@ -94,9 +97,10 @@ class KT_AIBulkMailer_ES {
     }
 
     public function enqueue($hook) {
-        $is_main = $hook === 'toplevel_page_kt-abm';
-        $is_sent = $hook === 'kt-abm_page_kt-abm-sent';
-        if (!$is_main && !$is_sent) return;
+        $is_main  = $hook === 'toplevel_page_kt-abm';
+        $is_sent  = $hook === 'kt-abm_page_kt-abm-sent';
+        $is_front = $hook === 'kt-abm-front';
+        if (!$is_main && !$is_sent && !$is_front) return;
 
         // Styles (ALL buttons #0A212E with white text)
         $css = "
@@ -145,7 +149,7 @@ class KT_AIBulkMailer_ES {
         wp_add_inline_style('kt-abm', $css);
         wp_enqueue_style('kt-abm');
 
-        if (!$is_main) return;
+        if (!$is_main && !$is_front) return;
 
         // Data for AJAX
         wp_register_script('kt-abm', false, [], false, true);
@@ -679,6 +683,14 @@ function ktDownloadEMLZip(){
 </script>
 <?php
         wp_add_inline_script('kt-abm', ob_get_clean());
+    }
+
+    public function render_frontend(){
+        ob_start();
+        $this->page();
+        $html = ob_get_clean();
+        $html = preg_replace('#<div class="wrap">#', '<div class="kt-abm-front">', $html, 1);
+        return $html;
     }
 
     public function page() {
