@@ -1322,4 +1322,4 @@ function ktDownloadEMLZip(){
     }
 }
 
-new KT_AIBulkMailer_ES();
+$bulkMailer = new KT_AIBulkMailer_ES();
