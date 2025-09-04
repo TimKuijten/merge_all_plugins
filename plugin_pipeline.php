@@ -2637,13 +2637,8 @@ function kvtInit(){
       }
     }
 
-    const panel = document.createElement('div'); panel.className='kvt-panel';
-    panel.innerHTML = buildProfileHTML(c);
-
     btn.addEventListener('click', ()=>{
-      const visible = panel.style.display === 'block';
-      panel.style.display = visible ? 'none' : 'block';
-      btn.textContent = visible ? 'Ver perfil' : 'Ocultar perfil';
+      openProfile(c);
     });
 
     if (!CLIENT_VIEW) {
@@ -2669,13 +2664,8 @@ function kvtInit(){
     }
 
       card.appendChild(head); if(roleLine) card.appendChild(roleLine); card.appendChild(tagsWrap); if (follow) card.appendChild(follow); if (commentLine) card.appendChild(commentLine); card.appendChild(sub);
-    card.appendChild(expand); card.appendChild(panel);
+    card.appendChild(expand);
 
-    if (!CLIENT_VIEW) {
-      // Enable handlers after elements are in the DOM
-      enableProfileEditHandlers(card, String(c.id));
-      enableCvUploadHandlers(card, String(c.id));
-    }
     return card;
   }
 
@@ -2722,6 +2712,8 @@ function kvtInit(){
         '<textarea class="kvt-public-notes-text">'+esc(pubNotesVal)+'</textarea>'+
       '</div>';
 
+    const assign = '<div class="kvt-assign"><label><strong>Proceso</strong></label><select class="kvt-assign-process"></select><button type="button" class="kvt-assign-btn">Asignar</button></div>';
+
     const log = Array.isArray(m.activity_log) ? m.activity_log : [];
     const logItems = log.map(it=>{
       const when = esc(it.time||'');
@@ -2747,7 +2739,7 @@ function kvtInit(){
 
     const saveBtn = '<button type="button" class="kvt-save-profile">Guardar perfil</button>';
 
-    return logSection+'<dl>'+dl+'</dl>'+notes+publicNotes+saveBtn;
+    return logSection+'<dl>'+dl+'</dl>'+notes+publicNotes+assign+saveBtn;
   }
 
   function enableProfileEditHandlers(card, id){
@@ -2850,6 +2842,7 @@ function kvtInit(){
             card.classList.remove('kvt-overdue');
           }
           alert('Perfil guardado.');
+          refresh();
         });
     });
   }
@@ -2891,6 +2884,51 @@ function kvtInit(){
       alert('CV subido y guardado.');
       refresh();
     });
+  }
+
+  function setupAssignProcess(container, id){
+    const sel = container.querySelector('.kvt-assign-process');
+    const btn = container.querySelector('.kvt-assign-btn');
+    if(!sel || !btn) return;
+    sel.innerHTML = '<option value="">Seleccionar</option>';
+    fetchProcessesList().then(j=>{
+      if(j.success && j.data && Array.isArray(j.data.items)){
+        j.data.items.forEach(p=>{
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = p.name + (p.client ? ' — '+p.client : '');
+          if(p.client_id) opt.dataset.client = p.client_id;
+          sel.appendChild(opt);
+        });
+      }
+    });
+    btn.addEventListener('click', ()=>{
+      const opt = sel.options[sel.selectedIndex];
+      const proc = sel.value;
+      if(!proc){ alert('Seleccione un proceso'); return; }
+      const params = new URLSearchParams();
+      params.set('action','kvt_assign_candidate');
+      params.set('_ajax_nonce', KVT_NONCE);
+      params.set('candidate_id', id);
+      params.set('process_id', proc);
+      if(opt && opt.dataset.client) params.set('client_id', opt.dataset.client);
+      fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+        .then(r=>r.json()).then(j=>{
+          if(j.success){ alert('Candidato asignado.'); infoModal.style.display='none'; refresh(); }
+          else alert(j.data && j.data.msg ? j.data.msg : 'No se pudo asignar.');
+        });
+    });
+  }
+
+  function openProfile(c){
+    if(!c) return;
+    infoBody.innerHTML = buildProfileHTML(c);
+    if(!CLIENT_VIEW){
+      enableProfileEditHandlers(infoBody, String(c.id));
+      enableCvUploadHandlers(infoBody, String(c.id));
+      setupAssignProcess(infoBody, String(c.id));
+    }
+    infoModal.style.display='flex';
   }
 
   function enableDnD(){
@@ -3485,16 +3523,14 @@ function kvtInit(){
             (roleLoc?'<p class="kvt-ai-meta">'+esc(roleLoc)+'</p>':'')+
             '<p class="kvt-ai-summary">'+esc(it.summary||'')+'</p>'+
             '<div class="kvt-mini-actions"><button type="button" class="kvt-btn kvt-secondary kvt-mini-view">Ver perfil</button></div>'+
-            '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
         }).join('');
         els('.kvt-mini-view', aiResults).forEach(b=>{
           b.addEventListener('click', ()=>{
             const card = b.closest('.kvt-card-mini');
-            const panel = card.querySelector('.kvt-mini-panel');
-            const show = panel.style.display==='block';
-            panel.style.display = show?'none':'block';
-            b.textContent = show?'Ver perfil':'Ocultar';
+            const id = card ? card.dataset.id : '';
+            const item = items.find(i=>String(i.id)===id);
+            if(item) openProfile(item);
           });
         });
       }).catch(()=>{ aiBtn.disabled=false; aiResults.innerHTML=''; });
@@ -3527,16 +3563,14 @@ function kvtInit(){
             (roleLoc?'<p class="kvt-ai-meta">'+esc(roleLoc)+'</p>':'')+
             '<p class="kvt-ai-summary">'+esc(it.summary||'')+'</p>'+
             '<div class="kvt-mini-actions"><button type="button" class="kvt-btn kvt-secondary kvt-mini-view">Ver perfil</button></div>'+
-            '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
         }).join('');
         els('.kvt-mini-view', aiBoardResults).forEach(b=>{
           b.addEventListener('click', ()=>{
             const card = b.closest('.kvt-card-mini');
-            const panel = card.querySelector('.kvt-mini-panel');
-            const show = panel.style.display==='block';
-            panel.style.display = show?'none':'block';
-            b.textContent = show?'Ver perfil':'Ocultar';
+            const id = card ? card.dataset.id : '';
+            const item = items.find(i=>String(i.id)===id);
+            if(item) openProfile(item);
           });
         });
       }).catch(()=>{ aiBoardBtn.disabled=false; aiBoardResults.innerHTML=''; });
@@ -3570,16 +3604,14 @@ function kvtInit(){
             (roleLoc?'<p class="kvt-ai-meta">'+esc(roleLoc)+'</p>':'')+
             '<p class="kvt-ai-summary"><strong>Palabras clave:</strong> '+esc(matches)+'</p>'+
             '<div class="kvt-mini-actions"><button type="button" class="kvt-btn kvt-secondary kvt-mini-view">Ver perfil</button></div>'+
-            '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
         }).join('');
         els('.kvt-mini-view', keywordResults).forEach(b=>{
           b.addEventListener('click', ()=>{
             const card = b.closest('.kvt-card-mini');
-            const panel = card.querySelector('.kvt-mini-panel');
-            const show = panel.style.display==='block';
-            panel.style.display = show?'none':'block';
-            b.textContent = show?'Ver perfil':'Ocultar';
+            const id = card ? card.dataset.id : '';
+            const item = items.find(i=>String(i.id)===id);
+            if(item) openProfile(item);
           });
         });
       }).catch(()=>{ keywordBtn.disabled=false; keywordResults.innerHTML=''; });
@@ -3613,16 +3645,14 @@ function kvtInit(){
             (roleLoc?'<p class="kvt-ai-meta">'+esc(roleLoc)+'</p>':'')+
             '<p class="kvt-ai-summary"><strong>Palabras clave:</strong> '+esc(matches)+'</p>'+
             '<div class="kvt-mini-actions"><button type="button" class="kvt-btn kvt-secondary kvt-mini-view">Ver perfil</button></div>'+
-            '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
         }).join('');
         els('.kvt-mini-view', keywordBoardResults).forEach(b=>{
           b.addEventListener('click', ()=>{
             const card = b.closest('.kvt-card-mini');
-            const panel = card.querySelector('.kvt-mini-panel');
-            const show = panel.style.display==='block';
-            panel.style.display = show?'none':'block';
-            b.textContent = show?'Ver perfil':'Ocultar';
+            const id = card ? card.dataset.id : '';
+            const item = items.find(i=>String(i.id)===id);
+            if(item) openProfile(item);
           });
         });
       }).catch(()=>{ keywordBoardBtn.disabled=false; keywordBoardResults.innerHTML=''; });
@@ -3739,10 +3769,7 @@ function kvtInit(){
     if(e.target.classList.contains('kvt-row-view')){
       const id = e.target.dataset.id;
       const cand = allRows.find(r=>String(r.id)===id);
-      if(cand){
-        infoBody.innerHTML = buildProfileHTML(cand);
-        infoModal.style.display='flex';
-      }
+      if(cand) openProfile(cand);
     }
   });
 
@@ -3875,7 +3902,6 @@ function kvtInit(){
               '<div>'+firstLineWithCv+'<br>'+infoLine+'</div>'+
               '<div class="kvt-meta"><button type="button" class="kvt-delete kvt-mini-delete dashicons dashicons-trash" data-id="'+it.id+'" aria-label="Eliminar"></button>'+editBtn+addBtn+'</div>'+
             '</div>'+
-            '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
           '</div>';
         }).join('');
         ctx.list.innerHTML = html;
@@ -3910,15 +3936,9 @@ function kvtInit(){
         els('.kvt-mini-view', ctx.list).forEach(b=>{
           b.addEventListener('click', e=>{
             e.preventDefault();
-            const card = b.closest('.kvt-card-mini');
-            const panel = card.querySelector('.kvt-mini-panel');
-            const show = panel.style.display==='block';
-            els('.kvt-mini-panel', ctx.list).forEach(p=>p.style.display='none');
-            panel.style.display = show?'none':'block';
-            if(!b.classList.contains('kvt-name')){
-              const label = b.dataset.label || 'Ver perfil';
-              b.textContent = show ? label : 'Ocultar';
-            }
+            const id = b.dataset.id || (b.closest('.kvt-card-mini') && b.closest('.kvt-card-mini').dataset.id);
+            const item = items.find(it=>String(it.id)===String(id));
+            if(item) openProfile(item);
           });
         });
         els('.kvt-mini-delete', ctx.list).forEach(b=>{
@@ -3938,13 +3958,7 @@ function kvtInit(){
               });
           });
         });
-        items.forEach(it=>{
-          const card = ctx.list.querySelector('.kvt-card-mini[data-id="'+it.id+'"]');
-          if(card){
-            enableProfileEditHandlers(card, String(it.id));
-            enableCvUploadHandlers(card, String(it.id));
-          }
-        });
+        // profile editing handled in modal
       });
   }
   modalPrev && modalPrev.addEventListener('click', ()=>{ if(currentPage>1) listProfiles(currentPage-1, modalCtx); });
