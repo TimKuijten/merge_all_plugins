@@ -1254,7 +1254,7 @@ JS;
                 <a href="#" data-view="ai"><span class="dashicons dashicons-search"></span> Buscador IA</a>
                 <a href="#" id="kvt_toggle_table"><span class="dashicons dashicons-editor-table"></span> Tabla</a>
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
-                <a href="#" data-view="ats" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
+                <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
                 <a href="#" id="kvt_nav_export"><span class="dashicons dashicons-download"></span> Exportar</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
@@ -1310,6 +1310,8 @@ JS;
                             <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                         </form>
                         <button type="button" class="kvt-btn" id="kvt_assign_search">Asignar a proceso</button>
+                        <button type="button" class="kvt-btn" id="kvt_export_client_board_btn">Exportar Tablero Cliente</button>
+                        <button type="button" class="kvt-btn" id="kvt_export_candidate_board_btn">Exportar Tablero Candidato</button>
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
                       <div class="kvt-tabs" id="kvt_board_tabs">
@@ -1459,7 +1461,7 @@ JS;
                 </div>
                 </div>
             </div>
-            <button type="button" class="kvt-btn" id="kvt_toggle_kanban" style="display:none;">Mostrar Kanban</button>
+            <button type="button" class="kvt-btn" id="kvt_toggle_kanban" style="display:none;margin-top:20px;">Mostrar Kanban</button>
             <div id="kvt_board_wrap" class="kvt-board-wrap" style="display:none;">
                 <div id="kvt_board" class="kvt-board" aria-live="polite" style="margin-top:12px;"></div>
             </div>
@@ -1869,6 +1871,7 @@ JS;
         .kvt-task-done,.kvt-task-delete{margin-left:8px;cursor:pointer}
         .kvt-task-done{color:#16a34a}
         .kvt-task-delete{color:#dc2626}
+        .kvt-row-remove{color:#fff;background:#dc2626;border-radius:4px;padding:2px;margin-right:4px;cursor:pointer;vertical-align:middle}
         .kvt-profile-activity{margin-bottom:16px;font-size:13px}
         .kvt-profile-activity ul{list-style:disc;margin-left:20px}
         .kvt-board-wrap{margin-top:40px}
@@ -1940,12 +1943,19 @@ JS;
 
         $slug = isset($_GET['kvt_board']) ? sanitize_text_field($_GET['kvt_board']) : '';
         $all_links = get_option('kvt_client_links', []);
+        $candidate_links = get_option('kvt_candidate_links', []);
         $link_cfg = [];
+        $is_client_board = false;
+        $is_candidate_board = false;
         if ($slug && isset($all_links[$slug])) {
             $link_cfg = $all_links[$slug];
+            $is_client_board = true;
+        } elseif ($slug && isset($candidate_links[$slug])) {
+            $link_cfg = $candidate_links[$slug];
+            $is_candidate_board = true;
         }
-        $is_client_board = !empty($link_cfg);
-        if ((is_user_logged_in() && current_user_can('edit_posts')) || $is_client_board) {
+        $has_share_link = $is_client_board || $is_candidate_board;
+        if ((is_user_logged_in() && current_user_can('edit_posts')) || $has_share_link) {
             // PDF.js and Tesseract.js for client-side text extraction
             wp_enqueue_script(
                 'pdfjs',
@@ -1970,12 +1980,12 @@ JS;
 
             // Inline constants BEFORE app
         $statuses = $this->get_statuses();
-        $sel_steps = $is_client_board ? array_map('sanitize_text_field', (array) ($link_cfg['steps'] ?? [])) : [];
-        if ($is_client_board && $sel_steps) {
+        $sel_steps = $has_share_link ? array_map('sanitize_text_field', (array) ($link_cfg['steps'] ?? [])) : [];
+        if ($has_share_link && $sel_steps) {
             $statuses = array_values(array_intersect($statuses, $sel_steps));
         }
         $columns  = $this->get_columns();
-        $fields   = $is_client_board ? array_map('sanitize_text_field', (array) ($link_cfg['fields'] ?? [])) : [];
+        $fields   = $has_share_link ? array_map('sanitize_text_field', (array) ($link_cfg['fields'] ?? [])) : [];
         wp_add_inline_script('kvt-app', 'const KVT_STATUSES='.wp_json_encode($statuses).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_COLUMNS='.wp_json_encode($columns).';',  'before');
         $countries = $this->get_candidate_countries();
@@ -1984,14 +1994,17 @@ JS;
         wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/view-board/')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_MIT_NONCE="'.esc_js(wp_create_nonce('kvt_mit')).'";', 'before');
-        wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($is_client_board?'true':'false').';', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($has_share_link?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_STEPS='.wp_json_encode($sel_steps).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOW_COMMENTS='.(!empty($link_cfg['comments'])?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_SLUG="'.esc_js($slug).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_IS_ADMIN='.((is_user_logged_in() && current_user_can('edit_posts'))?'true':'false').';', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_CANDIDATE_VIEW='.($is_candidate_board?'true':'false').';', 'before');
+        $cand_id = $is_candidate_board ? (int)($link_cfg['candidate'] ?? 0) : 0;
+        wp_add_inline_script('kvt-app', 'const KVT_CANDIDATE_ID='.$cand_id.';', 'before');
         $user = wp_get_current_user();
-        $display = ($user && $user->exists()) ? $user->display_name : ''; 
+        $display = ($user && $user->exists()) ? $user->display_name : '';
         wp_add_inline_script('kvt-app', 'const KVT_CURRENT_USER="'.esc_js($display).'";', 'before');
         $link_map = [];
         foreach ($all_links as $s=>$cfg) {
@@ -2000,7 +2013,7 @@ JS;
             if ($c && $p) $link_map[$c.'|'.$p] = $s;
         }
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_LINKS='.wp_json_encode($link_map).';', 'before');
-        if ($is_client_board) {
+        if ($has_share_link) {
             $cid = isset($link_cfg['client']) ? (int) $link_cfg['client'] : 0;
             $pid = isset($link_cfg['process']) ? (int) $link_cfg['process'] : 0;
             wp_add_inline_script('kvt-app', 'const KVT_CLIENT_ID='.$cid.';', 'before');
@@ -2017,6 +2030,8 @@ function kvtInit(){
   const escAttr = esc;
   const urlParams = new URLSearchParams(location.search);
   const CLIENT_VIEW = typeof KVT_CLIENT_VIEW !== 'undefined' && KVT_CLIENT_VIEW;
+  const CANDIDATE_VIEW = typeof KVT_CANDIDATE_VIEW !== 'undefined' && KVT_CANDIDATE_VIEW;
+  const CANDIDATE_ID = typeof KVT_CANDIDATE_ID !== 'undefined' ? parseInt(KVT_CANDIDATE_ID,10) : 0;
   const ALLOWED_FIELDS = Array.isArray(KVT_ALLOWED_FIELDS) ? KVT_ALLOWED_FIELDS : [];
   const CLIENT_ID = typeof KVT_CLIENT_ID !== 'undefined' ? String(KVT_CLIENT_ID) : '';
   const PROCESS_ID = typeof KVT_PROCESS_ID !== 'undefined' ? String(KVT_PROCESS_ID) : '';
@@ -2047,6 +2062,8 @@ function kvtInit(){
       });
     });
   }
+  const openProcesses = el('#kvt_open_processes');
+  openProcesses && openProcesses.addEventListener('click', ()=>{ switchBoardTab('processes'); });
   exportLink && exportLink.addEventListener('click',e=>{
     e.preventDefault();
     const trg = el('#kvt_export_xls');
@@ -2163,7 +2180,8 @@ function kvtInit(){
   const exportAllForm   = el('#kvt_export_all_form');
   const exportAllFormat = el('#kvt_export_all_format');
   const btnShare   = el('#kvt_share_board');
-  const btnProcesses = el('#kvt_open_processes');
+  const btnExportClientBoard = el('#kvt_export_client_board_btn');
+  const btnExportCandidateBoard = el('#kvt_export_candidate_board_btn');
   const shareModal = el('#kvt_share_modal');
   const shareClose = el('#kvt_share_close');
   const shareFieldsWrap = el('#kvt_share_fields');
@@ -2184,6 +2202,8 @@ function kvtInit(){
   let calendarEvents = [];
   let calMonth = (new Date()).getMonth();
   let calYear  = (new Date()).getFullYear();
+  let shareMode = 'client';
+  let selectedCandidateId = CANDIDATE_VIEW ? CANDIDATE_ID : 0;
 
   function formatInputDate(v){ const p=v.split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : v; }
 
@@ -3136,6 +3156,9 @@ function kvtInit(){
   }
 
   function renderData(data){
+    if(CANDIDATE_VIEW){
+      data = Array.isArray(data) ? data.filter(r=>String(r.id)===String(CANDIDATE_ID)) : [];
+    }
     const baseMode = !selClient.value && !selProcess.value;
     if(overview){
       overview.style.display = baseMode ? 'none' : 'block';
@@ -3171,6 +3194,7 @@ function kvtInit(){
 
     if (!CLIENT_VIEW) enableDnD();
     allRows = Array.isArray(data) ? data : [];
+    if(CANDIDATE_VIEW) selectedCandidateId = CANDIDATE_ID;
     filterTable();
   }
 
@@ -3200,7 +3224,8 @@ function kvtInit(){
         const noteSrc = (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) ? r.meta.notes : (ALLOWED_FIELDS.includes('public_notes') ? r.meta.public_notes : '');
         const snip = lastNoteSnippet(noteSrc);
         if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
-        const name = '<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+icons.join('');
+        const del = (!CLIENT_VIEW && !CANDIDATE_VIEW) ? '<span class="dashicons dashicons-trash kvt-row-remove" data-id="'+escAttr(r.id)+'"></span>' : '';
+        const name = del+'<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+icons.join('');
         const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
         let cidx = stepStatuses.indexOf(r.status||'');
         if((r.status||'') === 'Descartados') cidx = stepStatuses.length;
@@ -3743,11 +3768,25 @@ function kvtInit(){
   });
 
   tBody && tBody.addEventListener('click', e=>{
+    if(CLIENT_VIEW) return;
     const step = e.target.closest('.kvt-stage-step');
     if(step){
       stageId = step.dataset.id;
       stageNext = step.dataset.status;
       if(stageModal) stageModal.style.display='flex';
+      return;
+    }
+    const del = e.target.closest('.kvt-row-remove');
+    if(del){
+      if(!confirm('¿Quitar a este candidato del proceso?')) return;
+      const id = del.dataset.id;
+      ajaxForm({
+        action:'kvt_unassign_candidate',
+        _ajax_nonce:KVT_NONCE,
+        id:id,
+        client_id: selClient ? selClient.value || '' : '',
+        process_id: selProcess ? selProcess.value || '' : ''
+      }).then(j=>{ if(j.success) del.closest('tr').remove(); else alert('No se pudo eliminar.'); });
     }
   });
 
@@ -3840,6 +3879,7 @@ function kvtInit(){
   document.addEventListener('click', e=>{
     if(e.target.classList.contains('kvt-row-view')){
       const id = e.target.dataset.id;
+      selectedCandidateId = parseInt(id,10) || 0;
       const cand = allRows.find(r=>String(r.id)===id);
       if(cand) openProfile(cand);
     }
@@ -3877,6 +3917,29 @@ function kvtInit(){
       alert('Selecciona un cliente y un proceso.');
       return;
     }
+    shareMode = 'client';
+    buildShareOptions();
+    if(shareModal) shareModal.style.display='flex';
+  });
+  btnExportClientBoard && btnExportClientBoard.addEventListener('click', ()=>{
+    if (!selClient || !selClient.value || !selProcess || !selProcess.value) {
+      alert('Selecciona un cliente y un proceso.');
+      return;
+    }
+    shareMode = 'client';
+    buildShareOptions();
+    if(shareModal) shareModal.style.display='flex';
+  });
+  btnExportCandidateBoard && btnExportCandidateBoard.addEventListener('click', ()=>{
+    if (!selClient || !selClient.value || !selProcess || !selProcess.value) {
+      alert('Selecciona un cliente y un proceso.');
+      return;
+    }
+    if (!selectedCandidateId) {
+      alert('Selecciona un candidato.');
+      return;
+    }
+    shareMode = 'candidate';
     buildShareOptions();
     if(shareModal) shareModal.style.display='flex';
   });
@@ -3909,15 +3972,21 @@ function kvtInit(){
       steps.forEach(s=>params.append('steps[]', s));
       if(shareComments && shareComments.checked) params.set('comments','1');
       if(CLIENT_VIEW && CLIENT_SLUG) params.set('slug', CLIENT_SLUG);
+      if(shareMode==='candidate') params.set('candidate', selectedCandidateId);
       fetch(KVT_AJAX,{method:'POST',body:params}).then(r=>r.json()).then(j=>{
         if(j.success && j.data && j.data.slug){
           const slug = j.data.slug;
           if(!CLIENT_VIEW){
             const url = KVT_HOME + slug;
-            CLIENT_LINKS[selClient.value+'|'+selProcess.value] = slug;
-            prompt('Enlace para compartir', url);
-            shareModal.style.display='none';
-            updateSelectedInfo();
+            if(shareMode==='client'){
+              CLIENT_LINKS[selClient.value+'|'+selProcess.value] = slug;
+              prompt('Enlace para compartir', url);
+              shareModal.style.display='none';
+              updateSelectedInfo();
+            } else {
+              prompt('Enlace para compartir', url);
+              shareModal.style.display='none';
+            }
           } else {
             shareModal.style.display='none';
             location.reload();
@@ -4172,16 +4241,14 @@ function kvtInit(){
         const statuses = {active:'Activo',completed:'Completado',closed:'Cerrado'};
         const html = j.data.items.map(p=>{
           const subs=[];
-          if(p.client) subs.push(esc(p.client));
-          if(p.contact_name) subs.push(esc(p.contact_name)+(p.contact_email?' ('+esc(p.contact_email)+')':''));
-          if(p.description) subs.push(esc(p.description));
-          subs.push('Creado por '+esc(p.creator||'')+' el '+esc(p.created||''));
-          const subHtml = subs.length?'<br><span class="kvt-sub">'+subs.join(' / ')+'</span>':'';
+          if(p.client) subs.push('Empresa: '+esc(p.client));
+          subs.push('Creado por '+esc(p.creator||'')+(p.created?' el '+esc(p.created):''));
+          const subHtml = '<br><span class="kvt-sub">'+subs.join(' / ')+'</span>';
           const sel = '<select class="kvt-process-status" data-id="'+escAttr(p.id)+'">'+
             Object.keys(statuses).map(s=>'<option value="'+s+'"'+(p.status===s?' selected':'')+'>'+statuses[s]+'</option>').join('')+
             '</select>';
           const days = '<span class="kvt-active-days">Activo '+p.days+' días</span>';
-          return '<div class="kvt-row">'+
+          return '<div class="kvt-row kvt-process-row" data-id="'+escAttr(p.id)+'" data-client="'+escAttr(p.client_id||'')+'">'+
             '<div><span class="kvt-name">'+esc(p.name)+'</span>'+subHtml+'</div>'+
             '<div class="kvt-meta">'+sel+' '+days+' <button type="button" class="kvt-btn kvt-edit-process" data-id="'+escAttr(p.id)+'" data-name="'+escAttr(p.name||'')+'" data-client-id="'+escAttr(p.client_id||'')+'" data-contact-name="'+escAttr(p.contact_name||'')+'" data-contact-email="'+escAttr(p.contact_email||'')+'" data-desc="'+escAttr(p.description||'')+'">Editar</button></div>'+
           '</div>';
@@ -4461,10 +4528,23 @@ function kvtInit(){
       }
       openEditPModal(data);
     };
+    const handleProcessSelect = e=>{
+      const row = e.target.closest('.kvt-process-row');
+      if(!row || e.target.closest('.kvt-edit-process') || e.target.classList.contains('kvt-process-status')) return;
+      const pid = row.getAttribute('data-id');
+      const cid = row.getAttribute('data-client') || '';
+      if(selClient) selClient.value = cid;
+      if(selProcess) selProcess.value = pid;
+      showView('ats');
+      refresh();
+      updateSelectedInfo();
+    };
     clientsList && clientsList.addEventListener('click', handleClientClick);
     boardClientsList && boardClientsList.addEventListener('click', handleClientClick);
     processesList && processesList.addEventListener('click', handleProcessClick);
     boardProcessesList && boardProcessesList.addEventListener('click', handleProcessClick);
+    processesList && processesList.addEventListener('click', handleProcessSelect);
+    boardProcessesList && boardProcessesList.addEventListener('click', handleProcessSelect);
     const handleInlineEdit = e=>{
       if(e.target.classList.contains('kvt-edit-client-inline')){
         const d=getClientById(e.target.dataset.id);
@@ -6038,12 +6118,14 @@ JS;
         $steps   = isset($_POST['steps'])   ? array_map('sanitize_text_field', (array) $_POST['steps']) : [];
         $allow_comments = !empty($_POST['comments']);
         $slug   = isset($_POST['slug'])     ? sanitize_text_field(wp_unslash($_POST['slug'])) : '';
+        $candidate = isset($_POST['candidate']) ? intval($_POST['candidate']) : 0;
 
         if (!$client || !$process) {
             wp_send_json_error(['msg' => 'missing'], 400);
         }
 
-        $links = get_option('kvt_client_links', []);
+        $option_key = $candidate ? 'kvt_candidate_links' : 'kvt_client_links';
+        $links = get_option($option_key, []);
         if ($slug && isset($links[$slug])) {
             $links[$slug] = [
                 'client'  => $client,
@@ -6053,13 +6135,19 @@ JS;
                 'page'    => $page,
                 'comments'=> $allow_comments ? 1 : 0,
             ];
+            if ($candidate) $links[$slug]['candidate'] = $candidate;
         } else {
             $client_term  = get_term($client, self::TAX_CLIENT);
             $process_term = get_term($process, self::TAX_PROCESS);
             $cslug = $client_term ? sanitize_title($client_term->name) : 'cliente';
             $pslug = $process_term ? sanitize_title($process_term->name) : 'proceso';
+            $cand_slug = '';
+            if ($candidate) {
+                $cand_post = get_post($candidate);
+                $cand_slug = $cand_post ? '-' . sanitize_title($cand_post->post_title) : '';
+            }
             $rand  = wp_rand(10000, 99999);
-            $slug  = $cslug . '-' . $pslug . '-' . $rand;
+            $slug  = $cslug . '-' . $pslug . $cand_slug . '-' . $rand;
             $links[$slug] = [
                 'client'  => $client,
                 'process' => $process,
@@ -6068,8 +6156,9 @@ JS;
                 'page'    => $page,
                 'comments'=> $allow_comments ? 1 : 0,
             ];
+            if ($candidate) $links[$slug]['candidate'] = $candidate;
         }
-        update_option('kvt_client_links', $links, false);
+        update_option($option_key, $links, false);
 
         wp_send_json_success(['slug' => $slug]);
     }
@@ -6119,12 +6208,19 @@ JS;
         if ($req === '') return;
         $parts = explode('/', $req);
         $slug  = end($parts);
-        if (!preg_match('/^[a-z0-9-]+-[a-z0-9-]+-\d{5}$/i', $slug)) return;
+        if (!preg_match('/^[a-z0-9-]+(?:-[a-z0-9-]+)*-\d{5}$/i', $slug)) return;
         $links = get_option('kvt_client_links', []);
-        if (!isset($links[$slug])) return;
-        $target = home_url('/base/?kvt_board=' . $slug);
-        wp_redirect($target);
-        exit;
+        if (isset($links[$slug])) {
+            $target = home_url('/base/?kvt_board=' . $slug);
+            wp_redirect($target);
+            exit;
+        }
+        $cand_links = get_option('kvt_candidate_links', []);
+        if (isset($cand_links[$slug])) {
+            $target = home_url('/base/?kvt_board=' . $slug);
+            wp_redirect($target);
+            exit;
+        }
     }
 
     private function get_candidate_cv_text($post_id) {
