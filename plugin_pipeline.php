@@ -1231,7 +1231,7 @@ JS;
                 <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidates</a>
                 <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendar</a>
                 <a href="#" id="kvt_add_profile"><span class="dashicons dashicons-id-alt"></span> Base</a>
-                <a href="#" id="kvt_nav_keyword"><span class="dashicons dashicons-search"></span> <?php esc_html_e('Búsqueda de palabras', 'kovacic'); ?></a>
+                <a href="#" data-view="keyword"><span class="dashicons dashicons-search"></span> <?php esc_html_e('Búsqueda de palabras', 'kovacic'); ?></a>
                 <a href="#" id="kvt_toggle_table"><span class="dashicons dashicons-editor-table"></span> Tabla</a>
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" data-view="ats" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
@@ -1368,6 +1368,14 @@ JS;
                         <span id="kvt_table_pageinfo"></span>
                         <button type="button" class="kvt-btn kvt-secondary" id="kvt_table_next">Siguiente</button>
                     </div>
+                </div>
+                <div id="kvt_keyword_view" style="display:none;">
+                  <div class="kvt-modal-controls">
+                    <input type="text" id="kvt_keyword_board_input" placeholder="<?php esc_attr_e('Introduce palabras clave (usa Y/O)', 'kovacic'); ?>">
+                    <button type="button" class="kvt-btn" id="kvt_keyword_board_search"><?php esc_html_e('Buscar', 'kovacic'); ?></button>
+                    <small class="kvt-hint"><?php esc_html_e('Separa las palabras clave con Y si todas deben aparecer o con O si basta alguna. Ejemplo: "PPA Y minería Y Chile O Holanda" buscará perfiles con PPA y minería y además Chile o Holanda.', 'kovacic'); ?></small>
+                  </div>
+                  <div id="kvt_keyword_board_results" class="kvt-modal-list"></div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
                 <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
@@ -2079,6 +2087,7 @@ function kvtInit(){
   const filtersBar = el('#kvt_filters_bar');
   const calendarWrap = el('#kvt_calendar');
   const mitWrap = el('#kvt_mit_view');
+  const keywordBoard = el('#kvt_keyword_view');
   const mitContent = el('#kvt_mit_content');
   const mitNews = el('#kvt_mit_news');
   const activityWrap = el('#kvt_activity');
@@ -2091,7 +2100,6 @@ function kvtInit(){
   const btnToggle  = el('#kvt_toggle_table');
   const btnXLS     = el('#kvt_export_xls');
   const btnAdd     = el('#kvt_add_profile');
-  const btnKeyword = el('#kvt_nav_keyword');
   const btnAllXLS  = el('#kvt_export_all_xls');
   const exportAllForm   = el('#kvt_export_all_form');
   const exportAllFormat = el('#kvt_export_all_format');
@@ -2160,6 +2168,7 @@ function kvtInit(){
     if(activeWrap) activeWrap.style.display='none';
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
+    if(keywordBoard) keywordBoard.style.display='none';
     if(widgetsWrap) widgetsWrap.style.display='flex';
     if(view==='ats'){
       filtersBar.style.display='flex';
@@ -2214,6 +2223,18 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(mitWrap) { mitWrap.style.display='block'; loadMit(); }
+    } else if(view==='keyword'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(overview) overview.style.display='none';
+      if(atsBar) atsBar.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(boardBase) boardBase.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(keywordBoard) keywordBoard.style.display='block';
     } else {
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -2265,6 +2286,9 @@ function kvtInit(){
   const keywordInput = el('#kvt_keyword_input', modal);
   const keywordBtn = el('#kvt_keyword_search', modal);
   const keywordResults = el('#kvt_keyword_results', modal);
+  const keywordBoardInput = el('#kvt_keyword_board_input');
+  const keywordBoardBtn = el('#kvt_keyword_board_search');
+  const keywordBoardResults = el('#kvt_keyword_board_results');
 
   if (CLIENT_VIEW) {
     if (selClient) { selClient.value = CLIENT_ID; selClient.disabled = true; }
@@ -3435,6 +3459,47 @@ function kvtInit(){
       }).catch(()=>{ keywordBtn.disabled=false; keywordResults.innerHTML=''; });
   });
 
+  keywordBoardBtn && keywordBoardBtn.addEventListener('click', ()=>{
+    const query = (keywordBoardInput.value||'').trim();
+    if(!query) return;
+    keywordBoardResults.innerHTML = '<div class="kvt-loading">Buscando...</div>';
+    keywordBoardBtn.disabled = true;
+    const params = new URLSearchParams();
+    params.set('action','kvt_keyword_search');
+    params.set('_ajax_nonce', KVT_NONCE);
+    params.set('query', query);
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json()).then(j=>{
+        keywordBoardBtn.disabled = false;
+        if(!j.success){ alert('No se pudo buscar.'); keywordBoardResults.innerHTML=''; return; }
+        const items = Array.isArray(j.data.items)?j.data.items:[];
+        if(!items.length){ keywordBoardResults.innerHTML = '<p>No hay coincidencias.</p>'; return; }
+        keywordBoardResults.innerHTML = items.map(it=>{
+          const m = it.meta||{};
+          const name = esc((m.first_name||'')+' '+(m.last_name||''));
+          const cv = m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'';
+          const roleLoc = [m.current_role||'', [m.country||'', m.city||''].map(s=>s.trim()).filter(Boolean).join(', ')].filter(Boolean).join(' / ');
+          const matches = (it.matches||[]).join(', ');
+          return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
+            '<h4>'+name+cv+'</h4>'+
+            (roleLoc?'<p class="kvt-ai-meta">'+esc(roleLoc)+'</p>':'')+
+            '<p class="kvt-ai-summary"><strong>Palabras clave:</strong> '+esc(matches)+'</p>'+
+            '<div class="kvt-mini-actions"><button type="button" class="kvt-btn kvt-secondary kvt-mini-view">Ver perfil</button></div>'+
+            '<div class="kvt-mini-panel">'+buildProfileHTML({meta:it.meta})+'</div>'+
+          '</div>';
+        }).join('');
+        els('.kvt-mini-view', keywordBoardResults).forEach(b=>{
+          b.addEventListener('click', ()=>{
+            const card = b.closest('.kvt-card-mini');
+            const panel = card.querySelector('.kvt-mini-panel');
+            const show = panel.style.display==='block';
+            panel.style.display = show?'none':'block';
+            b.textContent = show?'Ver perfil':'Ocultar';
+          });
+        });
+      }).catch(()=>{ keywordBoardBtn.disabled=false; keywordBoardResults.innerHTML=''; });
+  });
+
   btnToggle && btnToggle.addEventListener('click', e=>{
     e.preventDefault();
     tableWrap.style.display = (tableWrap.style.display==='none' || !tableWrap.style.display) ? 'block' : 'none';
@@ -3927,7 +3992,6 @@ function kvtInit(){
   }
 
   btnAdd && btnAdd.addEventListener('click', e=>{ e.preventDefault(); openModal(); });
-  btnKeyword && btnKeyword.addEventListener('click', e=>{ e.preventDefault(); openModal('keyword'); });
   // Create candidate modal
     const cmodal = el('#kvt_create_modal');
   const cclose = el('#kvt_create_close');
