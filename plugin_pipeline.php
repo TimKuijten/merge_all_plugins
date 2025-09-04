@@ -2705,12 +2705,13 @@ function kvtInit(){
       kvInp('Fecha subida', input('cv_uploaded', m.cv_uploaded||'', 'text', 'DD/MM/YYYY', 'kvt-date'));
 
     const log = Array.isArray(m.activity_log) ? m.activity_log : [];
+    const fieldLabels = {first_name:'Nombre',last_name:'Apellidos',email:'Email',phone:'Teléfono',country:'País',city:'Ciudad',current_role:'Current role',tags:'Tags',cv_url:'CV (URL)',cv_uploaded:'Fecha subida',next_action:'Próxima acción',next_action_note:'Comentario acción'};
     const logItems = log.map(it=>{
       const when = esc(it.time||'');
       const who  = esc(it.author||'');
       let text='';
       if(it.type==='status'){
-        text = 'Estado → '+esc(it.status||'');
+        text = 'Etapa → '+esc(it.status||'');
         if(it.comment) text += ' — '+esc(it.comment);
       } else if(it.type==='task_add'){
         text = 'Añadió próxima acción '+esc(it.date||'');
@@ -2722,10 +2723,22 @@ function kvtInit(){
       } else if(it.type==='task_deleted'){
         text = 'Eliminó acción '+esc(it.date||'');
         if(it.note) text += ' — '+esc(it.note);
+      } else if(it.type==='created'){
+        text = 'Creó el perfil';
+      } else if(it.type==='update'){
+        const fields = Array.isArray(it.fields)?it.fields.map(f=>fieldLabels[f]||f).join(', '):'';
+        text = 'Actualizó '+esc(fields);
+      } else if(it.type==='note'){
+        text = 'Añadió nota: '+esc(it.note||'');
+      } else if(it.type==='assign'){
+        text = 'Asignó al proceso '+esc(it.process||'');
+      } else if(it.type==='unassign'){
+        text = 'Desasignó del proceso '+esc(it.process||'');
       }
       return '<li>'+when+' — '+who+': '+text+'</li>';
     }).join('');
-    const logSection = '<div class="kvt-profile-activity"><h3>Actividad</h3>'+(logItems?('<ul>'+logItems+'</ul>'):'<p>No hay actividad</p>')+'</div>';
+
+    const activityTab = '<div id="kvt_profile_tab_activity" class="kvt-tab-panel"><div class="kvt-profile-activity">'+(logItems?('<ul>'+logItems+'</ul>'):'<p>No hay actividad</p>')+'</div></div>';
 
     const notesRaw = btoa(unescape(encodeURIComponent(m.notes||'')));
     const notesArr = String(m.notes||'').split('\n').filter(Boolean);
@@ -2738,10 +2751,11 @@ function kvtInit(){
       '<button type="button" class="kvt-tab active" data-target="info">Info</button>'+
       '<button type="button" class="kvt-tab" data-target="notes">Notas</button>'+
       '<button type="button" class="kvt-tab" data-target="next">Próxima acción</button>'+
+      '<button type="button" class="kvt-tab" data-target="activity">Actividad</button>'+
       '</div>';
 
     const infoTab = '<div id="kvt_profile_tab_info" class="kvt-tab-panel active">'+
-      '<div class="kvt-profile-cols"><dl class="kvt-profile-col">'+left+'</dl><dl class="kvt-profile-col">'+right+'</dl></div>'+logSection+
+      '<div class="kvt-profile-cols"><dl class="kvt-profile-col">'+left+'</dl><dl class="kvt-profile-col">'+right+'</dl></div>'+
       '<button type="button" class="kvt-save-profile">Guardar perfil</button>'+
       '</div>';
 
@@ -2751,12 +2765,12 @@ function kvtInit(){
       '<button type="button" class="kvt-add-note">Guardar nota</button>'+
       '</div>';
 
-    const nextTab = '<div id="kvt_profile_tab_next" class="kvt-tab-panel"><dl>'+ 
+    const nextTab = '<div id="kvt_profile_tab_next" class="kvt-tab-panel"><dl>'+
       kvInp('Fecha', input('next_action', m.next_action||'', 'text', 'DD/MM/YYYY', 'kvt-date'))+
       kvInp('Comentario', input('next_action_note', m.next_action_note||''))+
       '</dl><button type="button" class="kvt-save-next">Guardar próxima acción</button></div>';
 
-    return tabs + infoTab + notesTab + nextTab;
+    return tabs + infoTab + notesTab + nextTab + activityTab;
   }
 
   function enableProfileEditHandlers(card, id){
@@ -2792,6 +2806,15 @@ function kvtInit(){
                 tagWrap.appendChild(span);
               });
             }
+          }
+          const actList = card.querySelector('#kvt_profile_tab_activity .kvt-profile-activity ul');
+          if(actList){
+            const stamp = new Date().toLocaleString();
+            const user = KVT_CURRENT_USER || '';
+            const fields = Object.keys(payload).join(', ');
+            const li = document.createElement('li');
+            li.textContent = stamp+' — '+user+': Actualizó '+fields;
+            actList.prepend(li);
           }
           const roleLine = card.querySelector('.kvt-role');
           if(roleLine){
@@ -2877,6 +2900,8 @@ function kvtInit(){
       params.set('_ajax_nonce', KVT_NONCE);
       params.set('id', id);
       params.set('notes', newRaw);
+      params.set('note', note);
+      params.set('author', user);
       fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
         .then(r=>r.json()).then(j=>{
           if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo guardar la nota.');
@@ -2884,6 +2909,12 @@ function kvtInit(){
           const li = document.createElement('li');
           li.textContent = stamp+' — '+user+': '+note;
           if(list) list.prepend(li);
+          const actList = container.querySelector('#kvt_profile_tab_activity .kvt-profile-activity ul');
+          if(actList){
+            const li2 = document.createElement('li');
+            li2.textContent = stamp+' — '+user+': Añadió nota: '+note;
+            actList.prepend(li2);
+          }
           txt.value='';
           refresh();
         });
@@ -5047,11 +5078,25 @@ JS;
 
     public function ajax_update_notes() {
         check_ajax_referer('kvt_nonce');
-        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
-        $notes = isset($_POST['notes']) ? wp_kses_post($_POST['notes']) : '';
+        $id     = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        $notes  = isset($_POST['notes']) ? wp_kses_post($_POST['notes']) : '';
+        $note   = isset($_POST['note']) ? sanitize_text_field($_POST['note']) : '';
+        $author = isset($_POST['author']) ? sanitize_text_field($_POST['author']) : '';
+        if(!$author){ $u = wp_get_current_user(); if($u && $u->exists()) $author = $u->display_name; }
         if (!$id) wp_send_json_error(['msg'=>'Invalid'], 400);
         update_post_meta($id, 'kvt_notes', $notes);
         update_post_meta($id, 'notes', $notes);
+        if($note !== ''){
+            $log = get_post_meta($id, 'kvt_activity_log', true);
+            if(!is_array($log)) $log = [];
+            $log[] = [
+                'type'   => 'note',
+                'note'   => $note,
+                'author' => $author,
+                'time'   => current_time('mysql'),
+            ];
+            update_post_meta($id, 'kvt_activity_log', $log);
+        }
         wp_send_json_success(['ok'=>true]);
     }
 
@@ -5119,7 +5164,10 @@ JS;
         if ($fields['kvt_cv_uploaded']) $fields['kvt_cv_uploaded'] = $this->fmt_date_ddmmyyyy($fields['kvt_cv_uploaded']);
         if ($fields['kvt_next_action']) $fields['kvt_next_action'] = $this->fmt_date_ddmmyyyy($fields['kvt_next_action']);
 
+        $changed = [];
         foreach ($fields as $k=>$v) {
+            $old = get_post_meta($id, $k, true);
+            if ($old !== $v) $changed[] = str_replace('kvt_', '', $k);
             update_post_meta($id, $k, $v);
             $legacy = str_replace('kvt_', '', $k);
             update_post_meta($id, $legacy, $v);
@@ -5130,6 +5178,20 @@ JS;
             $fn = $fields['kvt_first_name']; $ln = $fields['kvt_last_name'];
             $new = trim($fn.' '.$ln);
             if ($new) wp_update_post(['ID'=>$id,'post_title'=>$new]);
+        }
+
+        if(!empty($changed)){
+            $log = get_post_meta($id, 'kvt_activity_log', true);
+            if(!is_array($log)) $log = [];
+            $u = wp_get_current_user();
+            $author = ($u && $u->exists()) ? $u->display_name : '';
+            $log[] = [
+                'type'   => 'update',
+                'fields' => $changed,
+                'author' => $author,
+                'time'   => current_time('mysql'),
+            ];
+            update_post_meta($id, 'kvt_activity_log', $log);
         }
 
         wp_send_json_success(['ok'=>true]);
@@ -5490,6 +5552,26 @@ JS;
         if ($client_id) wp_set_object_terms($new_id, [$client_id], self::TAX_CLIENT, false);
         if ($process_id) wp_set_object_terms($new_id, [$process_id], self::TAX_PROCESS, false);
 
+        $log = [];
+        $u = wp_get_current_user();
+        $author = ($u && $u->exists()) ? $u->display_name : '';
+        $log[] = [
+            'type'   => 'created',
+            'author' => $author,
+            'time'   => current_time('mysql'),
+        ];
+        if ($process_id) {
+            $pterm = get_term($process_id, self::TAX_PROCESS);
+            $pname = ($pterm && !is_wp_error($pterm)) ? $pterm->name : '';
+            $log[] = [
+                'type'   => 'assign',
+                'process'=> $pname,
+                'author' => $author,
+                'time'   => current_time('mysql'),
+            ];
+        }
+        update_post_meta($new_id, 'kvt_activity_log', $log);
+
         wp_send_json_success(['id'=>$new_id]);
     }
 
@@ -5520,6 +5602,8 @@ JS;
         $created  = [];
         $files    = $_FILES['files'];
         $statuses = $this->get_statuses();
+        $u = wp_get_current_user();
+        $author = ($u && $u->exists()) ? $u->display_name : '';
 
         foreach ($files['name'] as $i => $name) {
             if ($files['error'][$i] !== UPLOAD_ERR_OK) continue;
@@ -5574,6 +5658,15 @@ JS;
             if ($new_title !== '') {
                 wp_update_post(['ID'=>$cid,'post_title'=>$new_title]);
             }
+
+            $log = [
+                [
+                    'type'   => 'created',
+                    'author' => $author,
+                    'time'   => current_time('mysql'),
+                ]
+            ];
+            update_post_meta($cid, 'kvt_activity_log', $log);
 
             $created[] = ['id'=>$cid, 'fields'=>$fields];
         }
@@ -6292,6 +6385,22 @@ JS;
           if ($client_id) wp_set_object_terms($id, [$client_id], self::TAX_CLIENT, true);
           if ($process_id) wp_set_object_terms($id, [$process_id], self::TAX_PROCESS, true);
 
+          $log = get_post_meta($id, 'kvt_activity_log', true);
+          if(!is_array($log)) $log = [];
+          if ($process_id) {
+              $pterm = get_term($process_id, self::TAX_PROCESS);
+              $pname = ($pterm && !is_wp_error($pterm)) ? $pterm->name : '';
+              $u = wp_get_current_user();
+              $author = ($u && $u->exists()) ? $u->display_name : '';
+              $log[] = [
+                  'type'   => 'assign',
+                  'process'=> $pname,
+                  'author' => $author,
+                  'time'   => current_time('mysql'),
+              ];
+              update_post_meta($id, 'kvt_activity_log', $log);
+          }
+
           wp_send_json_success(['id'=>$id]);
       }
 
@@ -6307,6 +6416,22 @@ JS;
           }
           if ($client_id) wp_remove_object_terms($id, [$client_id], self::TAX_CLIENT);
           if ($process_id) wp_remove_object_terms($id, [$process_id], self::TAX_PROCESS);
+
+          $log = get_post_meta($id, 'kvt_activity_log', true);
+          if(!is_array($log)) $log = [];
+          if ($process_id) {
+              $pterm = get_term($process_id, self::TAX_PROCESS);
+              $pname = ($pterm && !is_wp_error($pterm)) ? $pterm->name : '';
+              $u = wp_get_current_user();
+              $author = ($u && $u->exists()) ? $u->display_name : '';
+              $log[] = [
+                  'type'   => 'unassign',
+                  'process'=> $pname,
+                  'author' => $author,
+                  'time'   => current_time('mysql'),
+              ];
+              update_post_meta($id, 'kvt_activity_log', $log);
+          }
 
           wp_send_json_success(['id'=>$id]);
       }
