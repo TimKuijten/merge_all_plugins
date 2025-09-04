@@ -2931,8 +2931,18 @@ function kvtInit(){
     const maskDate = e => { let v = e.target.value.replace(/[^0-9]/g,'').slice(0,8); if (v.length>4) v = v.replace(/(\d{2})(\d{2})(\d+)/,'$1-$2-$3'); else if (v.length>2) v = v.replace(/(\d{2})(\d+)/,'$1-$2'); e.target.value = v; };
     dateInput.addEventListener('input', maskDate);
     btn.addEventListener('click', ()=>{
-      const payload = { next_action: dateInput.value || '', next_action_note: noteInput ? noteInput.value || '' : '' };
-      fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_update_profile', _ajax_nonce:KVT_NONCE, id, ...payload}).toString()})
+      const date = formatInputDate(dateInput.value);
+      const note = noteInput ? noteInput.value || '' : '';
+      if(!date) { alert('Fecha requerida'); return; }
+      const params = new URLSearchParams();
+      params.set('action','kvt_add_task');
+      params.set('_ajax_nonce', KVT_NONCE);
+      params.set('id', id);
+      params.set('date', date);
+      params.set('time', '');
+      params.set('note', note);
+      params.set('author', KVT_CURRENT_USER || '');
+      fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
         .then(r=>r.json()).then(j=>{
           if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo guardar la próxima acción.');
           alert('Próxima acción guardada.');
