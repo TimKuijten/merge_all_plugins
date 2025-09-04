@@ -5921,7 +5921,7 @@ JS;
         if (!preg_match('/^[a-z0-9-]+-[a-z0-9-]+-\d{5}$/i', $slug)) return;
         $links = get_option('kvt_client_links', []);
         if (!isset($links[$slug])) return;
-        $target = home_url('/base/?kvt_board=' . $slug);
+        $target = home_url('/view-board/?kvt_board=' . $slug);
         wp_redirect($target);
         exit;
     }
