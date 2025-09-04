@@ -5633,32 +5633,46 @@ JS;
     public function ajax_ai_search() {
         check_ajax_referer('kvt_nonce');
 
+        // Heavy search across many CVs can exceed default PHP limits.
+        // Allow the process to run longer and use more memory so the request
+        // can finish instead of timing out and leaving the UI hanging.
+        ignore_user_abort(true);
+        @set_time_limit(300);
+        if (function_exists('wp_raise_memory_limit')) {
+            wp_raise_memory_limit('admin');
+        }
+
         $desc = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
         if (!$desc) wp_send_json_error(['msg' => 'Descripción vacía'], 400);
 
         $key = get_option(self::OPT_OPENAI_KEY, '');
         if (!$key) wp_send_json_error(['msg' => 'Falta la clave'], 400);
 
-        $candidates = get_posts(['post_type' => self::CPT, 'posts_per_page' => -1]);
+        // Fetch only candidate IDs to reduce memory footprint during the scan
+        $candidate_ids = get_posts([
+            'post_type'      => self::CPT,
+            'posts_per_page' => -1,
+            'fields'         => 'ids',
+        ]);
         $items = [];
-        foreach ($candidates as $c) {
-            $cv_text = $this->get_candidate_cv_text($c->ID);
+        foreach ($candidate_ids as $cid) {
+            $cv_text = $this->get_candidate_cv_text($cid);
             if (!$cv_text) continue;
             $res = $this->openai_match_summary($key, $desc, $cv_text);
             if ($res) {
                 $meta = [
-                    'first_name'  => $this->meta_get_compat($c->ID,'kvt_first_name',['first_name']),
-                    'last_name'   => $this->meta_get_compat($c->ID,'kvt_last_name',['last_name']),
-                    'email'       => $this->meta_get_compat($c->ID,'kvt_email',['email']),
-                    'phone'       => $this->meta_get_compat($c->ID,'kvt_phone',['phone']),
-                    'country'     => $this->meta_get_compat($c->ID,'kvt_country',['country']),
-                    'city'        => $this->meta_get_compat($c->ID,'kvt_city',['city']),
-                    'cv_url'      => $this->meta_get_compat($c->ID,'kvt_cv_url',['cv_url']),
-                    'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($c->ID,'kvt_cv_uploaded',['cv_uploaded'])),
-                    'tags'        => $this->meta_get_compat($c->ID,'kvt_tags',['tags']),
+                    'first_name'  => $this->meta_get_compat($cid,'kvt_first_name',['first_name']),
+                    'last_name'   => $this->meta_get_compat($cid,'kvt_last_name',['last_name']),
+                    'email'       => $this->meta_get_compat($cid,'kvt_email',['email']),
+                    'phone'       => $this->meta_get_compat($cid,'kvt_phone',['phone']),
+                    'country'     => $this->meta_get_compat($cid,'kvt_country',['country']),
+                    'city'        => $this->meta_get_compat($cid,'kvt_city',['city']),
+                    'cv_url'      => $this->meta_get_compat($cid,'kvt_cv_url',['cv_url']),
+                    'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($cid,'kvt_cv_uploaded',['cv_uploaded'])),
+                    'tags'        => $this->meta_get_compat($cid,'kvt_tags',['tags']),
                 ];
                 $items[] = [
-                    'id'      => $c->ID,
+                    'id'      => $cid,
                     'meta'    => $meta,
                     'summary' => $res['summary'],
                     'score'   => $res['score'],
