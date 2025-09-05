@@ -30,6 +30,7 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_EMAIL_LOG = 'kvt_email_log';
     const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
     const MIT_HISTORY_LIMIT = 20;
+    const MIT_TIMEOUT      = 60;
 
     public function __construct() {
         add_action('init',                       [$this, 'register_types']);
@@ -5846,7 +5847,7 @@ JS;
                     ['role' => 'user', 'content' => $prompt],
                 ],
             ]),
-            'timeout' => 30,
+            'timeout' => self::MIT_TIMEOUT,
         ]);
         if (!is_wp_error($resp)) {
             $data = json_decode(wp_remote_retrieve_body($resp), true);
@@ -5975,7 +5976,7 @@ JS;
                     ['role' => 'user', 'content' => $prompt],
                 ],
             ]),
-            'timeout' => 0,
+            'timeout' => self::MIT_TIMEOUT,
         ]);
         $text = '';
         if (!is_wp_error($resp)) {
@@ -6035,7 +6036,7 @@ JS;
                 'model' => $model,
                 'messages' => $api_messages,
             ]),
-            'timeout' => 0,
+            'timeout' => self::MIT_TIMEOUT,
         ]);
         if (is_wp_error($resp)) {
             wp_send_json_error(['msg' => $resp->get_error_message()], 500);
