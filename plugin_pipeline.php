@@ -5964,7 +5964,7 @@ JS;
             $summary .= ' Noticias del mercado: ' . implode(' | ', $news) . '.';
         }
 
-        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable en España y Chile. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento.";
+        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable en España y Chile. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -5984,7 +5984,7 @@ JS;
             $text = trim($data['choices'][0]['message']['content'] ?? '');
         }
         if ($text) {
-            $hist['messages'][] = ['role' => 'assistant', 'content' => $text];
+            $hist['messages'][] = ['role' => 'assistant', 'content' => wp_strip_all_tags($text), 'html' => $text];
             $this->mit_summarize_history($hist, $key, $model);
             $this->mit_save_history($uid, $hist);
         }
@@ -5992,20 +5992,9 @@ JS;
             $err = $resp->get_error_message();
             $text = sprintf(__('No se pudo conectar con OpenAI: %s', 'kovacic'), $err);
         }
-        $html = '';
-        if ($text) {
-            $parts = array_filter(array_map('trim', preg_split('/\n+/', $text)));
-            if ($parts) {
-                $items = '';
-                foreach ($parts as $p) {
-                    $items .= '<li>' . esc_html($p) . '</li>';
-                }
-                $html = '<ul>' . $items . '</ul>';
-            }
-        }
         wp_send_json_success([
-            'suggestions'       => $text,
-            'suggestions_html'  => wp_kses_post($html),
+            'suggestions'       => wp_strip_all_tags($text),
+            'suggestions_html'  => wp_kses_post($text),
             'news'              => $news,
             'history'           => $hist['messages'],
         ]);
@@ -6027,6 +6016,7 @@ JS;
         if (!empty($hist['summary'])) {
             array_unshift($api_messages, ['role' => 'system', 'content' => $hist['summary']]);
         }
+        array_unshift($api_messages, ['role' => 'system', 'content' => 'Responde en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>.']);
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -6044,13 +6034,16 @@ JS;
         $data = json_decode(wp_remote_retrieve_body($resp), true);
         $reply = trim($data['choices'][0]['message']['content'] ?? '');
         if ($reply) {
-            $hist['messages'][] = ['role' => 'assistant', 'content' => $reply];
+            $hist['messages'][] = ['role' => 'assistant', 'content' => wp_strip_all_tags($reply), 'html' => $reply];
             $this->mit_summarize_history($hist, $key, $model);
             $this->mit_save_history($uid, $hist);
         } else {
             $this->mit_save_history($uid, $hist);
         }
-        wp_send_json_success(['reply' => $reply]);
+        wp_send_json_success([
+            'reply'      => wp_strip_all_tags($reply),
+            'reply_html' => wp_kses_post($reply),
+        ]);
     }
 
     public function mit_lightbulb() {
@@ -6060,7 +6053,7 @@ JS;
         <div id="k-mit-bulb" class="dashicons dashicons-lightbulb"></div>
         <div id="k-mit-box" style="display:none;">
             <div id="k-mit-chat"></div>
-            <div class="k-mit-input"><textarea id="k-mit-input" rows="2"></textarea><button id="k-mit-send">Enviar</button></div>
+            <div class="k-mit-input"><textarea id="k-mit-input" rows="2"></textarea><button type="button" id="k-mit-send">Enviar</button></div>
         </div>
         <script>
         (function(){
@@ -6071,7 +6064,7 @@ JS;
             const send = document.getElementById('k-mit-send');
             if(!bulb || !box || !chat || !input || !send) return;
             let history = [];
-            try{ history = JSON.parse(sessionStorage.getItem('kvtMitHistory')||'[]'); history.forEach(m=>append(m.role,m.content)); }catch(e){ history=[]; }
+            try{ history = JSON.parse(sessionStorage.getItem('kvtMitHistory')||'[]'); history.forEach(m=>append(m.role,m.html||m.content, !!m.html)); }catch(e){ history=[]; }
             function append(role,text,isHtml=false){ const div=document.createElement('div'); div.className='k-mit-msg '+role; if(isHtml){div.innerHTML=text;}else{div.textContent=text;} chat.appendChild(div); chat.scrollTop=chat.scrollHeight; }
             function save(){ sessionStorage.setItem('kvtMitHistory', JSON.stringify(history)); }
             bulb.addEventListener('click', ()=>{ box.style.display = box.style.display === 'none' ? 'block' : 'none'; });
@@ -6080,10 +6073,7 @@ JS;
                     if(resp.data.history){
                         history = resp.data.history;
                         chat.innerHTML='';
-                        history.forEach((m,i)=>{
-                            const useHtml = i===history.length-1 && m.role==='assistant' && resp.data.suggestions_html;
-                            append(m.role, useHtml ? resp.data.suggestions_html : m.content, useHtml);
-                        });
+                        history.forEach(m=>{ append(m.role, m.html||m.content, !!m.html); });
                         save();
                     }
                     if(resp.data.suggestions_html){ bulb.style.color='#f1c40f'; box.style.display='block'; }
@@ -6100,9 +6090,9 @@ JS;
                     const res=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_chat', nonce:KVT_MIT_NONCE, message:msg})});
                     const j=await res.json();
                     if(j.success && j.data && j.data.reply){
-                        const html = j.data.reply.replace(/\n/g,'<br>');
+                        const html = j.data.reply_html || j.data.reply.replace(/\n/g,'<br>');
                         append('assistant', html, true);
-                        history.push({role:'assistant',content:j.data.reply});
+                        history.push({role:'assistant',content:j.data.reply,html:html});
                         save();
                     }
                 }catch(e){ append('assistant','Error de conexión'); }
