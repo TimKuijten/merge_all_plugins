@@ -5209,6 +5209,7 @@ JS;
                     ['role' => 'user', 'content' => $prompt],
                 ],
             ]),
+            'timeout' => 60,
         ]);
         if (is_wp_error($resp)) {
             $err = $resp->get_error_message();
