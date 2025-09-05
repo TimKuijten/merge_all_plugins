@@ -1639,7 +1639,7 @@ JS;
                     <table class="kvt-table">
                       <thead>
                         <tr>
-                          <th></th><th>Email</th><th>Nombre</th><th>Apellido</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th>
+                          <th></th><th>Nombre</th><th>Apellido</th><th>Email</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th>
                         </tr>
                       </thead>
                       <tbody id="kvt_email_tbody"></tbody>
@@ -1661,6 +1661,7 @@ JS;
                   <div class="kvt-filter-field">
                     <input type="text" id="kvt_email_from_name" class="kvt-input" placeholder="Nombre remitente">
                     <input type="email" id="kvt_email_from_email" class="kvt-input" placeholder="Email remitente">
+                    <label style="margin-top:4px;display:flex;align-items:center;"><input type="checkbox" id="kvt_email_use_signature" checked> Incluir firma</label>
                   </div>
                   <div class="kvt-row" style="margin-top:8px;">
                     <button type="button" class="kvt-btn" id="kvt_email_preview">Vista previa</button>
@@ -2144,7 +2145,7 @@ JS;
         #kvt_email_tbody tr:nth-child(even){background:#f1f5f9}
         #kvt_email_tbody tr:nth-child(odd){background:#fff}
         #kvt_email_filters .kvt-filter-field{display:flex;flex-direction:column}
-        #kvt_email_filters select{min-width:140px}
+        #kvt_email_filters select{min-width:180px;width:auto}
         .kvt-base .kvt-row:nth-child(even){background:#f1f5f9}
         .kvt-base .kvt-row:nth-child(odd){background:#fff}
         .kvt-active-days{font-size:14px;font-weight:600}
@@ -2303,6 +2304,8 @@ JS;
         wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/view-board/')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_MIT_NONCE="'.esc_js(wp_create_nonce('kvt_mit')).'";', 'before');
+        $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
+        wp_add_inline_script('kvt-app', 'const KVT_SIGNATURE='.wp_json_encode($signature).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($has_share_link?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_STEPS='.wp_json_encode($sel_steps).';', 'before');
@@ -2495,6 +2498,7 @@ function kvtInit(){
   const emailBody = el('#kvt_email_body');
   const emailFromName = el('#kvt_email_from_name');
   const emailFromEmail = el('#kvt_email_from_email');
+  const emailUseSig = el('#kvt_email_use_signature');
   const emailSend = el('#kvt_email_send');
   const emailStatusMsg = el('#kvt_email_status_msg');
   const emailPager = el('#kvt_email_pager');
@@ -2554,7 +2558,7 @@ function kvtInit(){
 
   if(window.jQuery){
     [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
-      if(sel) jQuery(sel).select2();
+      if(sel) jQuery(sel).select2({width:'style', dropdownAutoWidth:true});
     });
   }
 
@@ -2577,9 +2581,9 @@ function kvtInit(){
       const m=c.meta||{};
       const chk=emailSelected.has(String(id))?'checked':'';
       return '<tr><td><input type="checkbox" data-id="'+escAttr(id)+'" '+chk+'></td>'+
-        '<td>'+esc(m.email||'')+'</td>'+
         '<td>'+esc(m.first_name||'')+'</td>'+
         '<td>'+esc(m.last_name||'')+'</td>'+
+        '<td>'+esc(m.email||'')+'</td>'+
         '<td>'+esc(m.country||'')+'</td>'+
         '<td>'+esc(m.city||'')+'</td>'+
         '<td>'+esc(m.client||'')+'</td>'+
@@ -5096,7 +5100,11 @@ function kvtInit(){
       const meta=Object.assign({}, m, {surname:m.last_name||'', role:m.process||'', board:m.board||''});
       const repl=str=>str.replace(/{{(\w+)}}/g,(match,p)=>meta[p]||'');
       emailPrevSubject.textContent=repl(subject);
-      emailPrevBody.innerHTML=repl(body).replace(/\n/g,'<br>');
+      let bodyHtml=repl(body).replace(/\n/g,'<br>');
+      if(emailUseSig && emailUseSig.checked && KVT_SIGNATURE){
+        bodyHtml+='<br><br>'+KVT_SIGNATURE.replace(/\n/g,'<br>');
+      }
+      emailPrevBody.innerHTML=bodyHtml;
       if(emailPrevModal) emailPrevModal.style.display='flex';
     });
     emailPrevClose && emailPrevClose.addEventListener('click', ()=>{ if(emailPrevModal) emailPrevModal.style.display='none'; });
@@ -5113,7 +5121,7 @@ function kvtInit(){
       }).filter(r=>r.email);
       if(!recipients.length){ alert('No hay candidatos seleccionados con email.'); return; }
       if(!confirm(`¿Enviar a ${recipients.length} contactos?`)) return;
-      const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim()};
+      const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0};
       const res2 = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)})});
       let out; try{ out=await res2.json(); }catch(e){ emailStatusMsg.textContent='Error'; return; }
       if(out.success){ emailStatusMsg.textContent=`Enviados: ${out.data.sent}`; } else { emailStatusMsg.textContent='Error enviando'; }
@@ -7208,11 +7216,12 @@ JS;
             $payload = json_decode($payload_json, true);
             if (!is_array($payload)) wp_send_json_error(['error' => 'Invalid JSON'], 400);
 
-            $subject_tpl = (string)($payload['subject_template'] ?? '');
-            $body_tpl    = (string)($payload['body_template'] ?? '');
-            $recipients  = (array)($payload['recipients'] ?? []);
-            $from_email  = sanitize_email($payload['from_email'] ?? '');
-            $from_name   = sanitize_text_field($payload['from_name'] ?? '');
+            $subject_tpl   = (string)($payload['subject_template'] ?? '');
+            $body_tpl      = (string)($payload['body_template'] ?? '');
+            $recipients    = (array)($payload['recipients'] ?? []);
+            $from_email    = sanitize_email($payload['from_email'] ?? '');
+            $from_name     = sanitize_text_field($payload['from_name'] ?? '');
+            $use_signature = !empty($payload['use_signature']);
 
             if (!$from_email) $from_email = get_option('admin_email');
             if (!$from_name)  $from_name  = get_bloginfo('name');
@@ -7281,7 +7290,7 @@ JS;
                     'sender' => $from_name ?: $from_email ?: get_bloginfo('name')
                 ]));
                 $body = $this->normalize_br_html($body_raw);
-                if ($signature) {
+                if ($signature && $use_signature) {
                     $body .= '<br><br>' . $this->normalize_br_html($signature);
                 }
 
