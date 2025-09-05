@@ -250,6 +250,7 @@ cv_uploaded|Fecha de subida");
             </div>
             <div class="k-layout">
               <div>
+                <div id="k-client-process" class="k-client-process"></div>
                 <div class="k-tablewrap">
                   <table class="k-table" aria-describedby="k-page">
                     <thead>
@@ -374,6 +375,8 @@ cv_uploaded|Fecha de subida");
 
 /* Table */
 .kcvf .k-tablewrap{position:relative;overflow:auto;border:1px solid var(--divider);border-radius:var(--radius);box-shadow:var(--shadow)}
+.kcvf .k-client-process{font-weight:600;margin-bottom:8px}
+.kcvf .k-cv-icon{margin-left:4px;text-decoration:none}
 .kcvf table{width:100%;border-collapse:separate;border-spacing:0;background:var(--surface)}
 .kcvf thead th{
   position:sticky;top:0;background:#f9fbfd;border-bottom:1px solid var(--divider);
@@ -459,13 +462,23 @@ CSS;
 
   function renderRows(items){
     tbody.innerHTML='';
+    const cpEl = document.getElementById('k-client-process');
+    if(CLIENT_VIEW && cpEl){
+      if(items.length){
+        cpEl.textContent = 'Cliente: '+(items[0].meta.client||'')+' — Proceso: '+(items[0].meta.process||'');
+        cpEl.style.display='block';
+      }else{
+        cpEl.style.display='none';
+      }
+    }
     items.forEach(item=>{
       const tr=document.createElement('tr');
       const cb=document.createElement('td');
       cb.className='checkbox';
       cb.innerHTML='<input type="checkbox" class="k-rowcheck" value="'+item.id+'">';
       const name=document.createElement('td');
-      name.innerHTML='<a href="#" class="k-candidate" data-id="'+item.id+'">'+item.meta.first_name+' '+item.meta.last_name+'</a>';
+      const cv = item.meta.cv_url?'<a href="'+item.meta.cv_url+'" target="_blank" class="k-cv-icon" title="CV">\u{1F4C4}</a>':'';
+      name.innerHTML='<a href="#" class="k-candidate" data-id="'+item.id+'">'+item.meta.first_name+' '+item.meta.last_name+'</a>'+cv;
       const intNo=document.createElement('td');
       intNo.textContent=item.meta.int_no||'';
       const stage=document.createElement('td');
@@ -2048,6 +2061,17 @@ function kvtInit(){
   const CLIENT_LINKS = (typeof KVT_CLIENT_LINKS === 'object' && KVT_CLIENT_LINKS) ? KVT_CLIENT_LINKS : {};
   const COUNTRY_OPTIONS = Array.isArray(KVT_COUNTRIES) ? KVT_COUNTRIES : [];
 
+  if (CLIENT_VIEW) {
+    const actToggle = el('#k-toggle-activity');
+    if (actToggle) actToggle.style.display = 'none';
+    const sideHead = el('#k-sidebar .k-sidehead');
+    if (sideHead) sideHead.textContent = 'Registro';
+    const sideActions = el('#k-sidebar .k-sideactions');
+    if (sideActions) sideActions.style.display = 'none';
+    const sidebar = el('#k-sidebar');
+    if (sidebar) sidebar.style.display = 'none';
+  }
+
   const helpBtn = el('.kvt-help');
   const helpModal = el('#kvt_help_modal');
   const helpClose = el('#kvt_help_close');
@@ -2709,12 +2733,13 @@ function kvtInit(){
     const m = c.meta||{};
     if (CLIENT_VIEW) {
       const fields = ALLOWED_FIELDS.length ? ALLOWED_FIELDS : KVT_COLUMNS.map(col=>col.key);
-      const html = fields.map(key=>{
+      const half = Math.ceil(fields.length/2);
+      const make = fs=>fs.map(key=>{
         const col = KVT_COLUMNS.find(co=>co.key===key);
         const label = col ? col.label : key;
-        return '<dt>'+esc(label)+'</dt><dd>'+esc(m[key]||'')+'</dd>';
+        return '<dt><strong>'+esc(label)+'</strong></dt><dd>'+esc(m[key]||'')+'</dd>';
       }).join('');
-      return '<dl>'+html+'</dl>';
+      return '<div class="kvt-profile-cols"><dl class="kvt-profile-col">'+make(fields.slice(0,half))+'</dl><dl class="kvt-profile-col">'+make(fields.slice(half))+'</dl></div>';
     }
     const input = (field,val,type='text',ph='',cls='')=>'<input class="kvt-input'+(cls?' '+cls:'')+'" data-field="'+field+'" type="'+type+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'">';
     const kvInp = (label, html)=>'<dt>'+esc(label)+'</dt><dd>'+html+'</dd>';
