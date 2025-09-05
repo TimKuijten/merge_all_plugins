@@ -137,6 +137,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
         add_action('wp_ajax_kvt_save_template',        [$this, 'ajax_save_template']);
         add_action('wp_ajax_kvt_delete_template',      [$this, 'ajax_delete_template']);
+        add_action('wp_ajax_kvt_delete_board',        [$this, 'ajax_delete_board']);
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
 
         add_action('kvt_refresh_worker',               [$this, 'cron_refresh_worker']);
@@ -1418,15 +1419,15 @@ JS;
         <div class="kvt-wrapper">
             <nav class="kvt-nav" aria-label="Navegación principal">
                 <a href="#" class="active" data-view="detalles"><span class="dashicons dashicons-dashboard"></span> Panel</a>
-                <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidatos</a>
                 <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendario</a>
+                <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidatos</a>
+                <a href="#" data-view="base" id="kvt_open_clients"><span class="dashicons dashicons-businessman"></span> Clientes</a>
+                <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
+                <a href="#" data-view="email" id="kvt_nav_email"><span class="dashicons dashicons-email"></span> E-mail</a>
                 <a href="#" data-view="keyword"><span class="dashicons dashicons-search"></span> <?php esc_html_e('Búsqueda de palabras', 'kovacic'); ?></a>
                 <a href="#" data-view="ai"><span class="dashicons dashicons-search"></span> Buscador IA</a>
-                <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
-                <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
-                <a href="#" data-view="base" id="kvt_open_clients"><span class="dashicons dashicons-businessman"></span> Clientes</a>
                 <a href="#" data-view="boards" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
-                <a href="#" data-view="email" id="kvt_nav_email"><span class="dashicons dashicons-email"></span> E-mail</a>
+                <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
             </nav>
@@ -1591,15 +1592,16 @@ JS;
                         $client  = get_term_field('name', $cfg['client'], self::TAX_CLIENT);
                         $process = get_term_field('name', $cfg['process'], self::TAX_PROCESS);
                         $url     = home_url('/view-board/' . $slug . '/');
-                        $edit    = home_url('/base/?edit_board=' . $slug);
-                        $del     = wp_nonce_url(admin_url('admin-post.php?action=kvt_delete_board&type=client&slug=' . $slug), 'kvt_delete_board'); ?>
+                        $fields  = esc_attr(wp_json_encode($cfg['fields'] ?? []));
+                        $steps   = esc_attr(wp_json_encode($cfg['steps'] ?? []));
+                        $comments= !empty($cfg['comments']) ? '1' : '0'; ?>
                         <tr>
                           <td><?php esc_html_e('Cliente', 'kovacic'); ?></td>
                           <td><?php echo esc_html($client); ?></td>
                           <td><?php echo esc_html($process); ?></td>
                           <td>&mdash;</td>
                           <td><a href="<?php echo esc_url($url); ?>" target="_blank"><?php echo esc_html($slug); ?></a></td>
-                          <td><a href="<?php echo esc_url($edit); ?>"><?php esc_html_e('Configurar', 'kovacic'); ?></a> | <a href="<?php echo esc_url($del); ?>"><?php esc_html_e('Eliminar', 'kovacic'); ?></a></td>
+                          <td><a href="#" class="kvt-config-board" data-type="client" data-slug="<?php echo esc_attr($slug); ?>" data-client="<?php echo esc_attr($cfg['client']); ?>" data-process="<?php echo esc_attr($cfg['process']); ?>" data-fields="<?php echo $fields; ?>" data-steps="<?php echo $steps; ?>" data-comments="<?php echo $comments; ?>"><?php esc_html_e('Configurar', 'kovacic'); ?></a> | <a href="#" class="kvt-delete-board" data-type="client" data-slug="<?php echo esc_attr($slug); ?>"><?php esc_html_e('Eliminar', 'kovacic'); ?></a></td>
                         </tr>
                       <?php endforeach; ?>
                       <?php foreach ($candidate_links as $slug => $cfg) :
@@ -1607,15 +1609,16 @@ JS;
                         $process = get_term_field('name', $cfg['process'], self::TAX_PROCESS);
                         $cand    = get_the_title($cfg['candidate']);
                         $url     = home_url('/view-board/' . $slug . '/');
-                        $edit    = home_url('/base/?edit_board=' . $slug);
-                        $del     = wp_nonce_url(admin_url('admin-post.php?action=kvt_delete_board&type=candidate&slug=' . $slug), 'kvt_delete_board'); ?>
+                        $fields  = esc_attr(wp_json_encode($cfg['fields'] ?? []));
+                        $steps   = esc_attr(wp_json_encode($cfg['steps'] ?? []));
+                        $comments= !empty($cfg['comments']) ? '1' : '0'; ?>
                         <tr>
                           <td><?php esc_html_e('Candidato', 'kovacic'); ?></td>
                           <td><?php echo esc_html($client); ?></td>
                           <td><?php echo esc_html($process); ?></td>
                           <td><?php echo esc_html($cand); ?></td>
                           <td><a href="<?php echo esc_url($url); ?>" target="_blank"><?php echo esc_html($slug); ?></a></td>
-                          <td><a href="<?php echo esc_url($edit); ?>"><?php esc_html_e('Configurar', 'kovacic'); ?></a> | <a href="<?php echo esc_url($del); ?>"><?php esc_html_e('Eliminar', 'kovacic'); ?></a></td>
+                          <td><a href="#" class="kvt-config-board" data-type="candidate" data-slug="<?php echo esc_attr($slug); ?>" data-client="<?php echo esc_attr($cfg['client']); ?>" data-process="<?php echo esc_attr($cfg['process']); ?>" data-candidate="<?php echo esc_attr($cfg['candidate']); ?>" data-fields="<?php echo $fields; ?>" data-steps="<?php echo $steps; ?>" data-comments="<?php echo $comments; ?>"><?php esc_html_e('Configurar', 'kovacic'); ?></a> | <a href="#" class="kvt-delete-board" data-type="candidate" data-slug="<?php echo esc_attr($slug); ?>"><?php esc_html_e('Eliminar', 'kovacic'); ?></a></td>
                         </tr>
                       <?php endforeach; ?>
                     <?php endif; ?>
@@ -2427,6 +2430,7 @@ function kvtInit(){
   const IS_ADMIN = typeof KVT_IS_ADMIN !== 'undefined' && KVT_IS_ADMIN;
   const CLIENT_LINKS = (typeof KVT_CLIENT_LINKS === 'object' && KVT_CLIENT_LINKS) ? KVT_CLIENT_LINKS : {};
   const COUNTRY_OPTIONS = Array.isArray(KVT_COUNTRIES) ? KVT_COUNTRIES : [];
+  let EDIT_SLUG = '';
 
   if (CLIENT_VIEW) {
     const actToggle = el('#k-toggle-activity');
@@ -4673,8 +4677,8 @@ function kvtInit(){
   });
   tablePrev && tablePrev.addEventListener('click', ()=>{ if(currentPage>1){ currentPage--; refresh(); } });
   tableNext && tableNext.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage++; refresh(); } });
-  shareClose && shareClose.addEventListener('click', ()=>{ shareModal.style.display='none'; forceSelect=false; selectedCandidateIds=[]; selectedCandidateId=0; });
-  shareModal && shareModal.addEventListener('click', e=>{ if(e.target===shareModal){ shareModal.style.display='none'; forceSelect=false; selectedCandidateIds=[]; selectedCandidateId=0; }});
+  shareClose && shareClose.addEventListener('click', ()=>{ shareModal.style.display='none'; forceSelect=false; selectedCandidateIds=[]; selectedCandidateId=0; EDIT_SLUG=''; });
+  shareModal && shareModal.addEventListener('click', e=>{ if(e.target===shareModal){ shareModal.style.display='none'; forceSelect=false; selectedCandidateIds=[]; selectedCandidateId=0; EDIT_SLUG=''; }});
   shareFieldsAll && shareFieldsAll.addEventListener('change', ()=>{
     els('input[type="checkbox"]', shareFieldsWrap).forEach(cb=>cb.checked = shareFieldsAll.checked);
   });
@@ -4687,6 +4691,46 @@ function kvtInit(){
   shareStepsWrap && shareStepsWrap.addEventListener('change', ()=>{
     shareStepsAll.checked = els('input[type="checkbox"]', shareStepsWrap).every(cb=>cb.checked);
   });
+  boardsView && boardsView.addEventListener('click', e=>{
+    const cfgBtn = e.target.closest('.kvt-config-board');
+    if (cfgBtn) {
+      e.preventDefault();
+      EDIT_SLUG = cfgBtn.dataset.slug || '';
+      shareMode = cfgBtn.dataset.type === 'candidate' ? 'candidate' : 'client';
+      if (selClient) selClient.value = cfgBtn.dataset.client || '';
+      filterProcessOptions();
+      if (selProcess) selProcess.value = cfgBtn.dataset.process || '';
+      selectedCandidateId = shareMode === 'candidate' ? parseInt(cfgBtn.dataset.candidate || '0', 10) : 0;
+      selectedCandidateIds = selectedCandidateId ? [selectedCandidateId] : [];
+      ALLOWED_FIELDS = JSON.parse(cfgBtn.dataset.fields || '[]');
+      ALLOWED_STEPS = JSON.parse(cfgBtn.dataset.steps || '[]');
+      ALLOW_COMMENTS = cfgBtn.dataset.comments === '1';
+      refresh();
+      updateSelectedInfo();
+      buildShareOptions();
+      shareModal && (shareModal.style.display = 'flex');
+      return;
+    }
+    const delBtn = e.target.closest('.kvt-delete-board');
+    if (delBtn) {
+      e.preventDefault();
+      if (!confirm('¿Eliminar este tablero?')) return;
+      const params = new URLSearchParams();
+      params.set('action', 'kvt_delete_board');
+      params.set('_ajax_nonce', KVT_NONCE);
+      params.set('type', delBtn.dataset.type);
+      params.set('slug', delBtn.dataset.slug);
+      fetch(KVT_AJAX, { method: 'POST', body: params }).then(r => r.json()).then(j => {
+        if (j.success) {
+          const tr = delBtn.closest('tr');
+          tr && tr.remove();
+        } else {
+          alert('Error eliminando tablero');
+        }
+      });
+    }
+  });
+
     shareGenerate && shareGenerate.addEventListener('click', ()=>{
       const fields = els('input[type="checkbox"]', shareFieldsWrap).filter(cb=>cb.checked).map(cb=>cb.value);
       const steps  = els('input[type="checkbox"]', shareStepsWrap).filter(cb=>cb.checked).map(cb=>cb.value);
@@ -4701,6 +4745,7 @@ function kvtInit(){
         steps.forEach(s=>params.append('steps[]', s));
         if(shareComments && shareComments.checked) params.set('comments','1');
         if(CLIENT_VIEW && CLIENT_SLUG) params.set('slug', CLIENT_SLUG);
+        else if(EDIT_SLUG) params.set('slug', EDIT_SLUG);
         return params;
       };
       if(shareMode==='candidate' && selectedCandidateIds.length>1){
@@ -4714,6 +4759,7 @@ function kvtInit(){
           if(urls.length) prompt('Enlaces para compartir', urls.join('\n'));
           else alert('Error generando enlace');
           shareModal.style.display='none';
+          EDIT_SLUG='';
           forceSelect = false;
           selectedCandidateIds = [];
           selectedCandidateId = 0;
@@ -4732,13 +4778,16 @@ function kvtInit(){
               CLIENT_LINKS[selClient.value+'|'+selProcess.value] = slug;
               prompt('Enlace para compartir', url);
               shareModal.style.display='none';
+              EDIT_SLUG='';
               updateSelectedInfo();
             } else {
               prompt('Enlace para compartir', url);
               shareModal.style.display='none';
+              EDIT_SLUG='';
             }
           } else {
             shareModal.style.display='none';
+            EDIT_SLUG='';
             location.reload();
           }
           forceSelect = false;
@@ -7053,6 +7102,23 @@ JS;
         update_option($option_key, $links, false);
 
         wp_send_json_success(['slug' => $slug]);
+    }
+
+    public function ajax_delete_board() {
+        check_ajax_referer('kvt_nonce');
+        $type = isset($_POST['type']) ? sanitize_text_field(wp_unslash($_POST['type'])) : '';
+        $slug = isset($_POST['slug']) ? sanitize_text_field(wp_unslash($_POST['slug'])) : '';
+        if (!$type || !$slug) {
+            wp_send_json_error();
+        }
+        $option = $type === 'candidate' ? 'kvt_candidate_links' : 'kvt_client_links';
+        $links  = get_option($option, []);
+        if (isset($links[$slug])) {
+            unset($links[$slug]);
+            update_option($option, $links, false);
+            wp_send_json_success();
+        }
+        wp_send_json_error();
     }
 
     public function ajax_client_comment() {
