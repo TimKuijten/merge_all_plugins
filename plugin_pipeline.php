@@ -39,7 +39,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('admin_init',                 [$this, 'register_settings']);
         add_action('admin_menu',                 [$this, 'admin_menu']);
         add_action('admin_enqueue_scripts',      [$this, 'admin_assets']);
-        add_action('wp_footer',                  [$this, 'mit_lightbulb']);
+        add_action('wp_footer',                  [$this, 'mit_chat_widget']);
         add_action('phpmailer_init',             [$this, 'apply_smtp_settings']);
 
         // Term meta: Proceso -> Cliente
@@ -6164,52 +6164,52 @@ JS;
         ]);
     }
 
-    public function mit_lightbulb() {
+    public function mit_chat_widget() {
         if (!wp_script_is('kvt-app', 'enqueued')) return;
         if (!is_user_logged_in() || !current_user_can('edit_posts')) return;
         ?>
-        <div id="k-mit-bulb" class="dashicons dashicons-lightbulb"></div>
-        <div id="k-mit-box" style="display:none;">
+        <div id="k-mit-box">
             <div id="k-mit-chat"></div>
             <div class="k-mit-input"><textarea id="k-mit-input" rows="2"></textarea><button type="button" id="k-mit-send">Enviar</button></div>
         </div>
         <script>
         (function(){
-            const bulb = document.getElementById('k-mit-bulb');
             const box  = document.getElementById('k-mit-box');
             const chat = document.getElementById('k-mit-chat');
             const input = document.getElementById('k-mit-input');
             const send = document.getElementById('k-mit-send');
-            if(!bulb || !box || !chat || !input || !send) return;
+            if(!box || !chat || !input || !send) return;
             const ajaxUrl = window.KVT_AJAX || window.ajaxurl || '/wp-admin/admin-ajax.php';
             const nonce = typeof KVT_MIT_NONCE !== 'undefined' ? KVT_MIT_NONCE : '';
             let history = [];
             try{ history = JSON.parse(sessionStorage.getItem('kvtMitHistory')||'[]'); history.forEach(m=>append(m.role,m.html||m.content, !!m.html)); }catch(e){ history=[]; }
             function append(role,text,isHtml=false){ const div=document.createElement('div'); div.className='k-mit-msg '+role; if(isHtml){div.innerHTML=text;}else{div.textContent=text;} chat.appendChild(div); chat.scrollTop=chat.scrollHeight; }
             function save(){ sessionStorage.setItem('kvtMitHistory', JSON.stringify(history)); }
-            bulb.addEventListener('click', ()=>{ box.style.display = box.style.display === 'none' ? 'block' : 'none'; });
-            if(ajaxUrl){
-                fetch(ajaxUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:nonce})}).then(r=>r.json()).then(resp=>{
+            async function fetchSuggestions(){
+                if(!ajaxUrl) return;
+                try{
+                    const res=await fetch(ajaxUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:nonce})});
+                    const resp=await res.json();
                     if(resp && resp.success && resp.data){
                         if(resp.data.history){
                             history = resp.data.history;
                             chat.innerHTML='';
-                            history.forEach(m=>{ append(m.role, m.html||m.content, !!m.html); });
-                            save();
+                            history.forEach(m=>append(m.role,m.html||m.content,!!m.html));
                         }
                         if(resp.data.suggestions_html){
-                            bulb.style.color='#f1c40f';
-                            box.style.display='block';
+                            append('assistant',resp.data.suggestions_html,true);
+                            history.push({role:'assistant',content:resp.data.suggestions,html:resp.data.suggestions_html});
                         } else if(history.length===0){
                             const greet='Hola, soy MIT. ¿En qué puedo ayudarte hoy?';
                             append('assistant',greet);
                             history.push({role:'assistant',content:greet});
-                            save();
-                            box.style.display='block';
                         }
+                        save();
                     }
-                });
+                }catch(e){}
             }
+            fetchSuggestions();
+            setInterval(fetchSuggestions, 300000);
             send.addEventListener('click', async ()=>{
                 const msg=(input.value||'').trim();
                 if(!msg) return;
@@ -6232,8 +6232,7 @@ JS;
         })();
         </script>
         <style>
-        #k-mit-bulb{position:fixed;right:10px;bottom:10px;font-size:24px;color:#ccc;cursor:pointer;z-index:100000;}
-        #k-mit-box{position:fixed;right:50px;bottom:10px;background:#fff;border:1px solid #ccc;padding:10px;max-width:300px;max-height:260px;overflow:auto;z-index:100000;box-shadow:0 2px 6px rgba(0,0,0,.2);}
+        #k-mit-box{position:fixed;right:10px;bottom:10px;background:#fff;border:1px solid #ccc;padding:10px;max-width:300px;max-height:260px;overflow:auto;z-index:100000;box-shadow:0 2px 6px rgba(0,0,0,.2);}
         #k-mit-chat{max-height:200px;overflow:auto;margin-bottom:6px;font-size:13px}
         .k-mit-msg{margin:4px 0}
         .k-mit-msg.assistant{color:#0a212e}
