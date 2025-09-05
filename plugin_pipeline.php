@@ -132,6 +132,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_generate_roles',       [$this, 'ajax_generate_roles']);
         add_action('wp_ajax_nopriv_kvt_generate_roles',[$this, 'ajax_generate_roles']);
         add_action('wp_ajax_kvt_mit_suggestions',      [$this, 'ajax_mit_suggestions']);
+        add_action('wp_ajax_kvt_mit_chat',             [$this, 'ajax_mit_chat']);
         add_action('wp_ajax_kvt_send_email',           [$this, 'ajax_send_email']);
         add_action('wp_ajax_nopriv_kvt_send_email',    [$this, 'ajax_send_email']);
         add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
@@ -5900,15 +5901,14 @@ JS;
             $summary .= ' Noticias del mercado: ' . implode(' | ', $news) . '.';
         }
 
-        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable en España y Chile. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos, y ejemplos de correos electrónicos breves para contacto o seguimiento. Si no hay recordatorios urgentes, resalta los aspectos que están funcionando bien.";
+        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable en España y Chile. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
                 'Content-Type'  => 'application/json',
             ],
             'body' => json_encode([
-                // Use ChatGPT 5 model instead of the previous 4 mini
-                'model'   => 'chatgpt-5',
+                'model'   => 'gpt-4.1-mini',
                 'messages'=> [
                     ['role' => 'user', 'content' => $prompt],
                 ],
@@ -5922,55 +5922,95 @@ JS;
         }
         $data = json_decode(wp_remote_retrieve_body($resp), true);
         $text = trim($data['choices'][0]['message']['content'] ?? '');
-        if ($text === '') {
-            $text = sprintf(
-                __('Todo marcha bien: %d candidatos, %d clientes y %d procesos activos. No hay seguimientos pendientes.', 'kovacic'),
-                count($cands), count($clients), count($processes)
-            );
-        }
         wp_send_json_success(['suggestions' => $text, 'news' => $news]);
+    }
+
+    public function ajax_mit_chat() {
+        check_ajax_referer('kvt_mit', 'nonce');
+        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $raw = wp_unslash($_POST['messages'] ?? '[]');
+        $messages = json_decode($raw, true);
+        if (!is_array($messages)) $messages = [];
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        if (!$key) wp_send_json_error(['msg' => 'Missing key'], 400);
+        $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => json_encode([
+                'model' => 'gpt-4.1-mini',
+                'messages' => $messages,
+            ]),
+        ]);
+        if (is_wp_error($resp)) {
+            wp_send_json_error(['msg' => $resp->get_error_message()], 500);
+        }
+        $data = json_decode(wp_remote_retrieve_body($resp), true);
+        $reply = trim($data['choices'][0]['message']['content'] ?? '');
+        wp_send_json_success(['reply' => $reply]);
     }
 
     public function mit_lightbulb() {
         if (!wp_script_is('kvt-app', 'enqueued')) return;
+        if (!is_user_logged_in() || !current_user_can('edit_posts')) return;
         ?>
         <div id="k-mit-bulb" class="dashicons dashicons-lightbulb"></div>
-        <div id="k-mit-box" style="display:none;"><strong><?php esc_html_e('Assistente MIT', 'kovacic'); ?></strong><div id="k-mit-box-content"></div><ul id="k-mit-news"></ul></div>
+        <div id="k-mit-box" style="display:none;">
+            <div id="k-mit-chat"></div>
+            <div class="k-mit-input"><textarea id="k-mit-input" rows="2"></textarea><button id="k-mit-send">Enviar</button></div>
+        </div>
         <script>
         (function(){
             const bulb = document.getElementById('k-mit-bulb');
             const box  = document.getElementById('k-mit-box');
-            if(!bulb || !box) return;
-            bulb.addEventListener('click', ()=>{
-                box.style.display = box.style.display === 'none' ? 'block' : 'none';
-            });
-            fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>', {
-                method:'POST',
-                headers:{'Content-Type':'application/x-www-form-urlencoded'},
-                credentials:'same-origin',
-                body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:'<?php echo wp_create_nonce('kvt_mit'); ?>'})
-            }).then(r=>r.json()).then(resp=>{
-                if(resp && resp.success && resp.data){
-                    if(resp.data.suggestions){
-                        document.getElementById('k-mit-box-content').textContent = resp.data.suggestions;
-                        bulb.style.color = '#f1c40f';
-                    }
-                    const newsList = document.getElementById('k-mit-news');
-                    if(newsList){
-                        newsList.innerHTML = '';
-                        (resp.data.news || []).forEach(n=>{
-                            const li = document.createElement('li');
-                            li.textContent = n;
-                            newsList.appendChild(li);
-                        });
-                    }
+            const chat = document.getElementById('k-mit-chat');
+            const input = document.getElementById('k-mit-input');
+            const send = document.getElementById('k-mit-send');
+            if(!bulb || !box || !chat || !input || !send) return;
+            let history = [];
+            try{ history = JSON.parse(sessionStorage.getItem('kvtMitHistory')||'[]'); }catch(e){ history=[]; }
+            function append(role,text){ const div=document.createElement('div'); div.className='k-mit-msg '+role; div.textContent=text; chat.appendChild(div); chat.scrollTop=chat.scrollHeight; }
+            function save(){ sessionStorage.setItem('kvtMitHistory', JSON.stringify(history)); }
+            history.forEach(m=>append(m.role,m.content));
+            bulb.addEventListener('click', ()=>{ box.style.display = box.style.display === 'none' ? 'block' : 'none'; });
+            fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:KVT_MIT_NONCE})}).then(r=>r.json()).then(resp=>{
+                if(resp && resp.success && resp.data && resp.data.suggestions){
+                    append('assistant', resp.data.suggestions);
+                    history.push({role:'assistant',content:resp.data.suggestions});
+                    save();
+                    bulb.style.color='#f1c40f';
                 }
+            });
+            send.addEventListener('click', async ()=>{
+                const msg=(input.value||'').trim();
+                if(!msg) return;
+                append('user',msg);
+                history.push({role:'user',content:msg});
+                save();
+                input.value='';
+                try{
+                    const res=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_chat', nonce:KVT_MIT_NONCE, messages:JSON.stringify(history)})});
+                    const j=await res.json();
+                    if(j.success && j.data && j.data.reply){
+                        append('assistant', j.data.reply);
+                        history.push({role:'assistant',content:j.data.reply});
+                        save();
+                    }
+                }catch(e){}
             });
         })();
         </script>
         <style>
-        #k-mit-bulb{position:fixed;left:10px;bottom:10px;font-size:24px;color:#ccc;cursor:pointer;z-index:100000;}
-        #k-mit-box{position:fixed;left:50px;bottom:10px;background:#fff;border:1px solid #ccc;padding:10px;max-width:300px;max-height:200px;overflow:auto;z-index:100000;box-shadow:0 2px 6px rgba(0,0,0,.2);}
+        #k-mit-bulb{position:fixed;right:10px;bottom:10px;font-size:24px;color:#ccc;cursor:pointer;z-index:100000;}
+        #k-mit-box{position:fixed;right:50px;bottom:10px;background:#fff;border:1px solid #ccc;padding:10px;max-width:300px;max-height:260px;overflow:auto;z-index:100000;box-shadow:0 2px 6px rgba(0,0,0,.2);}
+        #k-mit-chat{max-height:200px;overflow:auto;margin-bottom:6px;font-size:13px}
+        .k-mit-msg{margin:4px 0}
+        .k-mit-msg.assistant{color:#0a212e}
+        .k-mit-msg.user{color:#475569;text-align:right}
+        .k-mit-input{display:flex;gap:4px}
+        .k-mit-input textarea{flex:1;padding:4px}
+        .k-mit-input button{padding:4px 8px}
         </style>
         <?php
     }
@@ -7600,6 +7640,7 @@ JS;
             $templates = $this->get_email_templates();
             $templates[] = ['id' => uniqid('tpl_'), 'title' => $title, 'subject' => $subject, 'body' => $body];
             update_option(self::OPT_EMAIL_TEMPLATES, $templates);
+            $templates = $this->get_email_templates();
             wp_send_json_success(['templates' => $templates]);
         }
 
@@ -7610,6 +7651,7 @@ JS;
             $templates = $this->get_email_templates();
             $templates = array_values(array_filter($templates, function($t) use ($id){ return isset($t['id']) && $t['id'] !== $id; }));
             update_option(self::OPT_EMAIL_TEMPLATES, $templates);
+            $templates = $this->get_email_templates();
             wp_send_json_success(['templates' => $templates]);
         }
 
