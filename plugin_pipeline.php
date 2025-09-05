@@ -1544,7 +1544,6 @@ JS;
                 <a href="#" data-view="boards" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
-                <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
             </nav>
             <div class="kvt-content">
             <?php if ($is_client_board || $is_candidate_board): ?>
@@ -1854,11 +1853,6 @@ JS;
                   </div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
-                <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
-                    <h4>Assistente MIT</h4>
-                    <p id="kvt_mit_content"></p>
-                    <ul id="kvt_mit_news"></ul>
-                </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
                     <h4 class="kvt-widget-title">Actividad</h4>
@@ -2303,7 +2297,6 @@ JS;
         #kvt_table_wrap{flex:0 0 70%}
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
         .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:750px}
-        .kvt-mit{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-top:16px}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
         .kvt-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
@@ -2673,7 +2666,6 @@ function kvtInit(){
 
   const filtersBar = el('#kvt_filters_bar');
   const calendarWrap = el('#kvt_calendar');
-  const mitWrap = el('#kvt_mit_view');
   const keywordBoard = el('#kvt_keyword_view');
   const aiBoard = el('#kvt_ai_view');
   const boardsView = el('#kvt_boards_view');
@@ -2715,8 +2707,6 @@ function kvtInit(){
   const tplSave = el('#kvt_tpl_save');
   const tplList = el('#kvt_tpl_list');
   const sentTbody = el('#kvt_email_sent_tbody');
-  const mitContent = el('#kvt_mit_content');
-  const mitNews = el('#kvt_mit_news');
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
@@ -2986,48 +2976,10 @@ function kvtInit(){
 
   function formatInputDate(v){ const p=v.split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : v; }
 
-  async function loadMit(){
-    if(!mitContent) return;
-    mitContent.textContent = 'Obteniendo sugerencias...';
-    try {
-      const resp = await fetch(KVT_AJAX, {
-        method:'POST',
-        headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        credentials:'same-origin',
-        body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:KVT_MIT_NONCE})
-      });
-      const json = await resp.json();
-      if(json && json.success && json.data){
-        if(json.data.suggestions_html){
-          mitContent.innerHTML = json.data.suggestions_html;
-        } else if(json.data.suggestions){
-          mitContent.textContent = json.data.suggestions;
-        } else {
-          mitContent.textContent = 'No hay sugerencias disponibles.';
-        }
-        if(mitNews){
-          mitNews.innerHTML = '';
-          (json.data.news || []).forEach(n=>{
-            const li = document.createElement('li');
-            li.textContent = n;
-            mitNews.appendChild(li);
-          });
-        }
-      } else {
-        mitContent.textContent = 'No hay sugerencias disponibles.';
-        if(mitNews) mitNews.innerHTML='';
-      }
-    } catch(e){
-      mitContent.textContent = 'No hay sugerencias disponibles.';
-      if(mitNews) mitNews.innerHTML='';
-    }
-  }
-
   function showView(view){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
     if(activeWrap) activeWrap.style.display='none';
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
-    if(mitWrap) mitWrap.style.display='none';
     if(keywordBoard) keywordBoard.style.display='none';
     if(aiBoard) aiBoard.style.display='none';
     if(boardsView) boardsView.style.display='none';
@@ -3077,15 +3029,6 @@ function kvtInit(){
       if(activeWrap) activeWrap.style.display='block';
       if(calendarMiniWrap) calendarMiniWrap.style.display='block';
       fetchDashboard().then(d=>{ if(d.success) renderActivityDashboard(d.data); });
-    } else if(view==='mit'){
-      filtersBar.style.display='none';
-      tableWrap.style.display='none';
-      calendarWrap.style.display='none';
-      if(activityWrap) activityWrap.style.display='none';
-      if(boardWrap) boardWrap.style.display='none';
-      if(toggleKanban) toggleKanban.style.display='none';
-      if(widgetsWrap) widgetsWrap.style.display='none';
-      if(mitWrap) { mitWrap.style.display='block'; loadMit(); }
     } else if(view==='ai'){
       filtersBar.style.display='none';
       tableWrap.style.display='none';
