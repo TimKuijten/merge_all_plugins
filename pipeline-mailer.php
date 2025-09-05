@@ -11,18 +11,13 @@ class KVT_Pipeline_Mailer {
     const CAPABILITY   = 'edit_posts';
 
     public function __construct() {
-        add_action('admin_menu',               [$this, 'menu']);
         add_action('admin_init',               [$this, 'register_settings']);
-        add_action('admin_enqueue_scripts',    [$this, 'enqueue']);
+        add_action('wp_enqueue_scripts',       [$this, 'enqueue']);
+        add_shortcode('kvt_emailer',           [$this, 'shortcode']);
         add_action('wp_ajax_kt_abm_import_candidates', [$this, 'ajax_import_candidates']);
         add_action('wp_ajax_kt_abm_generate',  [$this, 'ajax_generate']);
         add_action('wp_ajax_kt_abm_send',      [$this, 'ajax_send']);
         add_action('wp_ajax_kt_abm_eml_zip',   [$this, 'ajax_eml_zip']); // EML ZIP
-    }
-
-    public function menu() {
-        add_submenu_page('kovacic', __('Correo con IA', 'kt-abm'), __('Correo con IA', 'kt-abm'), self::CAPABILITY, 'kvt-email', [$this, 'page']);
-        add_submenu_page('kovacic', __('Correos enviados', 'kt-abm'), __('Correos enviados', 'kt-abm'), self::CAPABILITY, 'kvt-email-sent', [$this, 'sent_page']);
     }
 
     public function register_settings() {
@@ -71,9 +66,16 @@ class KVT_Pipeline_Mailer {
         }, self::OPTION_KEY, 'kt_abm_main');
     }
 
-    public function enqueue($hook) {
-        $is_main = $hook === 'kovacic_page_kvt-email';
-        $is_sent = $hook === 'kovacic_page_kvt-email-sent';
+    public function shortcode() {
+        if (!current_user_can(self::CAPABILITY)) return '';
+        ob_start();
+        $this->page();
+        return ob_get_clean();
+    }
+
+    public function enqueue($hook = '') {
+        $is_main = is_admin() ? ($hook === 'kovacic_page_kvt-email') : true;
+        $is_sent = is_admin() ? ($hook === 'kovacic_page_kvt-email-sent') : false;
         if (!$is_main && !$is_sent) return;
 
         // Styles (ALL buttons #0A212E with white text)
@@ -1319,5 +1321,3 @@ function ktDownloadEMLZip(){
         }, $tpl);
     }
 }
-
-new KVT_Pipeline_Mailer();
