@@ -234,7 +234,7 @@ cv_uploaded|Fecha de subida");
         }
         add_submenu_page('kovacic', __('ATS', 'kovacic'), __('ATS', 'kovacic'), 'manage_options', 'kvt-tracker', [$this, 'tracker_page']);
         add_submenu_page('kovacic', __('Ajustes', 'kovacic'), __('Ajustes', 'kovacic'), 'manage_options', 'kvt-settings', [$this, 'settings_page']);
-        add_submenu_page('kovacic', __('Candidate/Client boards', 'kovacic'), __('Candidate/Client boards', 'kovacic'), 'manage_options', 'kvt-boards', [$this, 'boards_page']);
+        add_submenu_page('kovacic', __('Tableros de candidatos/clientes', 'kovacic'), __('Tableros de candidatos/clientes', 'kovacic'), 'manage_options', 'kvt-boards', [$this, 'boards_page']);
     }
 
     public function tracker_page() {
@@ -701,7 +701,7 @@ JS;
         $candidate_links = get_option('kvt_candidate_links', []);
         ?>
         <div class="wrap">
-            <h1><?php esc_html_e('Candidate/Client boards', 'kovacic'); ?></h1>
+            <h1><?php esc_html_e('Tableros de candidatos/clientes', 'kovacic'); ?></h1>
             <table class="widefat">
                 <thead>
                     <tr>
@@ -1412,13 +1412,14 @@ JS;
         ob_start(); ?>
         <div class="kvt-wrapper">
             <nav class="kvt-nav" aria-label="Navegación principal">
-                <a href="#" class="active" data-view="detalles"><span class="dashicons dashicons-dashboard"></span> Dashboard</a>
-                <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidates</a>
-                <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendar</a>
+                <a href="#" class="active" data-view="detalles"><span class="dashicons dashicons-dashboard"></span> Panel</a>
+                <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidatos</a>
+                <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendario</a>
                 <a href="#" data-view="keyword"><span class="dashicons dashicons-search"></span> <?php esc_html_e('Búsqueda de palabras', 'kovacic'); ?></a>
                 <a href="#" data-view="ai"><span class="dashicons dashicons-search"></span> Buscador IA</a>
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
+                <a href="#" data-view="base" id="kvt_open_clients"><span class="dashicons dashicons-businessman"></span> Clientes</a>
                 <a href="#" data-view="boards" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
                 <a href="#" data-view="email" id="kvt_nav_email"><span class="dashicons dashicons-email"></span> E-mail</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
@@ -1429,9 +1430,7 @@ JS;
             <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
             <?php endif; ?>
             <span class="dashicons dashicons-editor-help kvt-help" title="Haz clic para ver cómo funciona el tablero"></span>
-            <div class="kvt-header">
-                <h2 class="kvt-board-title">Tablero ATS</h2>
-            </div>
+            <div class="kvt-header"></div>
             <div id="kvt_filters_bar" class="kvt-filters" style="display:none;">
                 <div class="kvt-filter-field">
                     <label for="kvt_client">Cliente</label>
@@ -1508,9 +1507,10 @@ JS;
                               <input type="hidden" name="kvt_export_nonce" value="<?php echo esc_attr(wp_create_nonce('kvt_export')); ?>">
                               <input type="hidden" name="filter_client" value="">
                               <input type="hidden" name="filter_process" value="">
-                              <input type="hidden" name="format" id="kvt_board_export_all_format" value="xls">
+                            <input type="hidden" name="format" id="kvt_board_export_all_format" value="xls">
                               <button type="button" class="kvt-btn" id="kvt_board_export_all_xls">Exportar Excel</button>
                             </form>
+                            <button type="button" class="kvt-btn" id="kvt_add_candidate_btn">Nuevo</button>
                           </div>
                         </div>
                         <div id="kvt_board_list" class="kvt-list"></div>
@@ -1521,11 +1521,15 @@ JS;
                         </div>
                       </div>
                       <div id="kvt_board_tab_clients" class="kvt-tab-panel">
+                        <div class="kvt-head">
+                          <button type="button" class="kvt-btn" id="kvt_add_client_btn">Nuevo</button>
+                        </div>
                         <div id="kvt_board_clients_list" class="kvt-list"></div>
                       </div>
                       <div id="kvt_board_tab_processes" class="kvt-tab-panel">
                         <div class="kvt-head">
                           <div id="kvt_board_proc_info" class="kvt-selected-info" style="display:none;"></div>
+                          <button type="button" class="kvt-btn" id="kvt_add_process_btn">Nuevo</button>
                         </div>
                         <div id="kvt_board_processes_list" class="kvt-list"></div>
                       </div>
@@ -1570,12 +1574,12 @@ JS;
                   <div id="kvt_ai_board_results" class="kvt-modal-list"></div>
                 </div>
                 <div id="kvt_boards_view" style="display:none;">
-                  <h3><?php esc_html_e('Candidate/Client boards', 'kovacic'); ?></h3>
+                  <h3><?php esc_html_e('Tableros de candidatos/clientes', 'kovacic'); ?></h3>
                   <table class="kvt-table">
-                    <thead><tr><th><?php esc_html_e('Type', 'kovacic'); ?></th><th><?php esc_html_e('Client', 'kovacic'); ?></th><th><?php esc_html_e('Process', 'kovacic'); ?></th><th><?php esc_html_e('Candidate', 'kovacic'); ?></th><th>URL</th><th><?php esc_html_e('Actions', 'kovacic'); ?></th></tr></thead>
+                    <thead><tr><th><?php esc_html_e('Tipo', 'kovacic'); ?></th><th><?php esc_html_e('Cliente', 'kovacic'); ?></th><th><?php esc_html_e('Proceso', 'kovacic'); ?></th><th><?php esc_html_e('Candidato', 'kovacic'); ?></th><th>URL</th><th><?php esc_html_e('Acciones', 'kovacic'); ?></th></tr></thead>
                     <tbody>
                     <?php if (empty($client_links) && empty($candidate_links)) : ?>
-                      <tr><td colspan="6"><?php esc_html_e('No boards found', 'kovacic'); ?></td></tr>
+                      <tr><td colspan="6"><?php esc_html_e('No se encontraron tableros', 'kovacic'); ?></td></tr>
                     <?php else : ?>
                       <?php foreach ($client_links as $slug => $cfg) :
                         $client  = get_term_field('name', $cfg['client'], self::TAX_CLIENT);
@@ -1584,12 +1588,12 @@ JS;
                         $edit    = home_url('/base/?edit_board=' . $slug);
                         $del     = wp_nonce_url(admin_url('admin-post.php?action=kvt_delete_board&type=client&slug=' . $slug), 'kvt_delete_board'); ?>
                         <tr>
-                          <td><?php esc_html_e('Client', 'kovacic'); ?></td>
+                          <td><?php esc_html_e('Cliente', 'kovacic'); ?></td>
                           <td><?php echo esc_html($client); ?></td>
                           <td><?php echo esc_html($process); ?></td>
                           <td>&mdash;</td>
                           <td><a href="<?php echo esc_url($url); ?>" target="_blank"><?php echo esc_html($slug); ?></a></td>
-                          <td><a href="<?php echo esc_url($edit); ?>"><?php esc_html_e('Edit', 'kovacic'); ?></a> | <a href="<?php echo esc_url($del); ?>"><?php esc_html_e('Delete', 'kovacic'); ?></a></td>
+                          <td><a href="<?php echo esc_url($edit); ?>"><?php esc_html_e('Editar', 'kovacic'); ?></a> | <a href="<?php echo esc_url($del); ?>"><?php esc_html_e('Eliminar', 'kovacic'); ?></a></td>
                         </tr>
                       <?php endforeach; ?>
                       <?php foreach ($candidate_links as $slug => $cfg) :
@@ -1600,12 +1604,12 @@ JS;
                         $edit    = home_url('/base/?edit_board=' . $slug);
                         $del     = wp_nonce_url(admin_url('admin-post.php?action=kvt_delete_board&type=candidate&slug=' . $slug), 'kvt_delete_board'); ?>
                         <tr>
-                          <td><?php esc_html_e('Candidate', 'kovacic'); ?></td>
+                          <td><?php esc_html_e('Candidato', 'kovacic'); ?></td>
                           <td><?php echo esc_html($client); ?></td>
                           <td><?php echo esc_html($process); ?></td>
                           <td><?php echo esc_html($cand); ?></td>
                           <td><a href="<?php echo esc_url($url); ?>" target="_blank"><?php echo esc_html($slug); ?></a></td>
-                          <td><a href="<?php echo esc_url($edit); ?>"><?php esc_html_e('Edit', 'kovacic'); ?></a> | <a href="<?php echo esc_url($del); ?>"><?php esc_html_e('Delete', 'kovacic'); ?></a></td>
+                          <td><a href="<?php echo esc_url($edit); ?>"><?php esc_html_e('Editar', 'kovacic'); ?></a> | <a href="<?php echo esc_url($del); ?>"><?php esc_html_e('Eliminar', 'kovacic'); ?></a></td>
                         </tr>
                       <?php endforeach; ?>
                     <?php endif; ?>
@@ -2447,6 +2451,8 @@ function kvtInit(){
   }
   const openProcesses = el('#kvt_open_processes');
   openProcesses && openProcesses.addEventListener('click', ()=>{ switchBoardTab('processes'); });
+  const openClients = el('#kvt_open_clients');
+  openClients && openClients.addEventListener('click', ()=>{ switchBoardTab('clients'); });
 
   async function extractPdfWithPDFjs(file){
     if (!window.pdfjsLib) return '';
@@ -4567,6 +4573,9 @@ function kvtInit(){
       return;
     }
     shareMode = 'client';
+    ALLOWED_FIELDS = ['first_name','last_name','email','phone','country','city','cv_url'];
+    ALLOWED_STEPS = ['Long list','Short list','Contactados','Entrevistados','En oferta','Incorporado','Descartados'];
+    ALLOW_COMMENTS = true;
     buildShareOptions();
     if(shareModal) shareModal.style.display='flex';
   });
@@ -4585,6 +4594,9 @@ function kvtInit(){
     selectedCandidateIds = ids.map(id=>parseInt(id,10));
     selectedCandidateId = selectedCandidateIds[0] || 0;
     shareMode = 'candidate';
+    ALLOWED_FIELDS = ['first_name','last_name','email','phone','country','city','cv_url'];
+    ALLOWED_STEPS = ['Long list','Short list','Contactados','Entrevistados','En oferta','Incorporado','Descartados'];
+    ALLOW_COMMENTS = true;
     buildShareOptions();
     if(shareModal) shareModal.style.display='flex';
   });
@@ -4987,6 +4999,8 @@ function kvtInit(){
   function closeCModal(){ cmodal.style.display='none'; }
   cclose && cclose.addEventListener('click', closeCModal);
   cmodal && cmodal.addEventListener('click', (e)=>{ if(e.target===cmodal) closeCModal(); });
+  const btnAddCandidate = el('#kvt_add_candidate_btn');
+  btnAddCandidate && btnAddCandidate.addEventListener('click', openCModal);
   ccli && ccli.addEventListener('change', ()=>{
     if (!window.KVT_PROCESS_MAP || !Array.isArray(window.KVT_PROCESS_MAP)) return;
     const cid = parseInt(ccli.value||'0',10);
@@ -5068,6 +5082,8 @@ function kvtInit(){
     function closeClModal(){ clmodal.style.display='none'; clmodal.dataset.edit=''; clsubmit.textContent='Crear'; if(cldesc) cldesc.value=''; if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; }
     clclose && clclose.addEventListener('click', closeClModal);
     clmodal && clmodal.addEventListener('click', e=>{ if(e.target===clmodal) closeClModal(); });
+    const btnAddClient = el('#kvt_add_client_btn');
+    btnAddClient && btnAddClient.addEventListener('click', openClModal);
     clsigparse && clsigparse.addEventListener('click', ()=>{
       const fd = new FormData();
       fd.append('action','kvt_parse_signature');
@@ -5141,6 +5157,8 @@ function kvtInit(){
     function closePModal(){ pmodal.style.display='none'; pmodal.dataset.edit=''; psubmit.textContent='Crear'; }
     pclose && pclose.addEventListener('click', closePModal);
     pmodal && pmodal.addEventListener('click', e=>{ if(e.target===pmodal) closePModal(); });
+    const btnAddProcess = el('#kvt_add_process_btn');
+    btnAddProcess && btnAddProcess.addEventListener('click', openPModal);
     psubmit && psubmit.addEventListener('click', ()=>{
       const params = new URLSearchParams();
       const editing = pmodal.dataset.edit;
