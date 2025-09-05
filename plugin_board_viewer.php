@@ -31,11 +31,11 @@ class KVT_Board_Viewer {
         nocache_headers();
         echo '<!DOCTYPE html><html><head><meta charset="utf-8">';
         wp_head();
-        echo '<style>.kvt-nav,.kvt-main,.kvt-header,.kvt-help,#kvt_toggle_kanban{display:none!important;}#kvt_board_wrap{display:block!important;}</style>';
+        echo '<style>.kvt-nav,.kvt-header,.kvt-help,#kvt_board_wrap,#kvt_toggle_kanban,#kvt_filters_bar,#kvt_ats_bar,#kvt_board_base,#kvt_stage_overview{display:none!important;}#kvt_table_wrap{display:block!important;}</style>';
         echo '</head><body>';
         echo do_shortcode('[kvt_pipeline]');
         wp_footer();
-        echo '<script>document.addEventListener("DOMContentLoaded",function(){var w=document.getElementById("kvt_board_wrap");if(w)w.style.display="block";var m=document.querySelector(".kvt-main");if(m)m.style.display="none";var n=document.querySelector(".kvt-nav");if(n)n.style.display="none";var t=document.getElementById("kvt_toggle_kanban");if(t)t.style.display="none";var h=document.querySelector(".kvt-header");if(h)h.style.display="none";var hl=document.querySelector(".kvt-help");if(hl)hl.style.display="none";});</script>';
+        echo '<script>document.addEventListener("DOMContentLoaded",function(){var b=document.getElementById("kvt_board_wrap");if(b)b.style.display="none";var t=document.getElementById("kvt_table_wrap");if(t)t.style.display="block";var n=document.querySelector(".kvt-nav");if(n)n.style.display="none";var h=document.querySelector(".kvt-header");if(h)h.style.display="none";var hl=document.querySelector(".kvt-help");if(hl)hl.style.display="none";var tk=document.getElementById("kvt_toggle_kanban");if(tk)tk.style.display="none";var fb=document.getElementById("kvt_filters_bar");if(fb)fb.style.display="none";var ab=document.getElementById("kvt_ats_bar");if(ab)ab.style.display="none";var bb=document.getElementById("kvt_board_base");if(bb)bb.style.display="none";var so=document.getElementById("kvt_stage_overview");if(so)so.style.display="none";});</script>';
         echo '</body></html>';
         exit;
     }
