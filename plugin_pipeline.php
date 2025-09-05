@@ -16,6 +16,7 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_STATUSES  = 'kvt_statuses';
     const OPT_COLUMNS   = 'kvt_columns';
     const OPT_OPENAI_KEY= 'kvt_openai_key';
+    const OPT_OPENAI_MODEL = 'kvt_openai_model';
     const OPT_NEWS_KEY  = 'kvt_newsapi_key';
     const OPT_SMTP_HOST = 'kvt_smtp_host';
     const OPT_SMTP_PORT = 'kvt_smtp_port';
@@ -28,6 +29,7 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_EMAIL_TEMPLATES = 'kvt_email_templates';
     const OPT_EMAIL_LOG = 'kvt_email_log';
     const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
+    const MIT_HISTORY_LIMIT = 20;
 
     public function __construct() {
         add_action('init',                       [$this, 'register_types']);
@@ -221,6 +223,7 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_STATUSES);
         register_setting(self::OPT_GROUP, self::OPT_COLUMNS);
         register_setting(self::OPT_GROUP, self::OPT_OPENAI_KEY);
+        register_setting(self::OPT_GROUP, self::OPT_OPENAI_MODEL);
         register_setting(self::OPT_GROUP, self::OPT_NEWS_KEY);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_HOST);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_PORT);
@@ -609,6 +612,7 @@ JS;
         $statuses = get_option(self::OPT_STATUSES, "");
         $columns  = get_option(self::OPT_COLUMNS, "");
         $openai   = get_option(self::OPT_OPENAI_KEY, "");
+        $openai_model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
         $newskey  = get_option(self::OPT_NEWS_KEY, "");
         $smtp_host = get_option(self::OPT_SMTP_HOST, "");
         $smtp_port = get_option(self::OPT_SMTP_PORT, "");
@@ -636,6 +640,17 @@ JS;
                         <td>
                             <input type="text" name="<?php echo self::OPT_OPENAI_KEY; ?>" id="<?php echo self::OPT_OPENAI_KEY; ?>" class="regular-text" value="<?php echo esc_attr($openai); ?>">
                             <p class="description">Clave utilizada para las búsquedas avanzadas.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_OPENAI_MODEL; ?>">Modelo OpenAI</label></th>
+                        <td>
+                            <select name="<?php echo self::OPT_OPENAI_MODEL; ?>" id="<?php echo self::OPT_OPENAI_MODEL; ?>">
+                                <?php foreach (['gpt-4.1-mini', 'gpt-5'] as $m): ?>
+                                    <option value="<?php echo esc_attr($m); ?>" <?php selected($openai_model, $m); ?>><?php echo esc_html($m); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description">Modelo utilizado por MIT. Por defecto gpt-4.1-mini.</p>
                         </td>
                     </tr>
                     <tr>
@@ -5798,12 +5813,57 @@ JS;
         wp_send_json_success(['ok' => true]);
     }
 
+    private function mit_load_history($uid) {
+        $hist = get_user_meta($uid, 'kvt_mit_history', true);
+        if (!is_array($hist)) {
+            $hist = ['summary' => '', 'messages' => []];
+        }
+        return $hist;
+    }
+
+    private function mit_save_history($uid, $hist) {
+        update_user_meta($uid, 'kvt_mit_history', $hist);
+    }
+
+    private function mit_summarize_history(&$hist, $key, $model) {
+        if (count($hist['messages']) <= self::MIT_HISTORY_LIMIT) return;
+        $excess = array_splice($hist['messages'], 0, count($hist['messages']) - self::MIT_HISTORY_LIMIT);
+        $lines = [];
+        foreach ($excess as $m) {
+            $lines[] = strtoupper($m['role']) . ': ' . $m['content'];
+        }
+        $prompt = "Resume brevemente la siguiente conversación:\n" . implode("\n", $lines);
+        $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body'    => json_encode([
+                'model'   => $model,
+                'messages'=> [
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+            ]),
+            'timeout' => 30,
+        ]);
+        if (!is_wp_error($resp)) {
+            $data = json_decode(wp_remote_retrieve_body($resp), true);
+            $sum  = trim($data['choices'][0]['message']['content'] ?? '');
+            if ($sum) {
+                $hist['summary'] = trim($hist['summary'] . ' ' . $sum);
+            }
+        }
+    }
+
     public function ajax_mit_suggestions() {
         check_ajax_referer('kvt_mit', 'nonce');
         if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
         $key = get_option(self::OPT_OPENAI_KEY, '');
+        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $uid  = get_current_user_id();
+        $hist = $this->mit_load_history($uid);
         if (!$key) {
-            wp_send_json_success(['suggestions' => __('Falta la clave de OpenAI', 'kovacic')]);
+            wp_send_json_success(['suggestions' => __('Falta la clave de OpenAI', 'kovacic'), 'history' => $hist['messages']]);
         }
 
         $cands = get_posts([
@@ -5908,46 +5968,69 @@ JS;
                 'Content-Type'  => 'application/json',
             ],
             'body' => json_encode([
-                'model'   => 'gpt-4.1-mini',
+                'model'   => $model,
                 'messages'=> [
                     ['role' => 'user', 'content' => $prompt],
                 ],
             ]),
+            'timeout' => 30,
         ]);
+        $text = '';
+        if (!is_wp_error($resp)) {
+            $data = json_decode(wp_remote_retrieve_body($resp), true);
+            $text = trim($data['choices'][0]['message']['content'] ?? '');
+        }
+        if ($text) {
+            $hist['messages'][] = ['role' => 'assistant', 'content' => $text];
+            $this->mit_summarize_history($hist, $key, $model);
+            $this->mit_save_history($uid, $hist);
+        }
         if (is_wp_error($resp)) {
             $err = $resp->get_error_message();
-            wp_send_json_success([
-                'suggestions' => sprintf(__('No se pudo conectar con OpenAI: %s', 'kovacic'), $err)
-            ]);
+            $text = sprintf(__('No se pudo conectar con OpenAI: %s', 'kovacic'), $err);
         }
-        $data = json_decode(wp_remote_retrieve_body($resp), true);
-        $text = trim($data['choices'][0]['message']['content'] ?? '');
-        wp_send_json_success(['suggestions' => $text, 'news' => $news]);
+        wp_send_json_success(['suggestions' => $text, 'news' => $news, 'history' => $hist['messages']]);
     }
 
     public function ajax_mit_chat() {
         check_ajax_referer('kvt_mit', 'nonce');
         if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
-        $raw = wp_unslash($_POST['messages'] ?? '[]');
-        $messages = json_decode($raw, true);
-        if (!is_array($messages)) $messages = [];
+        $msg = isset($_POST['message']) ? sanitize_text_field(wp_unslash($_POST['message'])) : '';
+        if (!$msg) wp_send_json_error(['msg' => 'Mensaje vacío'], 400);
         $key = get_option(self::OPT_OPENAI_KEY, '');
         if (!$key) wp_send_json_error(['msg' => 'Missing key'], 400);
+        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $uid  = get_current_user_id();
+        $hist = $this->mit_load_history($uid);
+        $hist['messages'][] = ['role' => 'user', 'content' => $msg];
+        $this->mit_summarize_history($hist, $key, $model);
+        $api_messages = $hist['messages'];
+        if (!empty($hist['summary'])) {
+            array_unshift($api_messages, ['role' => 'system', 'content' => $hist['summary']]);
+        }
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
                 'Content-Type'  => 'application/json',
             ],
             'body' => json_encode([
-                'model' => 'gpt-4.1-mini',
-                'messages' => $messages,
+                'model' => $model,
+                'messages' => $api_messages,
             ]),
+            'timeout' => 30,
         ]);
         if (is_wp_error($resp)) {
             wp_send_json_error(['msg' => $resp->get_error_message()], 500);
         }
         $data = json_decode(wp_remote_retrieve_body($resp), true);
         $reply = trim($data['choices'][0]['message']['content'] ?? '');
+        if ($reply) {
+            $hist['messages'][] = ['role' => 'assistant', 'content' => $reply];
+            $this->mit_summarize_history($hist, $key, $model);
+            $this->mit_save_history($uid, $hist);
+        } else {
+            $this->mit_save_history($uid, $hist);
+        }
         wp_send_json_success(['reply' => $reply]);
     }
 
@@ -5969,17 +6052,19 @@ JS;
             const send = document.getElementById('k-mit-send');
             if(!bulb || !box || !chat || !input || !send) return;
             let history = [];
-            try{ history = JSON.parse(sessionStorage.getItem('kvtMitHistory')||'[]'); }catch(e){ history=[]; }
+            try{ history = JSON.parse(sessionStorage.getItem('kvtMitHistory')||'[]'); history.forEach(m=>append(m.role,m.content)); }catch(e){ history=[]; }
             function append(role,text){ const div=document.createElement('div'); div.className='k-mit-msg '+role; div.textContent=text; chat.appendChild(div); chat.scrollTop=chat.scrollHeight; }
             function save(){ sessionStorage.setItem('kvtMitHistory', JSON.stringify(history)); }
-            history.forEach(m=>append(m.role,m.content));
             bulb.addEventListener('click', ()=>{ box.style.display = box.style.display === 'none' ? 'block' : 'none'; });
             fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:KVT_MIT_NONCE})}).then(r=>r.json()).then(resp=>{
-                if(resp && resp.success && resp.data && resp.data.suggestions){
-                    append('assistant', resp.data.suggestions);
-                    history.push({role:'assistant',content:resp.data.suggestions});
-                    save();
-                    bulb.style.color='#f1c40f';
+                if(resp && resp.success && resp.data){
+                    if(resp.data.history){
+                        history = resp.data.history;
+                        chat.innerHTML='';
+                        history.forEach(m=>append(m.role,m.content));
+                        save();
+                    }
+                    if(resp.data.suggestions){ bulb.style.color='#f1c40f'; }
                 }
             });
             send.addEventListener('click', async ()=>{
@@ -5990,7 +6075,7 @@ JS;
                 save();
                 input.value='';
                 try{
-                    const res=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_chat', nonce:KVT_MIT_NONCE, messages:JSON.stringify(history)})});
+                    const res=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_chat', nonce:KVT_MIT_NONCE, message:msg})});
                     const j=await res.json();
                     if(j.success && j.data && j.data.reply){
                         append('assistant', j.data.reply);
