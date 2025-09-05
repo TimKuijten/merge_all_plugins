@@ -153,6 +153,8 @@ class Kovacic_Pipeline_Visualizer {
         // Follow-up reminders
         add_action('wp',                            [$this, 'schedule_followup_cron']);
         add_action('kvt_daily_followup',            [$this, 'cron_check_followups']);
+        add_action('wp',                            [$this, 'schedule_mit_weekly_report']);
+        add_action('kvt_mit_weekly_report',         [$this, 'cron_mit_weekly_report']);
         add_action('admin_notices',                 [$this, 'followup_admin_notice']);
         add_action('template_redirect',             [$this, 'maybe_redirect_share_link']);
 
@@ -1382,6 +1384,48 @@ JS;
         }
         update_option('kvt_followup_due', $due);
     }
+
+    public function schedule_mit_weekly_report() {
+        if (!wp_next_scheduled('kvt_mit_weekly_report')) {
+            $tz   = new DateTimeZone('Europe/Madrid');
+            $now  = new DateTime('now', $tz);
+            $next = clone $now;
+            $next->setTime(9, 0);
+            if ($now->format('N') != 1 || $now->getTimestamp() >= $next->getTimestamp()) {
+                $next = new DateTime('next monday 9:00', $tz);
+            }
+            wp_schedule_event($next->getTimestamp(), 'weekly', 'kvt_mit_weekly_report');
+        }
+    }
+
+    public function cron_mit_weekly_report() {
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        if (!$key) return;
+        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $ctx = $this->mit_gather_context();
+        $summary = $ctx['summary'];
+        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable. Con los siguientes datos: $summary Genera un informe semanal con recomendaciones y sugerencias para la semana. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>.";
+        $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => json_encode([
+                'model'   => $model,
+                'messages'=> [
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+            ]),
+            'timeout' => self::MIT_TIMEOUT,
+        ]);
+        if (is_wp_error($resp)) return;
+        $data = json_decode(wp_remote_retrieve_body($resp), true);
+        $text = trim($data['choices'][0]['message']['content'] ?? '');
+        if (!$text) return;
+        $to = get_option('admin_email');
+        wp_mail($to, 'Informe semanal MIT', wp_kses_post($text), ['Content-Type: text/html; charset=UTF-8']);
+    }
+
     public function followup_admin_notice() {
         if (!current_user_can('edit_posts')) return;
         $due = get_option('kvt_followup_due', []);
@@ -5858,17 +5902,7 @@ JS;
         }
     }
 
-    public function ajax_mit_suggestions() {
-        check_ajax_referer('kvt_mit', 'nonce');
-        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
-        $key = get_option(self::OPT_OPENAI_KEY, '');
-        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
-        $uid  = get_current_user_id();
-        $hist = $this->mit_load_history($uid);
-        if (!$key) {
-            wp_send_json_success(['suggestions' => __('Falta la clave de OpenAI', 'kovacic'), 'history' => $hist['messages']]);
-        }
-
+    private function mit_gather_context() {
         $cands = get_posts([
             'post_type'   => self::CPT,
             'post_status' => 'any',
@@ -5885,9 +5919,9 @@ JS;
             'number'     => 0,
         ]);
 
-        $notes        = [];
-        $cand_lines   = [];
-        $followups    = [];
+        $notes      = [];
+        $cand_lines = [];
+        $followups  = [];
         foreach ($cands as $c) {
             $country = get_post_meta($c->ID, 'kvt_country', true);
             $role    = $this->meta_get_compat($c->ID, 'kvt_current_role', ['current_role']);
@@ -5897,6 +5931,10 @@ JS;
             $cand_lines[] = $line;
             $n = get_post_meta($c->ID, 'kvt_notes', true);
             if ($n) $notes[] = $n;
+            $pn = get_post_meta($c->ID, 'kvt_public_notes', true);
+            if ($pn) $notes[] = $pn;
+            $desc = trim(wp_strip_all_tags($c->post_content));
+            if ($desc) $notes[] = $desc;
             $next = get_post_meta($c->ID, 'kvt_next_action', true);
             if ($next) {
                 $ts = strtotime(str_replace('/', '-', $next));
@@ -5915,20 +5953,23 @@ JS;
             $line    = $cl->name;
             if ($contact) $line .= " ($contact)";
             $client_lines[] = $line;
+            $desc = term_description($cl, self::TAX_CLIENT);
+            if ($desc) $notes[] = $cl->name . ': ' . wp_strip_all_tags($desc);
         }
 
         $process_lines = [];
         foreach ($processes as $pr) {
-            $cid  = get_term_meta($pr->term_id, 'client_id', true);
+            $cid  = get_term_meta($pr->term_id, 'kvt_process_client', true);
             $line = $pr->name;
             if ($cid) {
                 $cl_obj = get_term_by('id', $cid, self::TAX_CLIENT);
                 if ($cl_obj) $line .= " (" . $cl_obj->name . ")";
             }
             $process_lines[] = $line;
+            $desc = term_description($pr, self::TAX_PROCESS);
+            if ($desc) $notes[] = $pr->name . ': ' . wp_strip_all_tags($desc);
         }
 
-        // Fetch latest renewable energy market news
         $news_key = get_option(self::OPT_NEWS_KEY, '');
         $news     = [];
         if ($news_key) {
@@ -5964,6 +6005,25 @@ JS;
             $summary .= ' Noticias del mercado: ' . implode(' | ', $news) . '.';
         }
 
+        return ['summary' => $summary, 'news' => $news];
+    }
+
+    public function ajax_mit_suggestions() {
+        check_ajax_referer('kvt_mit', 'nonce');
+        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $uid  = get_current_user_id();
+        $hist = $this->mit_load_history($uid);
+        if (!$key) {
+            wp_send_json_success(['suggestions' => __('Falta la clave de OpenAI', 'kovacic'), 'history' => $hist['messages']]);
+        }
+
+        $ctx = $this->mit_gather_context();
+        $summary = $ctx['summary'];
+        $news    = $ctx['news'];
+
+        $hist['summary'] = $summary;
         $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente)";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
@@ -5986,8 +6046,8 @@ JS;
         if ($text) {
             $hist['messages'][] = ['role' => 'assistant', 'content' => wp_strip_all_tags($text), 'html' => $text];
             $this->mit_summarize_history($hist, $key, $model);
-            $this->mit_save_history($uid, $hist);
         }
+        $this->mit_save_history($uid, $hist);
         if (is_wp_error($resp)) {
             $err = $resp->get_error_message();
             $text = sprintf(__('No se pudo conectar con OpenAI: %s', 'kovacic'), $err);
@@ -6011,6 +6071,10 @@ JS;
         $uid  = get_current_user_id();
         $hist = $this->mit_load_history($uid);
         $hist['messages'][] = ['role' => 'user', 'content' => $msg];
+        if (empty($hist['summary'])) {
+            $ctx = $this->mit_gather_context();
+            $hist['summary'] = $ctx['summary'];
+        }
         $this->mit_summarize_history($hist, $key, $model);
         $api_messages = $hist['messages'];
         if (!empty($hist['summary'])) {
@@ -6079,7 +6143,16 @@ JS;
                             history.forEach(m=>{ append(m.role, m.html||m.content, !!m.html); });
                             save();
                         }
-                        if(resp.data.suggestions_html){ bulb.style.color='#f1c40f'; box.style.display='block'; }
+                        if(resp.data.suggestions_html){
+                            bulb.style.color='#f1c40f';
+                            box.style.display='block';
+                        } else if(history.length===0){
+                            const greet='Hola, soy MIT. ¿En qué puedo ayudarte hoy?';
+                            append('assistant',greet);
+                            history.push({role:'assistant',content:greet});
+                            save();
+                            box.style.display='block';
+                        }
                     }
                 });
             }
