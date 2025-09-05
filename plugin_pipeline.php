@@ -8,6 +8,11 @@ Author: Tim Kuijten - Kovacic Executive Talent Research
 
 if (!defined('ABSPATH')) exit;
 
+// Load Bulk Email plugin so its features can be embedded in the frontend.
+if ( ! class_exists('KT_AIBulkMailer_ES') && file_exists(__DIR__ . '/bulkemail') ) {
+    require_once __DIR__ . '/bulkemail';
+}
+
 class Kovacic_Pipeline_Visualizer {
     const CPT           = 'kvt_candidate';
     const TAX_CLIENT    = 'kvt_client';
@@ -1878,7 +1883,8 @@ JS;
             </div>
           </div>
         </div>
-</div>
+        </div>
+        <?php echo $this->bulkemail_section(); ?>
         <?php
         // Make maps available to JS BEFORE app script executes
         wp_add_inline_script('kvt-app', 'window.KVT_CLIENT_MAP=' . wp_json_encode($client_map) . ';', 'before');
@@ -1886,8 +1892,28 @@ JS;
         return ob_get_clean();
     }
 
+    /**
+     * Render the Bulk Email interface inside the pipeline frontend.
+     * Keeps original admin functionality while exposing the UI for
+     * users with the required capability on the public page.
+     */
+    private function bulkemail_section() {
+        if ( ! isset($GLOBALS['kt_abm']) || ! current_user_can(KT_AIBulkMailer_ES::CAPABILITY) ) {
+            return '';
+        }
+
+        ob_start();
+        $GLOBALS['kt_abm']->page();
+        return '<div class="kvt-bulkemail">' . ob_get_clean() . '</div>';
+    }
+
     /* Assets */
     public function enqueue_assets() {
+        // Load Bulk Email assets on the frontend when needed
+        if ( isset($GLOBALS['kt_abm']) && current_user_can(KT_AIBulkMailer_ES::CAPABILITY) ) {
+            $GLOBALS['kt_abm']->enqueue('toplevel_page_kt-abm');
+        }
+
         // Styles
         wp_enqueue_style('dashicons');
         $css = "
