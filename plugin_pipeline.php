@@ -247,7 +247,6 @@ cv_uploaded|Fecha de subida");
               <select id="k-filter-client" class="k-select"><option value=""><?php esc_html_e('Cliente', 'kovacic'); ?></option></select>
               <select id="k-filter-process" class="k-select"><option value=""><?php esc_html_e('Proceso', 'kovacic'); ?></option></select>
               <select id="k-filter-stage" class="k-select"><option value=""><?php esc_html_e('Etapa', 'kovacic'); ?></option></select>
-              <button class="btn btn--ghost" id="k-add-filter"><?php esc_html_e('Crear nuevo filtro', 'kovacic'); ?></button>
               <button class="btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
             </div>
             <div class="k-bulkbar" id="k-bulkbar" hidden>
@@ -1334,16 +1333,13 @@ JS;
                 <a href="#" class="active" data-view="detalles"><span class="dashicons dashicons-dashboard"></span> Dashboard</a>
                 <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidates</a>
                 <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendar</a>
-                <a href="#" id="kvt_add_profile"><span class="dashicons dashicons-id-alt"></span> Base</a>
                 <a href="#" data-view="keyword"><span class="dashicons dashicons-search"></span> <?php esc_html_e('Búsqueda de palabras', 'kovacic'); ?></a>
                 <a href="#" data-view="ai"><span class="dashicons dashicons-search"></span> Buscador IA</a>
-                <a href="#" id="kvt_toggle_table"><span class="dashicons dashicons-editor-table"></span> Tabla</a>
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
-                <a href="#" id="kvt_nav_export"><span class="dashicons dashicons-download"></span> Exportar</a>
+                <a href="<?php echo admin_url('admin.php?page=kvt-boards'); ?>" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
-                <a href="#"><span class="dashicons dashicons-filter"></span> Nuevo filtro</a>
             </nav>
             <div class="kvt-content">
             <?php if ($is_client_board || $is_candidate_board): ?>
@@ -1363,20 +1359,25 @@ JS;
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="kvt-filter-field">
-                    <label for="kvt_process">Proceso</label>
-                    <select id="kvt_process">
-                        <option value="">— Todos —</option>
-                        <?php foreach ($processes as $t): ?>
-                          <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-            </div>
+              <div class="kvt-filter-field">
+                  <label for="kvt_process">Proceso</label>
+                  <select id="kvt_process">
+                      <option value="">— Todos —</option>
+                      <?php foreach ($processes as $t): ?>
+                        <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
+                      <?php endforeach; ?>
+                  </select>
+              </div>
+              <div class="kvt-filter-field">
+                  <label for="kvt_stage">Etapa</label>
+                  <select id="kvt_stage"><option value=""><?php esc_html_e('Etapa', 'kovacic'); ?></option></select>
+              </div>
+              <button class="btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
+          </div>
 
-            <div id="kvt_selected_info" class="kvt-selected-info" style="display:none;"></div>
+          <div id="kvt_selected_info" class="kvt-selected-info" style="display:none;"></div>
 
-            <div class="kvt-main">
+          <div class="kvt-main">
                 <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:none;">
                     <div id="kvt_stage_overview" class="kvt-stage-overview"></div>
                     <div id="kvt_ats_bar" class="kvt-ats-bar">
@@ -2162,7 +2163,6 @@ function kvtInit(){
   }
 
   const viewLinks = els('.kvt-nav a[data-view]');
-  const exportLink = el('#kvt_nav_export');
   if (viewLinks.length){
     viewLinks.forEach(link=>{
       link.addEventListener('click',e=>{
@@ -2175,11 +2175,6 @@ function kvtInit(){
   }
   const openProcesses = el('#kvt_open_processes');
   openProcesses && openProcesses.addEventListener('click', ()=>{ switchBoardTab('processes'); });
-  exportLink && exportLink.addEventListener('click',e=>{
-    e.preventDefault();
-    const trg = el('#kvt_export_xls');
-    if(trg) trg.click();
-  });
 
   async function extractPdfWithPDFjs(file){
     if (!window.pdfjsLib) return '';
@@ -2284,9 +2279,7 @@ function kvtInit(){
 
   const selClient  = el('#kvt_client');
   const selProcess = el('#kvt_process');
-  const btnToggle  = el('#kvt_toggle_table');
   const btnXLS     = el('#kvt_export_xls');
-  const btnAdd     = el('#kvt_add_profile');
   const btnAllXLS  = el('#kvt_export_all_xls');
   const exportAllForm   = el('#kvt_export_all_form');
   const exportAllFormat = el('#kvt_export_all_format');
@@ -3887,11 +3880,6 @@ function kvtInit(){
       }).catch(()=>{ keywordBoardBtn.disabled=false; keywordBoardResults.innerHTML=''; });
   });
 
-  btnToggle && btnToggle.addEventListener('click', e=>{
-    e.preventDefault();
-    tableWrap.style.display = (tableWrap.style.display==='none' || !tableWrap.style.display) ? 'block' : 'none';
-  });
-
   toggleKanban && toggleKanban.addEventListener('click', () => {
     if(!boardWrap) return;
     const hidden = boardWrap.style.display === 'none' || !boardWrap.style.display;
@@ -4446,8 +4434,6 @@ function kvtInit(){
         });
       });
   }
-
-  btnAdd && btnAdd.addEventListener('click', e=>{ e.preventDefault(); openModal(); });
   // Create candidate modal
     const cmodal = el('#kvt_create_modal');
   const cclose = el('#kvt_create_close');
