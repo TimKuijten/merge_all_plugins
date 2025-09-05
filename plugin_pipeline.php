@@ -23,6 +23,10 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_SMTP_PASS = 'kvt_smtp_pass';
     const OPT_SMTP_SECURE = 'kvt_smtp_secure';
     const OPT_SMTP_SIGNATURE = 'kvt_smtp_signature';
+    const OPT_FROM_NAME = 'kvt_from_name';
+    const OPT_FROM_EMAIL = 'kvt_from_email';
+    const OPT_EMAIL_TEMPLATES = 'kvt_email_templates';
+    const OPT_EMAIL_LOG = 'kvt_email_log';
 
     public function __construct() {
         add_action('init',                       [$this, 'register_types']);
@@ -130,6 +134,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_send_email',           [$this, 'ajax_send_email']);
         add_action('wp_ajax_nopriv_kvt_send_email',    [$this, 'ajax_send_email']);
         add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
+        add_action('wp_ajax_kvt_save_template',        [$this, 'ajax_save_template']);
+        add_action('wp_ajax_kvt_delete_template',      [$this, 'ajax_delete_template']);
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
@@ -216,6 +222,10 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_SMTP_PASS);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_SECURE);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_SIGNATURE);
+        register_setting(self::OPT_GROUP, self::OPT_FROM_NAME);
+        register_setting(self::OPT_GROUP, self::OPT_FROM_EMAIL);
+        register_setting(self::OPT_GROUP, self::OPT_EMAIL_TEMPLATES);
+        register_setting(self::OPT_GROUP, self::OPT_EMAIL_LOG);
     }
     public function admin_menu() {
         global $admin_page_hooks;
@@ -600,6 +610,8 @@ JS;
         $smtp_pass = get_option(self::OPT_SMTP_PASS, "");
         $smtp_secure = get_option(self::OPT_SMTP_SECURE, "");
         $smtp_sig  = get_option(self::OPT_SMTP_SIGNATURE, "");
+        $from_name_def = get_option(self::OPT_FROM_NAME, "");
+        $from_email_def = get_option(self::OPT_FROM_EMAIL, "");
         ?>
         <div class="wrap">
             <h1>Kovacic Pipeline — Ajustes</h1>
@@ -668,6 +680,14 @@ JS;
                             <textarea name="<?php echo self::OPT_SMTP_SIGNATURE; ?>" id="<?php echo self::OPT_SMTP_SIGNATURE; ?>" rows="4" class="large-text"><?php echo esc_textarea($smtp_sig); ?></textarea>
                             <p class="description">Se añadirá al final de cada e-mail.</p>
                         </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_FROM_NAME; ?>">Nombre remitente por defecto</label></th>
+                        <td><input type="text" name="<?php echo self::OPT_FROM_NAME; ?>" id="<?php echo self::OPT_FROM_NAME; ?>" class="regular-text" value="<?php echo esc_attr($from_name_def); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_FROM_EMAIL; ?>">Email remitente por defecto</label></th>
+                        <td><input type="email" name="<?php echo self::OPT_FROM_EMAIL; ?>" id="<?php echo self::OPT_FROM_EMAIL; ?>" class="regular-text" value="<?php echo esc_attr($from_email_def); ?>"></td>
                     </tr>
                 </table>
                 <?php submit_button('Guardar ajustes'); ?>
@@ -1374,6 +1394,10 @@ JS;
                 'description'   => wp_strip_all_tags($t->description),
             ];
         }, $clients);
+        $from_name_def  = get_option(self::OPT_FROM_NAME, '');
+        $from_email_def = get_option(self::OPT_FROM_EMAIL, '');
+        $templates      = get_option(self::OPT_EMAIL_TEMPLATES, []);
+        $sent_emails    = get_option(self::OPT_EMAIL_LOG, []);
         $count_obj = wp_count_posts(self::CPT, 'readable');
         $total_candidates = array_sum((array) $count_obj);
         $recent_q = new WP_Query([
@@ -1589,93 +1613,116 @@ JS;
                   </table>
                 </div>
                 <div id="kvt_email_view" style="display:none;">
-                  <div id="kvt_email_filters" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-                    <div class="kvt-filter-field">
-                      <label for="kvt_email_client">Cliente</label>
-                      <select id="kvt_email_client" multiple size="4">
-                        <?php foreach ($clients as $c): ?>
-                          <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
-                        <?php endforeach; ?>
-                      </select>
-                    </div>
-                    <div class="kvt-filter-field">
-                      <label for="kvt_email_process">Proceso</label>
-                      <select id="kvt_email_process" multiple size="4">
-                        <?php foreach ($processes as $t): ?>
-                          <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
-                        <?php endforeach; ?>
-                      </select>
-                    </div>
-                    <div class="kvt-filter-field">
-                      <label for="kvt_email_status">Estado</label>
-                      <select id="kvt_email_status" multiple size="4">
-                        <?php foreach ($statuses as $st): ?>
-                          <option value="<?php echo esc_attr($st); ?>"><?php echo esc_html($st); ?></option>
-                        <?php endforeach; ?>
-                      </select>
-                    </div>
-                    <div class="kvt-filter-field">
-                      <label for="kvt_email_country">País</label>
-                      <select id="kvt_email_country" multiple size="4">
-                        <?php foreach ($countries as $c): ?>
-                          <option value="<?php echo esc_attr($c); ?>"><?php echo esc_html($c); ?></option>
-                        <?php endforeach; ?>
-                      </select>
-                    </div>
-                    <div class="kvt-filter-field">
-                      <label for="kvt_email_city">Ciudad</label>
-                      <select id="kvt_email_city" multiple size="4">
-                        <?php foreach ($cities as $c): ?>
-                          <option value="<?php echo esc_attr($c); ?>"><?php echo esc_html($c); ?></option>
-                        <?php endforeach; ?>
-                      </select>
-                    </div>
-                    <div class="kvt-filter-field">
-                      <label for="kvt_email_search">Buscar</label>
-                      <input type="text" id="kvt_email_search" placeholder="Buscar...">
-                    </div>
+                  <div class="kvt-tabs" id="kvt_email_tabs">
+                    <button type="button" class="kvt-tab active" data-target="compose">Enviar</button>
+                    <button type="button" class="kvt-tab" data-target="sent">Enviados</button>
+                    <button type="button" class="kvt-tab" data-target="templates">Plantillas</button>
                   </div>
-                  <div class="kvt-row" style="margin-bottom:10px;">
-                    <button class="kvt-btn" id="kvt_email_select_all">Seleccionar todo</button>
-                    <button class="kvt-btn" id="kvt_email_clear" style="margin-left:8px">Limpiar</button>
-                    <span class="kvt-muted" id="kvt_email_selected" style="margin-left:8px">0 seleccionados</span>
+                  <div id="kvt_email_tab_compose" class="kvt-tab-panel active">
+                    <div id="kvt_email_filters" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                      <div class="kvt-filter-field">
+                        <label for="kvt_email_client">Cliente</label>
+                        <select id="kvt_email_client" multiple size="4">
+                          <?php foreach ($clients as $c): ?>
+                            <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+                      <div class="kvt-filter-field">
+                        <label for="kvt_email_process">Proceso</label>
+                        <select id="kvt_email_process" multiple size="4">
+                          <?php foreach ($processes as $t): ?>
+                            <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+                      <div class="kvt-filter-field">
+                        <label for="kvt_email_status">Estado</label>
+                        <select id="kvt_email_status" multiple size="4">
+                          <?php foreach ($statuses as $st): ?>
+                            <option value="<?php echo esc_attr($st); ?>"><?php echo esc_html($st); ?></option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+                      <div class="kvt-filter-field">
+                        <label for="kvt_email_country">País</label>
+                        <select id="kvt_email_country" multiple size="4">
+                          <?php foreach ($countries as $c): ?>
+                            <option value="<?php echo esc_attr($c); ?>"><?php echo esc_html($c); ?></option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+                      <div class="kvt-filter-field">
+                        <label for="kvt_email_city">Ciudad</label>
+                        <select id="kvt_email_city" multiple size="4">
+                          <?php foreach ($cities as $c): ?>
+                            <option value="<?php echo esc_attr($c); ?>"><?php echo esc_html($c); ?></option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+                      <div class="kvt-filter-field">
+                        <label for="kvt_email_search">Buscar</label>
+                        <input type="text" id="kvt_email_search" placeholder="Buscar...">
+                      </div>
+                    </div>
+                    <div class="kvt-row" style="margin-bottom:10px;">
+                      <button class="kvt-btn" id="kvt_email_select_all">Seleccionar todo</button>
+                      <button class="kvt-btn" id="kvt_email_clear" style="margin-left:8px">Limpiar</button>
+                      <span class="kvt-muted" id="kvt_email_selected" style="margin-left:8px">0 seleccionados</span>
+                    </div>
+                    <div class="kvt-table-wrap">
+                      <table class="kvt-table">
+                        <thead>
+                          <tr>
+                            <th></th><th>Nombre</th><th>Apellido</th><th>Email</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th>
+                          </tr>
+                        </thead>
+                        <tbody id="kvt_email_tbody"></tbody>
+                      </table>
+                    </div>
+                    <div id="kvt_email_pager" class="kvt-table-pager" style="display:none;">
+                      <button type="button" class="kvt-btn" id="kvt_email_prev">Anterior</button>
+                      <span id="kvt_email_pageinfo"></span>
+                      <button type="button" class="kvt-btn" id="kvt_email_next">Siguiente</button>
+                    </div>
+                    <div style="height:20px;"></div>
+                    <label for="kvt_email_prompt">Describe el correo para la IA</label>
+                    <textarea id="kvt_email_prompt" rows="3" class="kvt-textarea" placeholder="Ej: Invita a {{first_name}} a una entrevista para el rol {{role}} en {{client}} ubicado en {{city}}, {{country}}. Usa tono profesional."></textarea>
+                    <p class="kvt-hint">Ejemplo: "Invita a {{first_name}} a una entrevista para el rol {{role}} en {{client}}". Puedes usar variables para personalizar.</p>
+                    <p class="kvt-hint">Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente)</p>
+                    <button type="button" class="kvt-btn" id="kvt_email_generate">Generar con IA</button>
+                    <select id="kvt_email_template" class="kvt-input"><option value="">— Plantillas —</option></select>
+                    <input type="text" id="kvt_email_subject" class="kvt-input" placeholder="Asunto">
+                    <textarea id="kvt_email_body" class="kvt-textarea" rows="8" placeholder="Mensaje con {{placeholders}}"></textarea>
+                    <div class="kvt-filter-field">
+                      <input type="text" id="kvt_email_from_name" class="kvt-input" placeholder="Nombre remitente" value="<?php echo esc_attr($from_name_def ? $from_name_def : get_bloginfo('name')); ?>">
+                      <input type="email" id="kvt_email_from_email" class="kvt-input" placeholder="Email remitente" value="<?php echo esc_attr($from_email_def ? $from_email_def : get_option('admin_email')); ?>">
+                      <label for="kvt_email_use_signature" style="display:flex;align-items:center;font-weight:400;gap:4px;">
+                        <input type="checkbox" id="kvt_email_use_signature" checked>
+                        Incluir firma
+                      </label>
+                    </div>
+                    <div class="kvt-row" style="margin-top:8px;">
+                      <button type="button" class="kvt-btn" id="kvt_email_preview">Vista previa</button>
+                      <button type="button" class="kvt-btn" id="kvt_email_send">Enviar</button>
+                    </div>
+                    <div id="kvt_email_status_msg"></div>
                   </div>
-                  <div class="kvt-table-wrap">
+                  <div id="kvt_email_tab_sent" class="kvt-tab-panel">
                     <table class="kvt-table">
-                      <thead>
-                        <tr>
-                          <th></th><th>Nombre</th><th>Apellido</th><th>Email</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th>
-                        </tr>
-                      </thead>
-                      <tbody id="kvt_email_tbody"></tbody>
+                      <thead><tr><th>Fecha</th><th>Asunto</th><th>Destinatarios</th></tr></thead>
+                      <tbody id="kvt_email_sent_tbody"></tbody>
                     </table>
                   </div>
-                  <div id="kvt_email_pager" class="kvt-table-pager" style="display:none;">
-                    <button type="button" class="kvt-btn" id="kvt_email_prev">Anterior</button>
-                    <span id="kvt_email_pageinfo"></span>
-                    <button type="button" class="kvt-btn" id="kvt_email_next">Siguiente</button>
+                  <div id="kvt_email_tab_templates" class="kvt-tab-panel">
+                    <div class="kvt-row" style="margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+                      <input type="text" id="kvt_tpl_title" class="kvt-input" placeholder="Título">
+                      <input type="text" id="kvt_tpl_subject" class="kvt-input" placeholder="Asunto">
+                      <textarea id="kvt_tpl_body" class="kvt-textarea" rows="4" placeholder="Cuerpo"></textarea>
+                      <button type="button" class="kvt-btn" id="kvt_tpl_save">Guardar plantilla</button>
+                    </div>
+                    <ul id="kvt_tpl_list"></ul>
                   </div>
-                  <div style="height:20px;"></div>
-                  <label for="kvt_email_prompt">Describe el correo para la IA</label>
-                  <textarea id="kvt_email_prompt" rows="3" class="kvt-textarea" placeholder="Ej: Invita a {{first_name}} a una entrevista para el rol {{role}} en {{client}} ubicado en {{city}}, {{country}}. Usa tono profesional."></textarea>
-                  <p class="kvt-hint">Ejemplo: "Invita a {{first_name}} a una entrevista para el rol {{role}} en {{client}}". Puedes usar variables para personalizar.</p>
-                  <p class="kvt-hint">Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero)</p>
-                  <button type="button" class="kvt-btn" id="kvt_email_generate">Generar con IA</button>
-                  <input type="text" id="kvt_email_subject" class="kvt-input" placeholder="Asunto">
-                  <textarea id="kvt_email_body" class="kvt-textarea" rows="8" placeholder="Mensaje con {{placeholders}}"></textarea>
-                  <div class="kvt-filter-field">
-                    <input type="text" id="kvt_email_from_name" class="kvt-input" placeholder="Nombre remitente">
-                    <input type="email" id="kvt_email_from_email" class="kvt-input" placeholder="Email remitente">
-                    <label for="kvt_email_use_signature" style="display:flex;align-items:center;font-weight:400;gap:4px;">
-                      <input type="checkbox" id="kvt_email_use_signature" checked>
-                      Incluir firma
-                    </label>
-                  </div>
-                  <div class="kvt-row" style="margin-top:8px;">
-                    <button type="button" class="kvt-btn" id="kvt_email_preview">Vista previa</button>
-                    <button type="button" class="kvt-btn" id="kvt_email_send">Enviar</button>
-                  </div>
-                  <div id="kvt_email_status_msg"></div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
                 <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
@@ -2313,7 +2360,13 @@ JS;
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_MIT_NONCE="'.esc_js(wp_create_nonce('kvt_mit')).'";', 'before');
         $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
-        wp_add_inline_script('kvt-app', 'const KVT_SIGNATURE='.wp_json_encode($signature).';', 'before');
+        $def_from_name = get_option(self::OPT_FROM_NAME, '');
+        if (!$def_from_name) $def_from_name = get_bloginfo('name');
+        $def_from_email = get_option(self::OPT_FROM_EMAIL, '');
+        if (!$def_from_email) $def_from_email = get_option('admin_email');
+        $templates = get_option(self::OPT_EMAIL_TEMPLATES, []);
+        $sent_emails = get_option(self::OPT_EMAIL_LOG, []);
+        wp_add_inline_script('kvt-app', 'const KVT_SIGNATURE='.wp_json_encode($signature).';const KVT_FROM_NAME='.wp_json_encode($def_from_name).';const KVT_FROM_EMAIL='.wp_json_encode($def_from_email).';let KVT_TEMPLATES='.wp_json_encode($templates).';let KVT_SENT_EMAILS='.wp_json_encode($sent_emails).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($has_share_link?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_STEPS='.wp_json_encode($sel_steps).';', 'before');
@@ -2519,6 +2572,14 @@ function kvtInit(){
   const emailPrevSubject = el('#kvt_email_preview_subject');
   const emailPrevBody = el('#kvt_email_preview_body');
   const emailPrevClose = el('#kvt_email_preview_close');
+  const emailTabs = els('#kvt_email_tabs .kvt-tab');
+  const emailTplSelect = el('#kvt_email_template');
+  const tplTitle = el('#kvt_tpl_title');
+  const tplSubject = el('#kvt_tpl_subject');
+  const tplBody = el('#kvt_tpl_body');
+  const tplSave = el('#kvt_tpl_save');
+  const tplList = el('#kvt_tpl_list');
+  const sentTbody = el('#kvt_email_sent_tbody');
   const mitContent = el('#kvt_mit_content');
   const mitNews = el('#kvt_mit_news');
   const activityWrap = el('#kvt_activity');
@@ -2564,6 +2625,84 @@ function kvtInit(){
   let emailSelected = new Set();
   let emailPageNum = 1;
   let emailPageTotal = 1;
+  if(typeof KVT_TEMPLATES==='undefined') var KVT_TEMPLATES=[];
+  if(typeof KVT_SENT_EMAILS==='undefined') var KVT_SENT_EMAILS=[];
+
+  function populateTemplateSelect(){
+    if(!emailTplSelect) return;
+    emailTplSelect.innerHTML='<option value="">— Plantillas —</option>';
+    KVT_TEMPLATES.forEach(t=>{
+      const o=document.createElement('option');
+      o.value=t.id; o.textContent=t.title; emailTplSelect.appendChild(o);
+    });
+  }
+
+  function renderTplList(){
+    if(!tplList) return;
+    tplList.innerHTML='';
+    KVT_TEMPLATES.forEach(t=>{
+      const li=document.createElement('li');
+      li.textContent=t.title+' ';
+      const del=document.createElement('button');
+      del.textContent='Eliminar';
+      del.dataset.id=t.id;
+      del.addEventListener('click',()=>deleteTemplate(t.id));
+      li.appendChild(del);
+      tplList.appendChild(li);
+    });
+  }
+
+  async function deleteTemplate(id){
+    const res=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_delete_template', _ajax_nonce:KVT_NONCE, id})});
+    let j; try{ j=await res.json(); }catch(e){return;}
+    if(j.success){ KVT_TEMPLATES=j.data.templates||[]; populateTemplateSelect(); renderTplList(); }
+  }
+
+  tplSave && tplSave.addEventListener('click', async()=>{
+    const title=(tplTitle.value||'').trim();
+    const subject=(tplSubject.value||'').trim();
+    const body=(tplBody.value||'').trim();
+    if(!title) { alert('Título requerido'); return; }
+    const res=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_save_template', _ajax_nonce:KVT_NONCE, title, subject, body})});
+    let j; try{ j=await res.json(); }catch(e){return;}
+    if(j.success){
+      KVT_TEMPLATES=j.data.templates||[];
+      populateTemplateSelect();
+      renderTplList();
+      tplTitle.value=''; tplSubject.value=''; tplBody.value='';
+    }
+  });
+
+  emailTplSelect && emailTplSelect.addEventListener('change',()=>{
+    const t=KVT_TEMPLATES.find(x=>String(x.id)===String(emailTplSelect.value));
+    if(t){ emailSubject.value=t.subject||''; emailBody.value=t.body||''; }
+  });
+
+  function renderSentEmails(){
+    if(!sentTbody) return;
+    sentTbody.innerHTML='';
+    KVT_SENT_EMAILS.forEach(l=>{
+      const tr=document.createElement('tr');
+      const count=l.recipients?l.recipients.length:0;
+      tr.innerHTML=`<td>${l.time||''}</td><td>${l.subject||''}</td><td>${count}</td>`;
+      sentTbody.appendChild(tr);
+    });
+  }
+
+  populateTemplateSelect();
+  renderTplList();
+  renderSentEmails();
+
+  emailTabs.forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const target=btn.dataset.target;
+      emailTabs.forEach(b=>b.classList.toggle('active', b===btn));
+      ['compose','sent','templates'].forEach(k=>{
+        const pane=el('#kvt_email_tab_'+k);
+        if(pane) pane.classList.toggle('active', k===target);
+      });
+    });
+  });
 
   if(window.jQuery){
     [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
@@ -5108,7 +5247,7 @@ function kvtInit(){
       const cand = emailCandidates.find(c=>String(c.id)===String(firstId));
       if(!cand){ alert('Candidato inválido'); return; }
       const m=cand.meta||{};
-      const meta=Object.assign({}, m, {surname:m.last_name||'', role:m.process||'', board:m.board||''});
+      const meta=Object.assign({}, m, {surname:m.last_name||'', role:m.process||'', board:m.board||'', sender:(emailFromName.value||KVT_FROM_NAME||'')});
       const repl=str=>str.replace(/{{(\w+)}}/g,(match,p)=>meta[p]||'');
       emailPrevSubject.textContent=repl(subject);
       let bodyHtml=repl(body).replace(/\n/g,'<br>');
@@ -5135,7 +5274,12 @@ function kvtInit(){
       const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0};
       const res2 = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)})});
       let out; try{ out=await res2.json(); }catch(e){ emailStatusMsg.textContent='Error'; return; }
-      if(out.success){ emailStatusMsg.textContent=`Enviados: ${out.data.sent}`; } else { emailStatusMsg.textContent='Error enviando'; }
+      if(out.success){
+        emailStatusMsg.textContent=`Enviados: ${out.data.sent}`;
+        if(out.data.log){ KVT_SENT_EMAILS=out.data.log; renderSentEmails(); }
+      } else {
+        emailStatusMsg.textContent='Error enviando';
+      }
     });
 
     // Easier drag & drop: allow drop anywhere in column and highlight
@@ -7236,6 +7380,29 @@ JS;
             }
         }
 
+        public function ajax_save_template() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+            $title   = sanitize_text_field($_POST['title'] ?? '');
+            $subject = wp_kses_post($_POST['subject'] ?? '');
+            $body    = wp_kses_post($_POST['body'] ?? '');
+            if (!$title) wp_send_json_error(['msg' => 'Missing title'], 400);
+            $templates = get_option(self::OPT_EMAIL_TEMPLATES, []);
+            $templates[] = ['id' => uniqid('tpl_'), 'title' => $title, 'subject' => $subject, 'body' => $body];
+            update_option(self::OPT_EMAIL_TEMPLATES, $templates);
+            wp_send_json_success(['templates' => $templates]);
+        }
+
+        public function ajax_delete_template() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+            $id = sanitize_text_field($_POST['id'] ?? '');
+            $templates = get_option(self::OPT_EMAIL_TEMPLATES, []);
+            $templates = array_values(array_filter($templates, function($t) use ($id){ return isset($t['id']) && $t['id'] !== $id; }));
+            update_option(self::OPT_EMAIL_TEMPLATES, $templates);
+            wp_send_json_success(['templates' => $templates]);
+        }
+
         public function ajax_send_email() {
             check_ajax_referer('kvt_nonce');
             if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
@@ -7252,7 +7419,9 @@ JS;
             $from_name     = sanitize_text_field($payload['from_name'] ?? '');
             $use_signature = !empty($payload['use_signature']);
 
+            if (!$from_email) $from_email = get_option(self::OPT_FROM_EMAIL, '');
             if (!$from_email) $from_email = get_option('admin_email');
+            if (!$from_name)  $from_name  = get_option(self::OPT_FROM_NAME, '');
             if (!$from_name)  $from_name  = get_bloginfo('name');
 
             $from_cb = null;
@@ -7293,11 +7462,9 @@ JS;
                 if (!$email) continue;
 
                 $data = compact('first_name','surname','country','city','role','board','status','client');
+                $data['sender'] = $from_name ?: $from_email ?: get_bloginfo('name');
                 $subject = $this->render_template($subject_tpl, $data);
-
-                $body_raw = $this->render_template($body_tpl, array_merge($data, [
-                    'sender' => $from_name ?: $from_email ?: get_bloginfo('name')
-                ]));
+                $body_raw = $this->render_template($body_tpl, $data);
                 $body = $this->normalize_br_html($body_raw);
                 if ($signature && $use_signature) {
                     $body .= '<br><br>' . $this->normalize_br_html($signature);
@@ -7323,7 +7490,16 @@ JS;
                 $errors[] = ['email' => '(general)', 'error' => $last_error];
             }
 
-            wp_send_json_success(['sent' => $sent, 'errors' => $errors]);
+            $log = get_option(self::OPT_EMAIL_LOG, []);
+            $log[] = [
+                'time' => current_time('mysql'),
+                'subject' => $subject_tpl,
+                'recipients' => array_map(function($r){ return $r['email'] ?? ''; }, $recipients)
+            ];
+            if (count($log) > 100) $log = array_slice($log, -100);
+            update_option(self::OPT_EMAIL_LOG, $log);
+
+            wp_send_json_success(['sent' => $sent, 'errors' => $errors, 'log' => $log]);
         }
 
         private function normalize_br_html($html) {
