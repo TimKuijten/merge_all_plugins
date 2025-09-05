@@ -31,9 +31,11 @@ class KVT_Board_Viewer {
         nocache_headers();
         echo '<!DOCTYPE html><html><head><meta charset="utf-8">';
         wp_head();
+        echo '<style>.kvt-nav,.kvt-main,.kvt-header,.kvt-help,#kvt_toggle_kanban{display:none!important;}#kvt_board_wrap{display:block!important;}</style>';
         echo '</head><body>';
         echo do_shortcode('[kvt_pipeline]');
         wp_footer();
+        echo '<script>document.addEventListener("DOMContentLoaded",function(){var w=document.getElementById("kvt_board_wrap");if(w)w.style.display="block";var m=document.querySelector(".kvt-main");if(m)m.style.display="none";var n=document.querySelector(".kvt-nav");if(n)n.style.display="none";var t=document.getElementById("kvt_toggle_kanban");if(t)t.style.display="none";var h=document.querySelector(".kvt-header");if(h)h.style.display="none";var hl=document.querySelector(".kvt-help");if(hl)hl.style.display="none";});</script>';
         echo '</body></html>';
         exit;
     }
