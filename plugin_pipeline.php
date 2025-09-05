@@ -26,11 +26,11 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_SMTP_SIGNATURE = 'kvt_smtp_signature';
     const OPT_FROM_NAME = 'kvt_from_name';
     const OPT_FROM_EMAIL = 'kvt_from_email';
-    const OPT_EMAIL_TEMPLATES = 'kvt_email_templates';
     const OPT_EMAIL_LOG = 'kvt_email_log';
     const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
     const OPT_MIT_TIME = 'kvt_mit_time';
     const OPT_MIT_RECIPIENTS = 'kvt_mit_recipients';
+    const CPT_EMAIL_TEMPLATE = 'kvt_email_tpl';
     const MIT_HISTORY_LIMIT = 20;
     const MIT_TIMEOUT      = 60;
 
@@ -208,6 +208,13 @@ cv_uploaded|Fecha de subida");
             'menu_icon' => 'dashicons-groups',
         ]);
 
+        register_post_type(self::CPT_EMAIL_TEMPLATE, [
+            'public'      => false,
+            'show_ui'     => false,
+            'supports'    => ['title'],
+            'capability_type' => 'post',
+        ]);
+
         register_taxonomy(self::TAX_CLIENT, [self::CPT], [
             'labels' => ['name' => 'Clientes','singular_name' => 'Cliente'],
             'public' => false,'show_ui' => true,'hierarchical' => false,
@@ -236,10 +243,6 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_SMTP_SIGNATURE);
         register_setting(self::OPT_GROUP, self::OPT_FROM_NAME);
         register_setting(self::OPT_GROUP, self::OPT_FROM_EMAIL);
-        register_setting(self::OPT_GROUP, self::OPT_EMAIL_TEMPLATES, [
-            'type'    => 'array',
-            'default' => [],
-        ]);
         register_setting(self::OPT_GROUP, self::OPT_EMAIL_LOG, [
             'type'    => 'array',
             'default' => [],
@@ -7733,10 +7736,51 @@ JS;
         }
 
         private function get_email_templates() {
-            $templates = get_option(self::OPT_EMAIL_TEMPLATES, []);
-            if (!is_array($templates)) {
-                $decoded = json_decode($templates, true);
-                $templates = is_array($decoded) ? $decoded : [];
+            $posts = get_posts([
+                'post_type'      => self::CPT_EMAIL_TEMPLATE,
+                'post_status'    => 'publish',
+                'numberposts'    => -1,
+                'orderby'        => 'title',
+                'order'          => 'ASC',
+            ]);
+
+            if (empty($posts)) {
+                $legacy = get_option('kvt_email_templates', []);
+                if (!is_array($legacy)) {
+                    $decoded = json_decode($legacy, true);
+                    $legacy = is_array($decoded) ? $decoded : [];
+                }
+                foreach ($legacy as $tpl) {
+                    $id = wp_insert_post([
+                        'post_type'   => self::CPT_EMAIL_TEMPLATE,
+                        'post_title'  => $tpl['title'] ?? '',
+                        'post_status' => 'publish',
+                    ], true);
+                    if (!is_wp_error($id)) {
+                        update_post_meta($id, '_kvt_subject', $tpl['subject'] ?? '');
+                        update_post_meta($id, '_kvt_body', $tpl['body'] ?? '');
+                    }
+                }
+                if ($legacy) {
+                    delete_option('kvt_email_templates');
+                    $posts = get_posts([
+                        'post_type'      => self::CPT_EMAIL_TEMPLATE,
+                        'post_status'    => 'publish',
+                        'numberposts'    => -1,
+                        'orderby'        => 'title',
+                        'order'          => 'ASC',
+                    ]);
+                }
+            }
+
+            $templates = [];
+            foreach ($posts as $p) {
+                $templates[] = [
+                    'id'      => $p->ID,
+                    'title'   => $p->post_title,
+                    'subject' => get_post_meta($p->ID, '_kvt_subject', true),
+                    'body'    => get_post_meta($p->ID, '_kvt_body', true),
+                ];
             }
             return $templates;
         }
@@ -7748,9 +7792,14 @@ JS;
             $subject = wp_kses_post($_POST['subject'] ?? '');
             $body    = wp_kses_post($_POST['body'] ?? '');
             if (!$title) wp_send_json_error(['msg' => 'Missing title'], 400);
-            $templates = $this->get_email_templates();
-            $templates[] = ['id' => uniqid('tpl_'), 'title' => $title, 'subject' => $subject, 'body' => $body];
-            update_option(self::OPT_EMAIL_TEMPLATES, $templates);
+            $id = wp_insert_post([
+                'post_type'   => self::CPT_EMAIL_TEMPLATE,
+                'post_title'  => $title,
+                'post_status' => 'publish',
+            ], true);
+            if (is_wp_error($id)) wp_send_json_error(['msg' => 'Error saving'], 500);
+            update_post_meta($id, '_kvt_subject', $subject);
+            update_post_meta($id, '_kvt_body', $body);
             $templates = $this->get_email_templates();
             wp_send_json_success(['templates' => $templates]);
         }
@@ -7758,10 +7807,8 @@ JS;
         public function ajax_delete_template() {
             check_ajax_referer('kvt_nonce');
             if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
-            $id = sanitize_text_field($_POST['id'] ?? '');
-            $templates = $this->get_email_templates();
-            $templates = array_values(array_filter($templates, function($t) use ($id){ return isset($t['id']) && $t['id'] !== $id; }));
-            update_option(self::OPT_EMAIL_TEMPLATES, $templates);
+            $id = intval($_POST['id'] ?? 0);
+            if ($id) wp_delete_post($id, true);
             $templates = $this->get_email_templates();
             wp_send_json_success(['templates' => $templates]);
         }
