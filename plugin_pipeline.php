@@ -120,6 +120,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_generate_roles',       [$this, 'ajax_generate_roles']);
         add_action('wp_ajax_nopriv_kvt_generate_roles',[$this, 'ajax_generate_roles']);
         add_action('wp_ajax_kvt_mit_suggestions',      [$this, 'ajax_mit_suggestions']);
+        add_action('wp_ajax_kvt_send_email',           [$this, 'ajax_send_email']);
+        add_action('wp_ajax_nopriv_kvt_send_email',    [$this, 'ajax_send_email']);
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
@@ -6728,8 +6730,8 @@ JS;
           wp_send_json_success(['id'=>$id]);
       }
 
-      public function ajax_unassign_candidate() {
-          check_ajax_referer('kvt_nonce');
+        public function ajax_unassign_candidate() {
+            check_ajax_referer('kvt_nonce');
 
           $id        = isset($_POST['id']) ? intval($_POST['id']) : 0;
           $client_id = isset($_POST['client_id']) ? intval($_POST['client_id']) : 0;
@@ -6757,8 +6759,107 @@ JS;
               update_post_meta($id, 'kvt_activity_log', $log);
           }
 
-          wp_send_json_success(['id'=>$id]);
-      }
+            wp_send_json_success(['id'=>$id]);
+        }
+
+        public function ajax_send_email() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+
+            $payload_json = isset($_POST['payload']) ? wp_unslash($_POST['payload']) : '';
+            if (!$payload_json) wp_send_json_error(['error' => 'Missing payload'], 400);
+            $payload = json_decode($payload_json, true);
+            if (!is_array($payload)) wp_send_json_error(['error' => 'Invalid JSON'], 400);
+
+            $subject_tpl = (string)($payload['subject_template'] ?? '');
+            $body_tpl    = (string)($payload['body_template'] ?? '');
+            $recipients  = (array)($payload['recipients'] ?? []);
+            $from_email  = sanitize_email($payload['from_email'] ?? '');
+            $from_name   = sanitize_text_field($payload['from_name'] ?? '');
+
+            if (!$from_email) $from_email = get_option('admin_email');
+            if (!$from_name)  $from_name  = get_bloginfo('name');
+
+            $from_cb = null;
+            $from_name_cb = null;
+            if ($from_email) {
+                $from_cb = function() use ($from_email){ return $from_email; };
+                add_filter('wp_mail_from', $from_cb, 99);
+            }
+            if ($from_name) {
+                $from_name_cb = function() use ($from_name){ return $from_name; };
+                add_filter('wp_mail_from_name', $from_name_cb, 99);
+            }
+
+            $sent = 0;
+            $errors = [];
+            $last_error = null;
+            $failed_hook = function($wp_error) use (&$last_error) {
+                if (is_wp_error($wp_error)) {
+                    $last_error = $wp_error->get_error_message();
+                } else {
+                    $last_error = is_string($wp_error) ? $wp_error : 'Unknown mail error';
+                }
+            };
+            add_action('wp_mail_failed', $failed_hook);
+
+            foreach ($recipients as $r) {
+                $email      = isset($r['email']) ? sanitize_email($r['email']) : '';
+                $first_name = isset($r['first_name']) ? sanitize_text_field($r['first_name']) : '';
+                $surname    = isset($r['surname']) ? sanitize_text_field($r['surname']) : '';
+                $country    = isset($r['country']) ? sanitize_text_field($r['country']) : '';
+                $city       = isset($r['city']) ? sanitize_text_field($r['city']) : '';
+                $role       = isset($r['role']) ? sanitize_text_field($r['role']) : '';
+                $board      = isset($r['board']) ? esc_url_raw($r['board']) : '';
+                if (!$email) continue;
+
+                $data = compact('first_name','surname','country','city','role','board');
+                $subject = $this->render_template($subject_tpl, $data);
+
+                $body_raw = $this->render_template($body_tpl, array_merge($data, [
+                    'sender' => $from_name ?: $from_email ?: get_bloginfo('name')
+                ]));
+                $body = $this->normalize_br_html($body_raw);
+
+                $headers = ['Content-Type: text/html; charset=UTF-8'];
+                if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
+
+                $ok = wp_mail($email, $subject, $body, $headers);
+                if ($ok) {
+                    $sent++;
+                } else {
+                    $errors[] = ['email' => $email, 'error' => $last_error ?: 'wp_mail failed'];
+                }
+                usleep(250000);
+            }
+
+            if ($from_cb) remove_filter('wp_mail_from', $from_cb, 99);
+            if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
+            remove_action('wp_mail_failed', $failed_hook);
+
+            if ($last_error && empty($errors)) {
+                $errors[] = ['email' => '(general)', 'error' => $last_error];
+            }
+
+            wp_send_json_success(['sent' => $sent, 'errors' => $errors]);
+        }
+
+        private function normalize_br_html($html) {
+            $out = (string)$html;
+            $out = preg_replace('~</p>\s*<p>~i', '<br><br>', $out);
+            $out = preg_replace('~</?p[^>]*>~i', '', $out);
+            $out = preg_replace("/\r\n|\r/", "\n", $out);
+            $out = preg_replace("/\n{2,}/", "<br><br>", $out);
+            $out = str_replace("\n", "<br>", $out);
+            return $out;
+        }
+
+        private function render_template($tpl, $data) {
+            return preg_replace_callback('/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/', function($m) use ($data) {
+                $k = $m[1];
+                return isset($data[$k]) ? esc_html($data[$k]) : $m[0];
+            }, $tpl);
+        }
 
       /* Export */
       public function handle_export() {
