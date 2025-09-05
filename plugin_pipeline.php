@@ -1216,9 +1216,11 @@ JS;
     /* Shortcode */
     public function shortcode($atts = []) {
         $slug   = isset($_GET['kvt_board']) ? sanitize_text_field($_GET['kvt_board']) : '';
-        $links  = get_option('kvt_client_links', []);
-        $is_client_board = $slug && isset($links[$slug]);
-        if (!$is_client_board && (!is_user_logged_in() || !current_user_can('edit_posts'))) {
+        $client_links    = get_option('kvt_client_links', []);
+        $candidate_links = get_option('kvt_candidate_links', []);
+        $is_client_board    = $slug && isset($client_links[$slug]);
+        $is_candidate_board = $slug && isset($candidate_links[$slug]);
+        if (!$is_client_board && !$is_candidate_board && (!is_user_logged_in() || !current_user_can('edit_posts'))) {
             return '<div class="kvt-wrapper"><p>Debes iniciar sesión para ver el pipeline.</p></div>';
         }
         $clients   = get_terms(['taxonomy'=>self::TAX_CLIENT, 'hide_empty'=>false]);
