@@ -2670,9 +2670,24 @@ function kvtInit(){
   }
 
   async function deleteTemplate(id){
-    const res=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_delete_template', _ajax_nonce:KVT_NONCE, id})});
-    let j; try{ j=await res.json(); }catch(e){return;}
-    if(j.success){ KVT_TEMPLATES=j.data.templates||[]; populateTemplateSelect(); renderTplList(); }
+    try {
+      const res=await fetch(KVT_AJAX,{
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        credentials:'same-origin',
+        body:new URLSearchParams({action:'kvt_delete_template', _ajax_nonce:KVT_NONCE, id})
+      });
+      const j = await res.json();
+      if(j.success){
+        KVT_TEMPLATES=j.data.templates||[];
+        populateTemplateSelect();
+        renderTplList();
+      } else {
+        alert(j.data && j.data.msg ? j.data.msg : 'Error eliminando');
+      }
+    } catch(e){
+      alert('Error eliminando');
+    }
   }
 
   tplSave && tplSave.addEventListener('click', async()=>{
@@ -2680,13 +2695,25 @@ function kvtInit(){
     const subject=(tplSubject.value||'').trim();
     const body=(tplBody.value||'').trim();
     if(!title) { alert('Título requerido'); return; }
-    const res=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_save_template', _ajax_nonce:KVT_NONCE, title, subject, body})});
-    let j; try{ j=await res.json(); }catch(e){return;}
-    if(j.success){
-      KVT_TEMPLATES=j.data.templates||[];
-      populateTemplateSelect();
-      renderTplList();
-      tplTitle.value=''; tplSubject.value=''; tplBody.value='';
+    try {
+      const res=await fetch(KVT_AJAX,{
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        credentials:'same-origin',
+        body:new URLSearchParams({action:'kvt_save_template', _ajax_nonce:KVT_NONCE, title, subject, body})
+      });
+      const j = await res.json();
+      if(j.success){
+        KVT_TEMPLATES=j.data.templates||[];
+        populateTemplateSelect();
+        renderTplList();
+        tplTitle.value=''; tplSubject.value=''; tplBody.value='';
+        alert('Plantilla guardada');
+      }else{
+        alert(j.data && j.data.msg ? j.data.msg : 'Error guardando');
+      }
+    } catch(e){
+      alert('Error guardando');
     }
   });
 
@@ -2700,9 +2727,25 @@ function kvtInit(){
     if(!title) return;
     const subject=(emailSubject.value||'').trim();
     const body=(emailBody.value||'').trim();
-    const res = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_save_template', _ajax_nonce:KVT_NONCE, title, subject, body})});
-    let j; try{ j=await res.json(); }catch(e){return;}
-    if(j.success){ KVT_TEMPLATES=j.data.templates||[]; populateTemplateSelect(); renderTplList(); alert('Plantilla guardada'); }
+    try {
+      const res = await fetch(KVT_AJAX,{
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        credentials:'same-origin',
+        body:new URLSearchParams({action:'kvt_save_template', _ajax_nonce:KVT_NONCE, title, subject, body})
+      });
+      const j = await res.json();
+      if(j.success){
+        KVT_TEMPLATES=j.data.templates||[];
+        populateTemplateSelect();
+        renderTplList();
+        alert('Plantilla guardada');
+      } else {
+        alert(j.data && j.data.msg ? j.data.msg : 'Error guardando');
+      }
+    } catch(e){
+      alert('Error guardando');
+    }
   });
 
   function renderSentEmails(){
@@ -5326,12 +5369,30 @@ function kvtInit(){
       if(!recipients.length){ alert('No hay candidatos seleccionados con email.'); return; }
       if(!confirm(`¿Enviar a ${recipients.length} contactos?`)) return;
       const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0};
-      const res2 = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)})});
-      let out; try{ out=await res2.json(); }catch(e){ emailStatusMsg.textContent='Error'; return; }
-      if(out.success){
-        emailStatusMsg.textContent=`Enviados: ${out.data.sent}`;
-        if(out.data.log){ KVT_SENT_EMAILS=out.data.log; renderSentEmails(); }
-      } else {
+      try{
+        const res2 = await fetch(KVT_AJAX,{
+          method:'POST',
+          headers:{'Content-Type':'application/x-www-form-urlencoded'},
+          credentials:'same-origin',
+          body:new URLSearchParams({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)})
+        });
+        const txt = await res2.text();
+        let out = null;
+        try { out = JSON.parse(txt); } catch(e) {
+          const start = txt.indexOf('{');
+          const end   = txt.lastIndexOf('}');
+          if(start !== -1 && end !== -1) {
+            try { out = JSON.parse(txt.slice(start,end+1)); } catch(e2){ out = null; }
+          }
+        }
+        if(out && out.success){
+          emailStatusMsg.textContent=`Enviados: ${out.data.sent}`;
+          if(out.data.log){ KVT_SENT_EMAILS=out.data.log; renderSentEmails(); }
+        } else {
+          emailStatusMsg.textContent='Error enviando';
+          console.error(txt);
+        }
+      } catch(err){
         emailStatusMsg.textContent='Error enviando';
       }
     });
