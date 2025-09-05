@@ -3220,7 +3220,7 @@ function kvtInit(){
     function cardTemplate(c){
       const card = document.createElement('div');
       card.className = 'kvt-card';
-      if (!CLIENT_VIEW) card.setAttribute('draggable','true');
+      if (!CLIENT_VIEW && !CANDIDATE_VIEW) card.setAttribute('draggable','true');
       card.dataset.id = c.id;
 
       const head = document.createElement('div'); head.className='kvt-card-head';
@@ -3244,11 +3244,11 @@ function kvtInit(){
       }
 
       const sub = document.createElement('p'); sub.className = 'kvt-sub';
-      if (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) {
+      if (!(CLIENT_VIEW || CANDIDATE_VIEW) || ALLOWED_FIELDS.includes('notes')) {
         sub.textContent = lastNoteSnippet(c.meta.notes);
       }
       const tagsWrap = document.createElement('div'); tagsWrap.className = 'kvt-tags';
-      if ((!CLIENT_VIEW || ALLOWED_FIELDS.includes('tags')) && c.meta && c.meta.tags){
+      if ((!(CLIENT_VIEW || CANDIDATE_VIEW) || ALLOWED_FIELDS.includes('tags')) && c.meta && c.meta.tags){
         c.meta.tags.split(',').map(t=>t.trim()).filter(Boolean).forEach(t=>{
           const span = document.createElement('button');
           span.type = 'button';
@@ -3269,13 +3269,13 @@ function kvtInit(){
       }
       let follow;
       let commentLine;
-      if (c.meta.next_action && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('next_action'))){
+      if (c.meta.next_action && (!(CLIENT_VIEW || CANDIDATE_VIEW) || ALLOWED_FIELDS.includes('next_action'))){
         follow = document.createElement('p');
         follow.className = 'kvt-followup';
         const ico = document.createElement('span');
         ico.className = 'dashicons dashicons-clock';
         follow.appendChild(ico);
-        const noteTxt = c.meta.next_action_note && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('next_action_note')) ? ' — ' + c.meta.next_action_note : '';
+        const noteTxt = c.meta.next_action_note && (!(CLIENT_VIEW || CANDIDATE_VIEW) || ALLOWED_FIELDS.includes('next_action_note')) ? ' — ' + c.meta.next_action_note : '';
         follow.appendChild(document.createTextNode(' Próxima acción: ' + c.meta.next_action + noteTxt));
         const parts = c.meta.next_action.split('/');
         if(parts.length===3){
@@ -3284,7 +3284,7 @@ function kvtInit(){
           if(dt <= today) card.classList.add('kvt-overdue');
         }
       }
-      if (myComment){
+      if (myComment && (!(CLIENT_VIEW || CANDIDATE_VIEW) || ALLOW_COMMENTS)){
         commentLine = document.createElement('p');
         commentLine.className = 'kvt-followup';
         const ico2 = document.createElement('span');
@@ -3297,13 +3297,13 @@ function kvtInit(){
     const expand = document.createElement('div'); expand.className='kvt-expand';
     const btn = document.createElement('button'); btn.type='button'; btn.textContent='Ver perfil';
     let btnDel;
-    if (!CLIENT_VIEW) {
+    if (!CLIENT_VIEW && !CANDIDATE_VIEW) {
       btnDel = document.createElement('button');
       btnDel.type='button'; btnDel.className='kvt-delete dashicons dashicons-trash'; btnDel.setAttribute('title','Eliminar candidato');
       expand.appendChild(btn); expand.appendChild(btnDel);
     } else {
       expand.appendChild(btn);
-      if (ALLOW_COMMENTS) {
+      if (CLIENT_VIEW && ALLOW_COMMENTS) {
         const cBtn = document.createElement('button');
         cBtn.type='button';
         cBtn.textContent = 'Dar feedback';
@@ -3321,7 +3321,7 @@ function kvtInit(){
       openProfile(c);
     });
 
-    if (!CLIENT_VIEW) {
+    if (!CLIENT_VIEW && !CANDIDATE_VIEW) {
       card.addEventListener('dragstart', e=>{
         card.classList.add('dragging'); e.dataTransfer.setData('text/plain', String(c.id));
       });
@@ -3351,7 +3351,7 @@ function kvtInit(){
 
   function buildProfileHTML(c){
     const m = c.meta||{};
-    if (CLIENT_VIEW) {
+    if (CLIENT_VIEW || CANDIDATE_VIEW) {
       const fields = (ALLOWED_FIELDS.length ? ALLOWED_FIELDS : KVT_COLUMNS.map(col=>col.key)).filter(f=>f!=='public_notes');
       const half = Math.ceil(fields.length/2);
       const make = fs=>fs.map(key=>{
@@ -3361,7 +3361,7 @@ function kvtInit(){
       }).join('');
       let html = '<div class="kvt-profile-cols"><dl class="kvt-profile-col">'+make(fields.slice(0,half))+'</dl><dl class="kvt-profile-col">'+make(fields.slice(half))+'</dl></div>';
       const comments = Array.isArray(m.client_comments) ? m.client_comments : [];
-      if(comments.length){
+      if(comments.length && ALLOW_COMMENTS){
         const items = comments.map(cc=>'<li><strong>'+esc(cc.name)+':</strong> '+esc(cc.comment)+'</li>').join('');
         html += '<div class="kvt-feedback-section"><h4>Feedback</h4><ul class="kvt-feedback-list">'+items+'</ul></div>';
       }
@@ -3679,7 +3679,7 @@ function kvtInit(){
     if(!c) return;
     infoBody.innerHTML = buildProfileHTML(c);
     setupInfoTabs(infoBody);
-    if(!CLIENT_VIEW){
+    if(!CLIENT_VIEW && !CANDIDATE_VIEW){
       enableProfileEditHandlers(infoBody, String(c.id));
       enableCvUploadHandlers(infoBody, String(c.id));
       setupAssignProcess(infoBody, String(c.id));
@@ -3858,7 +3858,7 @@ function kvtInit(){
       }
     });
 
-    if (!CLIENT_VIEW) enableDnD();
+    if (!CLIENT_VIEW && !CANDIDATE_VIEW) enableDnD();
     allRows = Array.isArray(data) ? data : [];
     if(CANDIDATE_VIEW) selectedCandidateId = CANDIDATE_ID;
     filterTable();
@@ -3884,10 +3884,10 @@ function kvtInit(){
             cm = comments[comments.length-1];
           }
         }
-        if(cm && (!CLIENT_VIEW || ALLOW_COMMENTS)){
+        if(cm && (!(CLIENT_VIEW || CANDIDATE_VIEW) || ALLOW_COMMENTS)){
           icons.push('<span class="kvt-name-icon kvt-alert" title="'+escAttr(cm.comment)+'">!</span>');
         }
-        if(r.meta.next_action && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('next_action'))){
+        if(r.meta.next_action && (!(CLIENT_VIEW || CANDIDATE_VIEW) || ALLOWED_FIELDS.includes('next_action'))){
           const parts=r.meta.next_action.split('/');
           let overdue=false;
           if(parts.length===3){
@@ -3898,7 +3898,7 @@ function kvtInit(){
           const note=r.meta.next_action_note? ' — '+r.meta.next_action_note:'';
           icons.push('<span class="kvt-name-icon dashicons dashicons-clock'+(overdue?' overdue':'')+'" title="'+escAttr(r.meta.next_action+note)+'"></span>');
         }
-        const noteSrc = (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) ? r.meta.notes : '';
+        const noteSrc = (!(CLIENT_VIEW || CANDIDATE_VIEW) || ALLOWED_FIELDS.includes('notes')) ? r.meta.notes : '';
         const snip = lastNoteSnippet(noteSrc);
         if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
         const del = (!CLIENT_VIEW && !CANDIDATE_VIEW) ? '<span class="dashicons dashicons-trash kvt-row-remove" data-id="'+escAttr(r.id)+'"></span>' : '';
@@ -4481,7 +4481,7 @@ function kvtInit(){
       fbModal.style.display='flex';
       return;
     }
-    if(CLIENT_VIEW) return;
+    if(CLIENT_VIEW || CANDIDATE_VIEW) return;
     const step = e.target.closest('.kvt-stage-step');
     if(step){
       stageId = step.dataset.id;
@@ -4744,7 +4744,7 @@ function kvtInit(){
         fields.forEach(f=>params.append('fields[]', f));
         steps.forEach(s=>params.append('steps[]', s));
         if(shareComments && shareComments.checked) params.set('comments','1');
-        if(CLIENT_VIEW && CLIENT_SLUG) params.set('slug', CLIENT_SLUG);
+        if((CLIENT_VIEW || CANDIDATE_VIEW) && CLIENT_SLUG) params.set('slug', CLIENT_SLUG);
         else if(EDIT_SLUG) params.set('slug', EDIT_SLUG);
         return params;
       };
@@ -4772,7 +4772,7 @@ function kvtInit(){
       fetch(KVT_AJAX,{method:'POST',body:params}).then(r=>r.json()).then(j=>{
         if(j.success && j.data && j.data.slug){
           const slug = j.data.slug;
-          if(!CLIENT_VIEW){
+          if(!CLIENT_VIEW && !CANDIDATE_VIEW){
             const url = KVT_HOME + slug;
             if(shareMode==='client'){
               CLIENT_LINKS[selClient.value+'|'+selProcess.value] = slug;
