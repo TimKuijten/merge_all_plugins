@@ -43,20 +43,23 @@ class KVT_Board_Viewer {
             if (empty($client_links) && empty($candidate_links)) {
                 echo '<tr><td colspan="6">No boards found</td></tr>';
             }
+            $base = home_url('/base/');
             foreach ($client_links as $slug => $cfg) {
                 $client  = get_term_field('name', $cfg['client'], 'kvt_client');
                 $process = get_term_field('name', $cfg['process'], 'kvt_process');
                 $url     = home_url('/view-board/'.$slug.'/');
+                $edit    = $base.'?edit_board='.$slug;
                 $del     = wp_nonce_url(admin_url('admin-post.php?action=kvt_delete_board&type=client&slug='.$slug), 'kvt_delete_board');
-                echo '<tr><td>Client</td><td>'.esc_html($client).'</td><td>'.esc_html($process).'</td><td>—</td><td><a href="'.esc_url($url).'" target="_blank">'.esc_html($slug).'</a></td><td><a href="'.esc_url($del).'">Delete</a></td></tr>';
+                echo '<tr><td>Client</td><td>'.esc_html($client).'</td><td>'.esc_html($process).'</td><td>—</td><td><a href="'.esc_url($url).'" target="_blank">'.esc_html($slug).'</a></td><td><a href="'.esc_url($edit).'">Edit</a> | <a href="'.esc_url($del).'">Delete</a></td></tr>';
             }
             foreach ($candidate_links as $slug => $cfg) {
                 $client  = get_term_field('name', $cfg['client'], 'kvt_client');
                 $process = get_term_field('name', $cfg['process'], 'kvt_process');
                 $cand    = get_the_title($cfg['candidate']);
                 $url     = home_url('/view-board/'.$slug.'/');
+                $edit    = $base.'?edit_board='.$slug;
                 $del     = wp_nonce_url(admin_url('admin-post.php?action=kvt_delete_board&type=candidate&slug='.$slug), 'kvt_delete_board');
-                echo '<tr><td>Candidate</td><td>'.esc_html($client).'</td><td>'.esc_html($process).'</td><td>'.esc_html($cand).'</td><td><a href="'.esc_url($url).'" target="_blank">'.esc_html($slug).'</a></td><td><a href="'.esc_url($del).'">Delete</a></td></tr>';
+                echo '<tr><td>Candidate</td><td>'.esc_html($client).'</td><td>'.esc_html($process).'</td><td>'.esc_html($cand).'</td><td><a href="'.esc_url($url).'" target="_blank">'.esc_html($slug).'</a></td><td><a href="'.esc_url($edit).'">Edit</a> | <a href="'.esc_url($del).'">Delete</a></td></tr>';
             }
             echo '</tbody></table>';
             wp_footer();

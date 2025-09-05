@@ -1337,7 +1337,7 @@ JS;
                 <a href="#" data-view="ai"><span class="dashicons dashicons-search"></span> Buscador IA</a>
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
-                <a href="<?php echo esc_url( admin_url('admin.php?page=kvt-boards') ); ?>" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
+                <a href="<?php echo esc_url( home_url('/boards/') ); ?>" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
             </nav>
