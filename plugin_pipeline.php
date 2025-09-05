@@ -463,13 +463,15 @@ CSS;
   function renderRows(items){
     tbody.innerHTML='';
     const cpEl = document.getElementById('k-client-process');
-    if(CLIENT_VIEW && cpEl){
+    if(CLIENT_VIEW && !CANDIDATE_VIEW && cpEl){
       if(items.length){
         cpEl.textContent = 'Cliente: '+(items[0].meta.client||'')+' — Proceso: '+(items[0].meta.process||'');
         cpEl.style.display='block';
       }else{
         cpEl.style.display='none';
       }
+    } else if (cpEl){
+      cpEl.style.display='none';
     }
     items.forEach(item=>{
       const tr=document.createElement('tr');
@@ -1306,7 +1308,7 @@ JS;
                 </div>
             </div>
 
-            <?php if (!$is_client_board): ?>
+            <?php if (!$is_candidate_board): ?>
             <div id="kvt_selected_info" class="kvt-selected-info" style="display:none;"></div>
             <?php endif; ?>
 
@@ -3574,6 +3576,11 @@ function kvtInit(){
   }
 
   function updateSelectedInfo(){
+    if(CANDIDATE_VIEW){
+      if(selInfo) selInfo.style.display='none';
+      if(boardProcInfo) boardProcInfo.style.display='none';
+      return;
+    }
     const pid = selProcess && selProcess.value ? selProcess.value : '';
     if(!selInfo && !boardProcInfo){ return; }
     if(!pid){

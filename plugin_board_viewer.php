@@ -31,7 +31,7 @@ class KVT_Board_Viewer {
         nocache_headers();
         echo '<!DOCTYPE html><html><head><meta charset="utf-8">';
         wp_head();
-        echo '<style>.kvt-nav,.kvt-header,.kvt-help,#kvt_board_wrap,#kvt_toggle_kanban,#kvt_filters_bar,#kvt_ats_bar,#kvt_board_base,#kvt_stage_overview,#k-toggle-activity,.k-sideactions,#kvt_activity,#kvt_active_wrap,#kvt_calendar_wrap,.kvt-widgets{display:none!important;}#k-sidebar{display:none!important;}#kvt_table_wrap{display:block!important;}</style>';
+        echo '<style>.kvt-nav,.kvt-header,.kvt-help,#kvt_board_wrap,#kvt_toggle_kanban,#kvt_filters_bar,#kvt_ats_bar,#kvt_board_base,#kvt_stage_overview,#k-toggle-activity,.k-sideactions,#kvt_activity,#kvt_active_wrap,#kvt_calendar_wrap,.kvt-widgets{display:none!important;}#k-sidebar{display:none!important;}#kvt_table_wrap{display:block!important;} .kcvf .k-tablewrap{overflow:visible!important;max-height:none!important;}</style>';
         echo '</head><body>';
         echo do_shortcode('[kvt_pipeline]');
         wp_footer();
