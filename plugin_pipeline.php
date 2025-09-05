@@ -1337,7 +1337,7 @@ JS;
                 <a href="#" data-view="ai"><span class="dashicons dashicons-search"></span> Buscador IA</a>
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
-                <a href="<?php echo esc_url( home_url('/boards/') ); ?>" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
+                <a href="#" data-view="boards" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
             </nav>
@@ -1485,6 +1485,49 @@ JS;
                     <button type="button" class="kvt-btn" id="kvt_ai_board_search">Buscar</button>
                   </div>
                   <div id="kvt_ai_board_results" class="kvt-modal-list"></div>
+                </div>
+                <div id="kvt_boards_view" style="display:none;">
+                  <h3><?php esc_html_e('Candidate/Client boards', 'kovacic'); ?></h3>
+                  <table class="kvt-table">
+                    <thead><tr><th><?php esc_html_e('Type', 'kovacic'); ?></th><th><?php esc_html_e('Client', 'kovacic'); ?></th><th><?php esc_html_e('Process', 'kovacic'); ?></th><th><?php esc_html_e('Candidate', 'kovacic'); ?></th><th>URL</th><th><?php esc_html_e('Actions', 'kovacic'); ?></th></tr></thead>
+                    <tbody>
+                    <?php if (empty($client_links) && empty($candidate_links)) : ?>
+                      <tr><td colspan="6"><?php esc_html_e('No boards found', 'kovacic'); ?></td></tr>
+                    <?php else : ?>
+                      <?php foreach ($client_links as $slug => $cfg) :
+                        $client  = get_term_field('name', $cfg['client'], self::TAX_CLIENT);
+                        $process = get_term_field('name', $cfg['process'], self::TAX_PROCESS);
+                        $url     = home_url('/view-board/' . $slug . '/');
+                        $edit    = home_url('/base/?edit_board=' . $slug);
+                        $del     = wp_nonce_url(admin_url('admin-post.php?action=kvt_delete_board&type=client&slug=' . $slug), 'kvt_delete_board'); ?>
+                        <tr>
+                          <td><?php esc_html_e('Client', 'kovacic'); ?></td>
+                          <td><?php echo esc_html($client); ?></td>
+                          <td><?php echo esc_html($process); ?></td>
+                          <td>&mdash;</td>
+                          <td><a href="<?php echo esc_url($url); ?>" target="_blank"><?php echo esc_html($slug); ?></a></td>
+                          <td><a href="<?php echo esc_url($edit); ?>"><?php esc_html_e('Edit', 'kovacic'); ?></a> | <a href="<?php echo esc_url($del); ?>"><?php esc_html_e('Delete', 'kovacic'); ?></a></td>
+                        </tr>
+                      <?php endforeach; ?>
+                      <?php foreach ($candidate_links as $slug => $cfg) :
+                        $client  = get_term_field('name', $cfg['client'], self::TAX_CLIENT);
+                        $process = get_term_field('name', $cfg['process'], self::TAX_PROCESS);
+                        $cand    = get_the_title($cfg['candidate']);
+                        $url     = home_url('/view-board/' . $slug . '/');
+                        $edit    = home_url('/base/?edit_board=' . $slug);
+                        $del     = wp_nonce_url(admin_url('admin-post.php?action=kvt_delete_board&type=candidate&slug=' . $slug), 'kvt_delete_board'); ?>
+                        <tr>
+                          <td><?php esc_html_e('Candidate', 'kovacic'); ?></td>
+                          <td><?php echo esc_html($client); ?></td>
+                          <td><?php echo esc_html($process); ?></td>
+                          <td><?php echo esc_html($cand); ?></td>
+                          <td><a href="<?php echo esc_url($url); ?>" target="_blank"><?php echo esc_html($slug); ?></a></td>
+                          <td><a href="<?php echo esc_url($edit); ?>"><?php esc_html_e('Edit', 'kovacic'); ?></a> | <a href="<?php echo esc_url($del); ?>"><?php esc_html_e('Delete', 'kovacic'); ?></a></td>
+                        </tr>
+                      <?php endforeach; ?>
+                    <?php endif; ?>
+                    </tbody>
+                  </table>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
                 <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
@@ -2270,6 +2313,7 @@ function kvtInit(){
   const mitWrap = el('#kvt_mit_view');
   const keywordBoard = el('#kvt_keyword_view');
   const aiBoard = el('#kvt_ai_view');
+  const boardsView = el('#kvt_boards_view');
   const mitContent = el('#kvt_mit_content');
   const mitNews = el('#kvt_mit_news');
   const activityWrap = el('#kvt_activity');
@@ -2355,6 +2399,7 @@ function kvtInit(){
     if(mitWrap) mitWrap.style.display='none';
     if(keywordBoard) keywordBoard.style.display='none';
     if(aiBoard) aiBoard.style.display='none';
+    if(boardsView) boardsView.style.display='none';
     if(widgetsWrap) widgetsWrap.style.display='flex';
     if(view==='ats'){
       filtersBar.style.display='flex';
@@ -2433,6 +2478,18 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(keywordBoard) keywordBoard.style.display='block';
+    } else if(view==='boards'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(overview) overview.style.display='none';
+      if(atsBar) atsBar.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(boardBase) boardBase.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(boardsView) boardsView.style.display='block';
     } else {
       filtersBar.style.display='none';
       tableWrap.style.display='none';
