@@ -1537,50 +1537,47 @@ JS;
                   </table>
                 </div>
                 <div id="kvt_email_view" style="display:none;">
-                  <div class="kvt-filter-field">
-                    <label for="kvt_email_client">Cliente</label>
-                    <select id="kvt_email_client">
-                      <option value="">— Todos —</option>
-                      <?php foreach ($clients as $c): ?>
-                        <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
-                      <?php endforeach; ?>
-                    </select>
-                  </div>
-                  <div class="kvt-filter-field">
-                    <label for="kvt_email_process">Proceso</label>
-                    <select id="kvt_email_process">
-                      <option value="">— Todos —</option>
-                      <?php foreach ($processes as $t): ?>
-                        <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
-                      <?php endforeach; ?>
-                    </select>
-                  </div>
-                  <div class="kvt-filter-field">
-                    <label for="kvt_email_status">Estado</label>
-                    <select id="kvt_email_status">
-                      <option value="">— Todos —</option>
-                      <?php foreach ($statuses as $st): ?>
-                        <option value="<?php echo esc_attr($st); ?>"><?php echo esc_html($st); ?></option>
-                      <?php endforeach; ?>
-                    </select>
-                  </div>
-                  <div class="kvt-filter-field">
-                    <label for="kvt_email_country">País</label>
-                    <select id="kvt_email_country">
-                      <option value="">— Todos —</option>
-                      <?php foreach ($countries as $c): ?>
-                        <option value="<?php echo esc_attr($c); ?>"><?php echo esc_html($c); ?></option>
-                      <?php endforeach; ?>
-                    </select>
-                  </div>
-                  <div class="kvt-filter-field">
-                    <label for="kvt_email_city">Ciudad</label>
-                    <select id="kvt_email_city">
-                      <option value="">— Todas —</option>
-                      <?php foreach ($cities as $c): ?>
-                        <option value="<?php echo esc_attr($c); ?>"><?php echo esc_html($c); ?></option>
-                      <?php endforeach; ?>
-                    </select>
+                  <div id="kvt_email_filters" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                    <div class="kvt-filter-field">
+                      <label for="kvt_email_client">Cliente</label>
+                      <select id="kvt_email_client" multiple size="4">
+                        <?php foreach ($clients as $c): ?>
+                          <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
+                        <?php endforeach; ?>
+                      </select>
+                    </div>
+                    <div class="kvt-filter-field">
+                      <label for="kvt_email_process">Proceso</label>
+                      <select id="kvt_email_process" multiple size="4">
+                        <?php foreach ($processes as $t): ?>
+                          <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
+                        <?php endforeach; ?>
+                      </select>
+                    </div>
+                    <div class="kvt-filter-field">
+                      <label for="kvt_email_status">Estado</label>
+                      <select id="kvt_email_status" multiple size="4">
+                        <?php foreach ($statuses as $st): ?>
+                          <option value="<?php echo esc_attr($st); ?>"><?php echo esc_html($st); ?></option>
+                        <?php endforeach; ?>
+                      </select>
+                    </div>
+                    <div class="kvt-filter-field">
+                      <label for="kvt_email_country">País</label>
+                      <select id="kvt_email_country" multiple size="4">
+                        <?php foreach ($countries as $c): ?>
+                          <option value="<?php echo esc_attr($c); ?>"><?php echo esc_html($c); ?></option>
+                        <?php endforeach; ?>
+                      </select>
+                    </div>
+                    <div class="kvt-filter-field">
+                      <label for="kvt_email_city">Ciudad</label>
+                      <select id="kvt_email_city" multiple size="4">
+                        <?php foreach ($cities as $c): ?>
+                          <option value="<?php echo esc_attr($c); ?>"><?php echo esc_html($c); ?></option>
+                        <?php endforeach; ?>
+                      </select>
+                    </div>
                   </div>
                   <div class="kvt-row" style="margin-bottom:10px;">
                     <button class="kvt-btn" id="kvt_email_select_all">Seleccionar todo</button>
@@ -1597,7 +1594,14 @@ JS;
                       <tbody id="kvt_email_tbody"></tbody>
                     </table>
                   </div>
-                  <textarea id="kvt_email_prompt" rows="3" class="kvt-textarea" placeholder="Describe el correo para la IA"></textarea>
+                  <div id="kvt_email_pager" class="kvt-table-pager" style="display:none;">
+                    <button type="button" class="kvt-btn" id="kvt_email_prev">Anterior</button>
+                    <span id="kvt_email_pageinfo"></span>
+                    <button type="button" class="kvt-btn" id="kvt_email_next">Siguiente</button>
+                  </div>
+                  <label for="kvt_email_prompt">Describe el correo para la IA</label>
+                  <textarea id="kvt_email_prompt" rows="3" class="kvt-textarea" placeholder="Ej: Invita a {{first_name}} a una entrevista para el rol {{role}} en {{client}} ubicado en {{city}}, {{country}}. Usa tono profesional."></textarea>
+                  <p class="kvt-hint">Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}</p>
                   <button type="button" class="kvt-btn" id="kvt_email_generate">Generar con IA</button>
                   <input type="text" id="kvt_email_subject" class="kvt-input" placeholder="Asunto">
                   <textarea id="kvt_email_body" class="kvt-textarea" rows="8" placeholder="Mensaje con {{placeholders}}"></textarea>
@@ -1605,7 +1609,10 @@ JS;
                     <input type="text" id="kvt_email_from_name" class="kvt-input" placeholder="Nombre remitente">
                     <input type="email" id="kvt_email_from_email" class="kvt-input" placeholder="Email remitente">
                   </div>
-                  <button type="button" class="kvt-btn" id="kvt_email_send">Enviar</button>
+                  <div class="kvt-row" style="margin-top:8px;">
+                    <button type="button" class="kvt-btn" id="kvt_email_preview">Vista previa</button>
+                    <button type="button" class="kvt-btn" id="kvt_email_send">Enviar</button>
+                  </div>
                   <div id="kvt_email_status_msg"></div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
@@ -1663,6 +1670,20 @@ JS;
               <button type="button" class="kvt-modal-close" id="kvt_info_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
             </div>
             <div class="kvt-modal-body" id="kvt_info_body"></div>
+          </div>
+        </div>
+
+        <!-- Email Preview Modal -->
+        <div class="kvt-modal" id="kvt_email_preview_modal" style="display:none;">
+          <div class="kvt-modal-content">
+            <div class="kvt-modal-header">
+              <h3>Vista previa</h3>
+              <button type="button" class="kvt-modal-close" id="kvt_email_preview_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
+            </div>
+            <div class="kvt-modal-body">
+              <p><strong>Asunto:</strong> <span id="kvt_email_preview_subject"></span></p>
+              <div id="kvt_email_preview_body"></div>
+            </div>
           </div>
         </div>
 
@@ -2066,6 +2087,10 @@ JS;
         .kvt-widget-title{margin:0 0 8px;font-size:15px;font-weight:600;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
         #kvt_table tbody tr:nth-child(even){background:#f1f5f9}
         #kvt_table tbody tr:nth-child(odd){background:#fff}
+        #kvt_email_tbody tr:nth-child(even){background:#f1f5f9}
+        #kvt_email_tbody tr:nth-child(odd){background:#fff}
+        #kvt_email_filters .kvt-filter-field{display:flex;flex-direction:column}
+        #kvt_email_filters select{min-width:140px}
         .kvt-base .kvt-row:nth-child(even){background:#f1f5f9}
         .kvt-base .kvt-row:nth-child(odd){background:#fff}
         .kvt-active-days{font-size:14px;font-weight:600}
@@ -2411,6 +2436,15 @@ function kvtInit(){
   const emailFromEmail = el('#kvt_email_from_email');
   const emailSend = el('#kvt_email_send');
   const emailStatusMsg = el('#kvt_email_status_msg');
+  const emailPager = el('#kvt_email_pager');
+  const emailPrev = el('#kvt_email_prev');
+  const emailNext = el('#kvt_email_next');
+  const emailPageInfo = el('#kvt_email_pageinfo');
+  const emailPreviewBtn = el('#kvt_email_preview');
+  const emailPrevModal = el('#kvt_email_preview_modal');
+  const emailPrevSubject = el('#kvt_email_preview_subject');
+  const emailPrevBody = el('#kvt_email_preview_body');
+  const emailPrevClose = el('#kvt_email_preview_close');
   const mitContent = el('#kvt_mit_content');
   const mitNews = el('#kvt_mit_news');
   const activityWrap = el('#kvt_activity');
@@ -2454,9 +2488,19 @@ function kvtInit(){
 
   let emailCandidates = [];
   let emailSelected = new Set();
+  let emailPageNum = 1;
+  let emailPageTotal = 1;
 
   function updateEmailSel(){
     if(emailSelInfo) emailSelInfo.textContent = emailSelected.size + ' seleccionados';
+  }
+
+  function updateEmailPager(){
+    if(!emailPager) return;
+    emailPageInfo.textContent = emailPageNum + ' / ' + emailPageTotal;
+    emailPrev.disabled = emailPageNum <= 1;
+    emailNext.disabled = emailPageNum >= emailPageTotal;
+    emailPager.style.display = emailPageTotal > 1 ? 'flex' : 'none';
   }
 
   function renderEmailTable(){
@@ -2478,19 +2522,23 @@ function kvtInit(){
     updateEmailSel();
   }
 
-  function loadEmailCandidates(){
+  function loadEmailCandidates(pg=1){
     if(!emailTbody) return;
-    const params=new URLSearchParams({action:'kvt_get_candidates', _ajax_nonce:KVT_NONCE, all:1});
-    if(emailClient && emailClient.value) params.set('client', emailClient.value);
-    if(emailProcess && emailProcess.value) params.set('process', emailProcess.value);
-    if(emailStatusSel && emailStatusSel.value) params.set('status', emailStatusSel.value);
-    if(emailCountry && emailCountry.value) params.set('country', emailCountry.value);
-    if(emailCity && emailCity.value) params.set('city', emailCity.value);
+    const params=new URLSearchParams({action:'kvt_get_candidates', _ajax_nonce:KVT_NONCE, per_page:15, page:pg});
+    const getVals=sel=>sel?Array.from(sel.selectedOptions).map(o=>o.value).filter(v=>v):[];
+    const c=getVals(emailClient); if(c.length) params.set('client', c.join(','));
+    const p=getVals(emailProcess); if(p.length) params.set('process', p.join(','));
+    const s=getVals(emailStatusSel); if(s.length) params.set('status', s.join(','));
+    const co=getVals(emailCountry); if(co.length) params.set('country', co.join(','));
+    const ci=getVals(emailCity); if(ci.length) params.set('city', ci.join(','));
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(j=>{
         emailCandidates = (j.success && j.data.items) ? j.data.items : [];
         emailSelected = new Set();
+        emailPageNum = pg;
+        emailPageTotal = j.success && j.data.pages ? j.data.pages : 1;
         renderEmailTable();
+        updateEmailPager();
       });
   }
 
@@ -2511,8 +2559,11 @@ function kvtInit(){
   emailClear && emailClear.addEventListener('click', ()=>{ emailSelected.clear(); renderEmailTable(); });
 
   [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
-    sel && sel.addEventListener('change', loadEmailCandidates);
+    sel && sel.addEventListener('change', ()=>loadEmailCandidates(1));
   });
+
+  emailPrev && emailPrev.addEventListener('click', ()=>{ if(emailPageNum>1) loadEmailCandidates(emailPageNum-1); });
+  emailNext && emailNext.addEventListener('click', ()=>{ if(emailPageNum<emailPageTotal) loadEmailCandidates(emailPageNum+1); });
 
   function formatInputDate(v){ const p=v.split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : v; }
 
@@ -4957,6 +5008,24 @@ function kvtInit(){
       if(json.success){ emailSubject.value=json.data.subject_template||''; emailBody.value=json.data.body_template||''; } else { alert('No se pudo generar'); }
     });
 
+    emailPreviewBtn && emailPreviewBtn.addEventListener('click', ()=>{
+      const subject=(emailSubject.value||'').trim();
+      const body=(emailBody.value||'').trim();
+      if(!subject || !body){ alert('Completa asunto y cuerpo.'); return; }
+      const firstId = emailSelected.size ? Array.from(emailSelected)[0] : null;
+      if(!firstId){ alert('Selecciona al menos un candidato.'); return; }
+      const cand = emailCandidates.find(c=>String(c.id)===String(firstId));
+      if(!cand){ alert('Candidato inválido'); return; }
+      const m=cand.meta||{};
+      const meta=Object.assign({}, m, {surname:m.last_name||'', role:m.process||''});
+      const repl=str=>str.replace(/{{(\w+)}}/g,(match,p)=>meta[p]||'');
+      emailPrevSubject.textContent=repl(subject);
+      emailPrevBody.innerHTML=repl(body).replace(/\n/g,'<br>');
+      if(emailPrevModal) emailPrevModal.style.display='flex';
+    });
+    emailPrevClose && emailPrevClose.addEventListener('click', ()=>{ if(emailPrevModal) emailPrevModal.style.display='none'; });
+    emailPrevModal && emailPrevModal.addEventListener('click', e=>{ if(e.target===emailPrevModal) emailPrevModal.style.display='none'; });
+
     emailSend && emailSend.addEventListener('click', async ()=>{
       const subject=(emailSubject.value||'').trim();
       const body=(emailBody.value||'').trim();
@@ -5035,50 +5104,51 @@ JS;
     public function ajax_get_candidates() {
         check_ajax_referer('kvt_nonce');
 
-        $client_id  = isset($_POST['client'])  ? intval($_POST['client'])  : 0;
-        $process_id = isset($_POST['process']) ? intval($_POST['process']) : 0;
-        $search     = isset($_POST['search'])  ? trim(sanitize_text_field($_POST['search'])) : '';
-        $page       = isset($_POST['page'])    ? max(1, intval($_POST['page'])) : 1;
-        $all        = isset($_POST['all'])     ? intval($_POST['all']) : 0;
-        $status     = isset($_POST['status'])  ? sanitize_text_field($_POST['status']) : '';
-        $country    = isset($_POST['country']) ? sanitize_text_field($_POST['country']) : '';
-        $city       = isset($_POST['city'])    ? sanitize_text_field($_POST['city']) : '';
+        $client_ids  = isset($_POST['client'])  ? array_filter(array_map('intval', explode(',', sanitize_text_field($_POST['client'])))) : [];
+        $process_ids = isset($_POST['process']) ? array_filter(array_map('intval', explode(',', sanitize_text_field($_POST['process'])))) : [];
+        $search      = isset($_POST['search'])  ? trim(sanitize_text_field($_POST['search'])) : '';
+        $page        = isset($_POST['page'])    ? max(1, intval($_POST['page'])) : 1;
+        $all         = isset($_POST['all'])     ? intval($_POST['all']) : 0;
+        $status_vals = isset($_POST['status'])  ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['status']))) : [];
+        $countries   = isset($_POST['country']) ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['country']))) : [];
+        $cities      = isset($_POST['city'])    ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['city']))) : [];
 
-        $base_mode = !$client_id && !$process_id;
+        $base_mode = empty($client_ids) && empty($process_ids);
 
         $tax_query = [];
         if (!$base_mode) {
-            if ($process_id) {
-                $tax_query[] = ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>[$process_id]];
-                if ($client_id) $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
+            if (!empty($process_ids)) {
+                $tax_query[] = ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>$process_ids];
+                if (!empty($client_ids)) $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>$client_ids];
             } else {
-                if ($client_id) {
+                if (!empty($client_ids)) {
                     $proc_terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
                     $proc_ids = [];
                     foreach ($proc_terms as $t) {
                         $cid = (int) get_term_meta($t->term_id, 'kvt_process_client', true);
-                        if ($cid === $client_id) $proc_ids[] = $t->term_id;
+                        if (in_array($cid, $client_ids, true)) $proc_ids[] = $t->term_id;
                     }
                     if (!empty($proc_ids)) {
                         $tax_query = [
                             'relation' => 'OR',
-                            ['taxonomy'=>self::TAX_CLIENT, 'field'=>'term_id','terms'=>[$client_id]],
+                            ['taxonomy'=>self::TAX_CLIENT, 'field'=>'term_id','terms'=>$client_ids],
                             ['taxonomy'=>self::TAX_PROCESS,'field'=>'term_id','terms'=>$proc_ids],
                         ];
                     } else {
-                        $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>[$client_id]];
+                        $tax_query[] = ['taxonomy'=>self::TAX_CLIENT,'field'=>'term_id','terms'=>$client_ids];
                     }
                 }
             }
         }
 
-        $per_page = ($base_mode && !$all) ? 10 : 999;
+        $per_page = isset($_POST['per_page']) ? intval($_POST['per_page']) : (($base_mode && !$all) ? 10 : 999);
+        if ($per_page <= 0) $per_page = 10;
         $args = [
             'post_type'      => self::CPT,
             'post_status'    => 'any',
             'posts_per_page' => $per_page,
             'paged'          => $page,
-            'no_found_rows'  => $base_mode ? false : true,
+            'no_found_rows'  => $per_page >= 999,
         ];
         if (!empty($tax_query)) $args['tax_query'] = $tax_query;
 
@@ -5096,21 +5166,21 @@ JS;
                 ['key'=>'current_role','value'=>$search,'compare'=>'LIKE'],
             ];
         }
-        if ($status !== '') {
-            $meta_query[] = ['key'=>'kvt_status','value'=>$status];
+        if (!empty($status_vals)) {
+            $meta_query[] = ['key'=>'kvt_status','value'=>$status_vals,'compare'=>'IN'];
         }
-        if ($country !== '') {
+        if (!empty($countries)) {
             $meta_query[] = [
                 'relation'=>'OR',
-                ['key'=>'kvt_country','value'=>$country],
-                ['key'=>'country','value'=>$country],
+                ['key'=>'kvt_country','value'=>$countries,'compare'=>'IN'],
+                ['key'=>'country','value'=>$countries,'compare'=>'IN'],
             ];
         }
-        if ($city !== '') {
+        if (!empty($cities)) {
             $meta_query[] = [
                 'relation'=>'OR',
-                ['key'=>'kvt_city','value'=>$city],
-                ['key'=>'city','value'=>$city],
+                ['key'=>'kvt_city','value'=>$cities,'compare'=>'IN'],
+                ['key'=>'city','value'=>$cities,'compare'=>'IN'],
             ];
         }
         if (!empty($meta_query)) {
@@ -5154,7 +5224,7 @@ JS;
                 'meta'   => $meta,
             ];
         }
-        $pages = $base_mode ? $q->max_num_pages : 1;
+        $pages = $per_page >= 999 ? 1 : $q->max_num_pages;
         wp_send_json_success(['items'=>$data,'pages'=>$pages]);
     }
 
