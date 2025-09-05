@@ -29,6 +29,8 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_EMAIL_TEMPLATES = 'kvt_email_templates';
     const OPT_EMAIL_LOG = 'kvt_email_log';
     const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
+    const OPT_MIT_TIME = 'kvt_mit_time';
+    const OPT_MIT_RECIPIENTS = 'kvt_mit_recipients';
     const MIT_HISTORY_LIMIT = 20;
     const MIT_TIMEOUT      = 60;
 
@@ -37,7 +39,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('admin_init',                 [$this, 'register_settings']);
         add_action('admin_menu',                 [$this, 'admin_menu']);
         add_action('admin_enqueue_scripts',      [$this, 'admin_assets']);
-        add_action('wp_footer',                  [$this, 'mit_lightbulb']);
+        add_action('wp_footer',                  [$this, 'mit_chat_widget']);
         add_action('phpmailer_init',             [$this, 'apply_smtp_settings']);
 
         // Term meta: Proceso -> Cliente
@@ -153,6 +155,8 @@ class Kovacic_Pipeline_Visualizer {
         // Follow-up reminders
         add_action('wp',                            [$this, 'schedule_followup_cron']);
         add_action('kvt_daily_followup',            [$this, 'cron_check_followups']);
+        add_action('wp',                            [$this, 'schedule_mit_weekly_report']);
+        add_action('kvt_mit_weekly_report',         [$this, 'cron_mit_weekly_report']);
         add_action('admin_notices',                 [$this, 'followup_admin_notice']);
         add_action('template_redirect',             [$this, 'maybe_redirect_share_link']);
 
@@ -236,6 +240,8 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_FROM_EMAIL);
         register_setting(self::OPT_GROUP, self::OPT_EMAIL_TEMPLATES);
         register_setting(self::OPT_GROUP, self::OPT_EMAIL_LOG);
+        register_setting(self::OPT_GROUP, self::OPT_MIT_TIME);
+        register_setting(self::OPT_GROUP, self::OPT_MIT_RECIPIENTS);
     }
     public function admin_menu() {
         global $admin_page_hooks;
@@ -623,6 +629,8 @@ JS;
         $smtp_sig  = get_option(self::OPT_SMTP_SIGNATURE, "");
         $from_name_def = get_option(self::OPT_FROM_NAME, "");
         $from_email_def = get_option(self::OPT_FROM_EMAIL, "");
+        $mit_time = get_option(self::OPT_MIT_TIME, '09:00');
+        $mit_recipients = get_option(self::OPT_MIT_RECIPIENTS, get_option('admin_email'));
         ?>
         <div class="wrap">
             <h1>Kovacic Pipeline — Ajustes</h1>
@@ -710,6 +718,20 @@ JS;
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_FROM_EMAIL; ?>">Email remitente por defecto</label></th>
                         <td><input type="email" name="<?php echo self::OPT_FROM_EMAIL; ?>" id="<?php echo self::OPT_FROM_EMAIL; ?>" class="regular-text" value="<?php echo esc_attr($from_email_def); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_MIT_TIME; ?>">Hora informe MIT</label></th>
+                        <td>
+                            <input type="time" name="<?php echo self::OPT_MIT_TIME; ?>" id="<?php echo self::OPT_MIT_TIME; ?>" value="<?php echo esc_attr($mit_time); ?>">
+                            <p class="description">Hora de envío semanal (lunes, zona Madrid).</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_MIT_RECIPIENTS; ?>">Emails informe MIT</label></th>
+                        <td>
+                            <input type="text" name="<?php echo self::OPT_MIT_RECIPIENTS; ?>" id="<?php echo self::OPT_MIT_RECIPIENTS; ?>" class="regular-text" value="<?php echo esc_attr($mit_recipients); ?>">
+                            <p class="description">Direcciones separadas por comas.</p>
+                        </td>
                     </tr>
                 </table>
                 <?php submit_button('Guardar ajustes'); ?>
@@ -1382,6 +1404,82 @@ JS;
         }
         update_option('kvt_followup_due', $due);
     }
+
+    public function schedule_mit_weekly_report() {
+        $tz   = new DateTimeZone('Europe/Madrid');
+        $time = get_option(self::OPT_MIT_TIME, '09:00');
+        if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $time)) {
+            $time = '09:00';
+        }
+        list($hour, $min) = array_map('intval', explode(':', $time));
+        $now  = new DateTime('now', $tz);
+        $next = clone $now;
+        $next->setTime($hour, $min);
+        if ($now->format('N') != 1 || $now->getTimestamp() >= $next->getTimestamp()) {
+            $next = new DateTime('next monday', $tz);
+            $next->setTime($hour, $min);
+        }
+        $timestamp = $next->getTimestamp();
+        $scheduled = wp_next_scheduled('kvt_mit_weekly_report');
+        if (!$scheduled || abs($scheduled - $timestamp) > 60) {
+            if ($scheduled) wp_unschedule_event($scheduled, 'kvt_mit_weekly_report');
+            wp_schedule_event($timestamp, 'weekly', 'kvt_mit_weekly_report');
+        }
+    }
+
+    public function cron_mit_weekly_report() {
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        if (!$key) return;
+        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $ctx = $this->mit_gather_context();
+        $summary = $ctx['summary'];
+        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable. Con los siguientes datos: $summary Genera un informe semanal con recomendaciones y sugerencias para la semana. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>.";
+        $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => json_encode([
+                'model'   => $model,
+                'messages'=> [
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+            ]),
+            'timeout' => self::MIT_TIMEOUT,
+        ]);
+        if (is_wp_error($resp)) return;
+        $data = json_decode(wp_remote_retrieve_body($resp), true);
+        $text = trim($data['choices'][0]['message']['content'] ?? '');
+        if (!$text) return;
+
+        $raw = get_option(self::OPT_MIT_RECIPIENTS, get_option('admin_email'));
+        $list = array_filter(array_map('trim', explode(',', (string) $raw)));
+        $emails = [];
+        foreach ($list as $email) {
+            $email = sanitize_email($email);
+            if ($email) $emails[] = $email;
+        }
+        if (empty($emails)) return;
+
+        $from_email = get_option(self::OPT_FROM_EMAIL, '');
+        if (!$from_email) $from_email = get_option('admin_email');
+        $from_name  = get_option(self::OPT_FROM_NAME, '');
+        if (!$from_name) $from_name = get_bloginfo('name');
+        $from_cb = null;
+        $from_name_cb = null;
+        if ($from_email) {
+            $from_cb = function() use ($from_email){ return $from_email; };
+            add_filter('wp_mail_from', $from_cb, 99);
+        }
+        if ($from_name) {
+            $from_name_cb = function() use ($from_name){ return $from_name; };
+            add_filter('wp_mail_from_name', $from_name_cb, 99);
+        }
+        wp_mail($emails, 'Informe semanal MIT', wp_kses_post($text), ['Content-Type: text/html; charset=UTF-8']);
+        if ($from_cb) remove_filter('wp_mail_from', $from_cb, 99);
+        if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
+    }
+
     public function followup_admin_notice() {
         if (!current_user_can('edit_posts')) return;
         $due = get_option('kvt_followup_due', []);
@@ -5858,17 +5956,7 @@ JS;
         }
     }
 
-    public function ajax_mit_suggestions() {
-        check_ajax_referer('kvt_mit', 'nonce');
-        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
-        $key = get_option(self::OPT_OPENAI_KEY, '');
-        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
-        $uid  = get_current_user_id();
-        $hist = $this->mit_load_history($uid);
-        if (!$key) {
-            wp_send_json_success(['suggestions' => __('Falta la clave de OpenAI', 'kovacic'), 'history' => $hist['messages']]);
-        }
-
+    private function mit_gather_context() {
         $cands = get_posts([
             'post_type'   => self::CPT,
             'post_status' => 'any',
@@ -5885,9 +5973,9 @@ JS;
             'number'     => 0,
         ]);
 
-        $notes        = [];
-        $cand_lines   = [];
-        $followups    = [];
+        $notes      = [];
+        $cand_lines = [];
+        $followups  = [];
         foreach ($cands as $c) {
             $country = get_post_meta($c->ID, 'kvt_country', true);
             $role    = $this->meta_get_compat($c->ID, 'kvt_current_role', ['current_role']);
@@ -5897,6 +5985,10 @@ JS;
             $cand_lines[] = $line;
             $n = get_post_meta($c->ID, 'kvt_notes', true);
             if ($n) $notes[] = $n;
+            $pn = get_post_meta($c->ID, 'kvt_public_notes', true);
+            if ($pn) $notes[] = $pn;
+            $desc = trim(wp_strip_all_tags($c->post_content));
+            if ($desc) $notes[] = $desc;
             $next = get_post_meta($c->ID, 'kvt_next_action', true);
             if ($next) {
                 $ts = strtotime(str_replace('/', '-', $next));
@@ -5915,20 +6007,23 @@ JS;
             $line    = $cl->name;
             if ($contact) $line .= " ($contact)";
             $client_lines[] = $line;
+            $desc = term_description($cl, self::TAX_CLIENT);
+            if ($desc) $notes[] = $cl->name . ': ' . wp_strip_all_tags($desc);
         }
 
         $process_lines = [];
         foreach ($processes as $pr) {
-            $cid  = get_term_meta($pr->term_id, 'client_id', true);
+            $cid  = get_term_meta($pr->term_id, 'kvt_process_client', true);
             $line = $pr->name;
             if ($cid) {
                 $cl_obj = get_term_by('id', $cid, self::TAX_CLIENT);
                 if ($cl_obj) $line .= " (" . $cl_obj->name . ")";
             }
             $process_lines[] = $line;
+            $desc = term_description($pr, self::TAX_PROCESS);
+            if ($desc) $notes[] = $pr->name . ': ' . wp_strip_all_tags($desc);
         }
 
-        // Fetch latest renewable energy market news
         $news_key = get_option(self::OPT_NEWS_KEY, '');
         $news     = [];
         if ($news_key) {
@@ -5964,6 +6059,25 @@ JS;
             $summary .= ' Noticias del mercado: ' . implode(' | ', $news) . '.';
         }
 
+        return ['summary' => $summary, 'news' => $news];
+    }
+
+    public function ajax_mit_suggestions() {
+        check_ajax_referer('kvt_mit', 'nonce');
+        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $uid  = get_current_user_id();
+        $hist = $this->mit_load_history($uid);
+        if (!$key) {
+            wp_send_json_success(['suggestions' => __('Falta la clave de OpenAI', 'kovacic'), 'history' => $hist['messages']]);
+        }
+
+        $ctx = $this->mit_gather_context();
+        $summary = $ctx['summary'];
+        $news    = $ctx['news'];
+
+        $hist['summary'] = $summary;
         $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente)";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
@@ -5986,8 +6100,8 @@ JS;
         if ($text) {
             $hist['messages'][] = ['role' => 'assistant', 'content' => wp_strip_all_tags($text), 'html' => $text];
             $this->mit_summarize_history($hist, $key, $model);
-            $this->mit_save_history($uid, $hist);
         }
+        $this->mit_save_history($uid, $hist);
         if (is_wp_error($resp)) {
             $err = $resp->get_error_message();
             $text = sprintf(__('No se pudo conectar con OpenAI: %s', 'kovacic'), $err);
@@ -6011,6 +6125,10 @@ JS;
         $uid  = get_current_user_id();
         $hist = $this->mit_load_history($uid);
         $hist['messages'][] = ['role' => 'user', 'content' => $msg];
+        if (empty($hist['summary'])) {
+            $ctx = $this->mit_gather_context();
+            $hist['summary'] = $ctx['summary'];
+        }
         $this->mit_summarize_history($hist, $key, $model);
         $api_messages = $hist['messages'];
         if (!empty($hist['summary'])) {
@@ -6046,39 +6164,52 @@ JS;
         ]);
     }
 
-    public function mit_lightbulb() {
+    public function mit_chat_widget() {
         if (!wp_script_is('kvt-app', 'enqueued')) return;
         if (!is_user_logged_in() || !current_user_can('edit_posts')) return;
         ?>
-        <div id="k-mit-bulb" class="dashicons dashicons-lightbulb"></div>
-        <div id="k-mit-box" style="display:none;">
+        <div id="k-mit-box">
             <div id="k-mit-chat"></div>
             <div class="k-mit-input"><textarea id="k-mit-input" rows="2"></textarea><button type="button" id="k-mit-send">Enviar</button></div>
         </div>
         <script>
         (function(){
-            const bulb = document.getElementById('k-mit-bulb');
             const box  = document.getElementById('k-mit-box');
             const chat = document.getElementById('k-mit-chat');
             const input = document.getElementById('k-mit-input');
             const send = document.getElementById('k-mit-send');
-            if(!bulb || !box || !chat || !input || !send) return;
+            if(!box || !chat || !input || !send) return;
+            const ajaxUrl = window.KVT_AJAX || window.ajaxurl || '/wp-admin/admin-ajax.php';
+            const nonce = typeof KVT_MIT_NONCE !== 'undefined' ? KVT_MIT_NONCE : '';
             let history = [];
             try{ history = JSON.parse(sessionStorage.getItem('kvtMitHistory')||'[]'); history.forEach(m=>append(m.role,m.html||m.content, !!m.html)); }catch(e){ history=[]; }
             function append(role,text,isHtml=false){ const div=document.createElement('div'); div.className='k-mit-msg '+role; if(isHtml){div.innerHTML=text;}else{div.textContent=text;} chat.appendChild(div); chat.scrollTop=chat.scrollHeight; }
             function save(){ sessionStorage.setItem('kvtMitHistory', JSON.stringify(history)); }
-            bulb.addEventListener('click', ()=>{ box.style.display = box.style.display === 'none' ? 'block' : 'none'; });
-            fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:KVT_MIT_NONCE})}).then(r=>r.json()).then(resp=>{
-                if(resp && resp.success && resp.data){
-                    if(resp.data.history){
-                        history = resp.data.history;
-                        chat.innerHTML='';
-                        history.forEach(m=>{ append(m.role, m.html||m.content, !!m.html); });
+            async function fetchSuggestions(){
+                if(!ajaxUrl) return;
+                try{
+                    const res=await fetch(ajaxUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:nonce})});
+                    const resp=await res.json();
+                    if(resp && resp.success && resp.data){
+                        if(resp.data.history){
+                            history = resp.data.history;
+                            chat.innerHTML='';
+                            history.forEach(m=>append(m.role,m.html||m.content,!!m.html));
+                        }
+                        if(resp.data.suggestions_html){
+                            append('assistant',resp.data.suggestions_html,true);
+                            history.push({role:'assistant',content:resp.data.suggestions,html:resp.data.suggestions_html});
+                        } else if(history.length===0){
+                            const greet='Hola, soy MIT. ¿En qué puedo ayudarte hoy?';
+                            append('assistant',greet);
+                            history.push({role:'assistant',content:greet});
+                        }
                         save();
                     }
-                    if(resp.data.suggestions_html){ bulb.style.color='#f1c40f'; box.style.display='block'; }
-                }
-            });
+                }catch(e){}
+            }
+            fetchSuggestions();
+            setInterval(fetchSuggestions, 300000);
             send.addEventListener('click', async ()=>{
                 const msg=(input.value||'').trim();
                 if(!msg) return;
@@ -6086,8 +6217,9 @@ JS;
                 history.push({role:'user',content:msg});
                 save();
                 input.value='';
+                if(!ajaxUrl){ append('assistant','Error de conexión'); return; }
                 try{
-                    const res=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_chat', nonce:KVT_MIT_NONCE, message:msg})});
+                    const res=await fetch(ajaxUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_chat', nonce:nonce, message:msg})});
                     const j=await res.json();
                     if(j.success && j.data && j.data.reply){
                         const html = j.data.reply_html || j.data.reply.replace(/\n/g,'<br>');
@@ -6100,8 +6232,7 @@ JS;
         })();
         </script>
         <style>
-        #k-mit-bulb{position:fixed;right:10px;bottom:10px;font-size:24px;color:#ccc;cursor:pointer;z-index:100000;}
-        #k-mit-box{position:fixed;right:50px;bottom:10px;background:#fff;border:1px solid #ccc;padding:10px;max-width:300px;max-height:260px;overflow:auto;z-index:100000;box-shadow:0 2px 6px rgba(0,0,0,.2);}
+        #k-mit-box{position:fixed;right:10px;bottom:10px;background:#fff;border:1px solid #ccc;padding:10px;max-width:300px;max-height:260px;overflow:auto;z-index:100000;box-shadow:0 2px 6px rgba(0,0,0,.2);}
         #k-mit-chat{max-height:200px;overflow:auto;margin-bottom:6px;font-size:13px}
         .k-mit-msg{margin:4px 0}
         .k-mit-msg.assistant{color:#0a212e}
