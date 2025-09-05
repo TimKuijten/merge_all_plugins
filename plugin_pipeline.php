@@ -1402,7 +1402,7 @@ JS;
         }, $clients);
         $from_name_def  = get_option(self::OPT_FROM_NAME, '');
         $from_email_def = get_option(self::OPT_FROM_EMAIL, '');
-        $templates      = get_option(self::OPT_EMAIL_TEMPLATES, []);
+        $templates      = $this->get_email_templates();
         $sent_emails    = get_option(self::OPT_EMAIL_LOG, []);
         $count_obj = wp_count_posts(self::CPT, 'readable');
         $total_candidates = array_sum((array) $count_obj);
@@ -2380,7 +2380,7 @@ JS;
         if (!$def_from_name) $def_from_name = get_bloginfo('name');
         $def_from_email = get_option(self::OPT_FROM_EMAIL, '');
         if (!$def_from_email) $def_from_email = get_option('admin_email');
-        $templates = get_option(self::OPT_EMAIL_TEMPLATES, []);
+        $templates = $this->get_email_templates();
         $sent_emails = get_option(self::OPT_EMAIL_LOG, []);
         wp_add_inline_script('kvt-app', 'const KVT_SIGNATURE='.wp_json_encode($signature).';const KVT_FROM_NAME='.wp_json_encode($def_from_name).';const KVT_FROM_EMAIL='.wp_json_encode($def_from_email).';let KVT_TEMPLATES='.wp_json_encode($templates).';let KVT_SENT_EMAILS='.wp_json_encode($sent_emails).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($has_share_link?'true':'false').';', 'before');
@@ -2646,8 +2646,8 @@ function kvtInit(){
   let emailSelected = new Set();
   let emailPageNum = 1;
   let emailPageTotal = 1;
-  if(typeof KVT_TEMPLATES==='undefined') var KVT_TEMPLATES=[];
-  if(typeof KVT_SENT_EMAILS==='undefined') var KVT_SENT_EMAILS=[];
+  if(typeof KVT_TEMPLATES==='undefined' || !Array.isArray(KVT_TEMPLATES)) var KVT_TEMPLATES=[];
+  if(typeof KVT_SENT_EMAILS==='undefined' || !Array.isArray(KVT_SENT_EMAILS)) var KVT_SENT_EMAILS=[];
 
   function populateTemplateSelect(){
     if(!emailTplSelect) return;
@@ -7581,6 +7581,15 @@ JS;
             }
         }
 
+        private function get_email_templates() {
+            $templates = get_option(self::OPT_EMAIL_TEMPLATES, []);
+            if (!is_array($templates)) {
+                $decoded = json_decode($templates, true);
+                $templates = is_array($decoded) ? $decoded : [];
+            }
+            return $templates;
+        }
+
         public function ajax_save_template() {
             check_ajax_referer('kvt_nonce');
             if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
@@ -7588,8 +7597,7 @@ JS;
             $subject = wp_kses_post($_POST['subject'] ?? '');
             $body    = wp_kses_post($_POST['body'] ?? '');
             if (!$title) wp_send_json_error(['msg' => 'Missing title'], 400);
-            $templates = get_option(self::OPT_EMAIL_TEMPLATES, []);
-            if (!is_array($templates)) $templates = [];
+            $templates = $this->get_email_templates();
             $templates[] = ['id' => uniqid('tpl_'), 'title' => $title, 'subject' => $subject, 'body' => $body];
             update_option(self::OPT_EMAIL_TEMPLATES, $templates);
             wp_send_json_success(['templates' => $templates]);
@@ -7599,8 +7607,7 @@ JS;
             check_ajax_referer('kvt_nonce');
             if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
             $id = sanitize_text_field($_POST['id'] ?? '');
-            $templates = get_option(self::OPT_EMAIL_TEMPLATES, []);
-            if (!is_array($templates)) $templates = [];
+            $templates = $this->get_email_templates();
             $templates = array_values(array_filter($templates, function($t) use ($id){ return isset($t['id']) && $t['id'] !== $id; }));
             update_option(self::OPT_EMAIL_TEMPLATES, $templates);
             wp_send_json_success(['templates' => $templates]);
