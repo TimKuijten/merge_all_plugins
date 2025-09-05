@@ -17,6 +17,12 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_COLUMNS   = 'kvt_columns';
     const OPT_OPENAI_KEY= 'kvt_openai_key';
     const OPT_NEWS_KEY  = 'kvt_newsapi_key';
+    const OPT_SMTP_HOST = 'kvt_smtp_host';
+    const OPT_SMTP_PORT = 'kvt_smtp_port';
+    const OPT_SMTP_USER = 'kvt_smtp_user';
+    const OPT_SMTP_PASS = 'kvt_smtp_pass';
+    const OPT_SMTP_SECURE = 'kvt_smtp_secure';
+    const OPT_SMTP_SIGNATURE = 'kvt_smtp_signature';
 
     public function __construct() {
         add_action('init',                       [$this, 'register_types']);
@@ -203,6 +209,12 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_COLUMNS);
         register_setting(self::OPT_GROUP, self::OPT_OPENAI_KEY);
         register_setting(self::OPT_GROUP, self::OPT_NEWS_KEY);
+        register_setting(self::OPT_GROUP, self::OPT_SMTP_HOST);
+        register_setting(self::OPT_GROUP, self::OPT_SMTP_PORT);
+        register_setting(self::OPT_GROUP, self::OPT_SMTP_USER);
+        register_setting(self::OPT_GROUP, self::OPT_SMTP_PASS);
+        register_setting(self::OPT_GROUP, self::OPT_SMTP_SECURE);
+        register_setting(self::OPT_GROUP, self::OPT_SMTP_SIGNATURE);
     }
     public function admin_menu() {
         global $admin_page_hooks;
@@ -581,6 +593,12 @@ JS;
         $columns  = get_option(self::OPT_COLUMNS, "");
         $openai   = get_option(self::OPT_OPENAI_KEY, "");
         $newskey  = get_option(self::OPT_NEWS_KEY, "");
+        $smtp_host = get_option(self::OPT_SMTP_HOST, "");
+        $smtp_port = get_option(self::OPT_SMTP_PORT, "");
+        $smtp_user = get_option(self::OPT_SMTP_USER, "");
+        $smtp_pass = get_option(self::OPT_SMTP_PASS, "");
+        $smtp_secure = get_option(self::OPT_SMTP_SECURE, "");
+        $smtp_sig  = get_option(self::OPT_SMTP_SIGNATURE, "");
         ?>
         <div class="wrap">
             <h1>Kovacic Pipeline — Ajustes</h1>
@@ -615,6 +633,39 @@ JS;
                             <p class="description">
                                 Formato: <code>meta_key|Etiqueta</code> (una por línea). Por defecto: <code>first_name, last_name, email, phone, country, city, cv_url, cv_uploaded</code>
                             </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_SMTP_HOST; ?>">SMTP Host</label></th>
+                        <td><input type="text" name="<?php echo self::OPT_SMTP_HOST; ?>" id="<?php echo self::OPT_SMTP_HOST; ?>" class="regular-text" value="<?php echo esc_attr($smtp_host); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_SMTP_PORT; ?>">SMTP Port</label></th>
+                        <td><input type="number" name="<?php echo self::OPT_SMTP_PORT; ?>" id="<?php echo self::OPT_SMTP_PORT; ?>" class="small-text" value="<?php echo esc_attr($smtp_port); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_SMTP_USER; ?>">SMTP User</label></th>
+                        <td><input type="text" name="<?php echo self::OPT_SMTP_USER; ?>" id="<?php echo self::OPT_SMTP_USER; ?>" class="regular-text" value="<?php echo esc_attr($smtp_user); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_SMTP_PASS; ?>">SMTP Password</label></th>
+                        <td><input type="password" name="<?php echo self::OPT_SMTP_PASS; ?>" id="<?php echo self::OPT_SMTP_PASS; ?>" class="regular-text" value="<?php echo esc_attr($smtp_pass); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_SMTP_SECURE; ?>">SMTP Security</label></th>
+                        <td>
+                            <select name="<?php echo self::OPT_SMTP_SECURE; ?>" id="<?php echo self::OPT_SMTP_SECURE; ?>">
+                                <option value="" <?php selected($smtp_secure, ''); ?>><?php esc_html_e('None'); ?></option>
+                                <option value="ssl" <?php selected($smtp_secure, 'ssl'); ?>>SSL</option>
+                                <option value="tls" <?php selected($smtp_secure, 'tls'); ?>>TLS</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_SMTP_SIGNATURE; ?>">Firma de correo</label></th>
+                        <td>
+                            <textarea name="<?php echo self::OPT_SMTP_SIGNATURE; ?>" id="<?php echo self::OPT_SMTP_SIGNATURE; ?>" rows="4" class="large-text"><?php echo esc_textarea($smtp_sig); ?></textarea>
+                            <p class="description">Se añadirá al final de cada e-mail.</p>
                         </td>
                     </tr>
                 </table>
@@ -1599,9 +1650,11 @@ JS;
                     <span id="kvt_email_pageinfo"></span>
                     <button type="button" class="kvt-btn" id="kvt_email_next">Siguiente</button>
                   </div>
+                  <div style="height:20px;"></div>
                   <label for="kvt_email_prompt">Describe el correo para la IA</label>
                   <textarea id="kvt_email_prompt" rows="3" class="kvt-textarea" placeholder="Ej: Invita a {{first_name}} a una entrevista para el rol {{role}} en {{client}} ubicado en {{city}}, {{country}}. Usa tono profesional."></textarea>
-                  <p class="kvt-hint">Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}</p>
+                  <p class="kvt-hint">Ejemplo: "Invita a {{first_name}} a una entrevista para el rol {{role}} en {{client}}". Puedes usar variables para personalizar.</p>
+                  <p class="kvt-hint">Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero)</p>
                   <button type="button" class="kvt-btn" id="kvt_email_generate">Generar con IA</button>
                   <input type="text" id="kvt_email_subject" class="kvt-input" placeholder="Asunto">
                   <textarea id="kvt_email_body" class="kvt-textarea" rows="8" placeholder="Mensaje con {{placeholders}}"></textarea>
@@ -1990,6 +2043,7 @@ JS;
     public function enqueue_assets() {
         // Styles
         wp_enqueue_style('dashicons');
+        wp_enqueue_style('select2','https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css',[], '4.1.0');
         $css = "
         .kvt-wrapper{max-width:1200px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.06);display:flex}
         .kvt-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
@@ -2206,6 +2260,13 @@ JS;
         if ((is_user_logged_in() && current_user_can('edit_posts')) || $has_share_link) {
             // PDF.js and Tesseract.js for client-side text extraction
             wp_enqueue_script(
+                'select2',
+                'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js',
+                ['jquery'],
+                '4.1.0',
+                true
+            );
+            wp_enqueue_script(
                 'pdfjs',
                 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
                 [],
@@ -2223,7 +2284,7 @@ JS;
             );
 
             // Register a tiny empty script handle and attach our inlines to it, to avoid theme collisions
-            wp_register_script('kvt-app', '', ['pdfjs','tesseract'], null, true);
+            wp_register_script('kvt-app', '', ['pdfjs','tesseract','jquery','select2'], null, true);
             wp_enqueue_script('kvt-app');
 
             // Inline constants BEFORE app
@@ -2491,6 +2552,12 @@ function kvtInit(){
   let emailPageNum = 1;
   let emailPageTotal = 1;
 
+  if(window.jQuery){
+    [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
+      if(sel) jQuery(sel).select2();
+    });
+  }
+
   function updateEmailSel(){
     if(emailSelInfo) emailSelInfo.textContent = emailSelected.size + ' seleccionados';
   }
@@ -2524,21 +2591,30 @@ function kvtInit(){
 
   function loadEmailCandidates(pg=1){
     if(!emailTbody) return;
-    const params=new URLSearchParams({action:'kvt_get_candidates', _ajax_nonce:KVT_NONCE, per_page:15, page:pg});
+    const params=new URLSearchParams({action:'kvt_get_candidates', _ajax_nonce:KVT_NONCE});
     const getVals=sel=>sel?Array.from(sel.selectedOptions).map(o=>o.value).filter(v=>v):[];
     const c=getVals(emailClient); if(c.length) params.set('client', c.join(','));
     const p=getVals(emailProcess); if(p.length) params.set('process', p.join(','));
     const s=getVals(emailStatusSel); if(s.length) params.set('status', s.join(','));
     const co=getVals(emailCountry); if(co.length) params.set('country', co.join(','));
     const ci=getVals(emailCity); if(ci.length) params.set('city', ci.join(','));
+    const hasFilter = c.length || p.length || s.length || co.length || ci.length;
+    if(!hasFilter){ params.set('per_page',15); params.set('page',pg); }
+    else { params.set('all','1'); }
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(j=>{
         emailCandidates = (j.success && j.data.items) ? j.data.items : [];
         emailSelected = new Set();
-        emailPageNum = pg;
-        emailPageTotal = j.success && j.data.pages ? j.data.pages : 1;
+        if(hasFilter){
+          emailPageNum = 1;
+          emailPageTotal = 1;
+          if(emailPager) emailPager.style.display='none';
+        }else{
+          emailPageNum = pg;
+          emailPageTotal = j.success && j.data.pages ? j.data.pages : 1;
+          updateEmailPager();
+        }
         renderEmailTable();
-        updateEmailPager();
       });
   }
 
@@ -5017,7 +5093,7 @@ function kvtInit(){
       const cand = emailCandidates.find(c=>String(c.id)===String(firstId));
       if(!cand){ alert('Candidato inválido'); return; }
       const m=cand.meta||{};
-      const meta=Object.assign({}, m, {surname:m.last_name||'', role:m.process||''});
+      const meta=Object.assign({}, m, {surname:m.last_name||'', role:m.process||'', board:m.board||''});
       const repl=str=>str.replace(/{{(\w+)}}/g,(match,p)=>meta[p]||'');
       emailPrevSubject.textContent=repl(subject);
       emailPrevBody.innerHTML=repl(body).replace(/\n/g,'<br>');
@@ -5033,7 +5109,7 @@ function kvtInit(){
       const recipients=Array.from(emailSelected).map(id=>{
         const it=emailCandidates.find(c=>String(c.id)===String(id));
         const m=it?it.meta:{};
-        return {email:m.email||'', first_name:m.first_name||'', surname:m.last_name||'', country:m.country||'', city:m.city||'', role:m.process||'', status:m.status||'', client:m.client||''};
+        return {email:m.email||'', first_name:m.first_name||'', surname:m.last_name||'', country:m.country||'', city:m.city||'', role:m.process||'', status:m.status||'', client:m.client||'', board:m.board||''};
       }).filter(r=>r.email);
       if(!recipients.length){ alert('No hay candidatos seleccionados con email.'); return; }
       if(!confirm(`¿Enviar a ${recipients.length} contactos?`)) return;
@@ -5112,6 +5188,15 @@ JS;
         $status_vals = isset($_POST['status'])  ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['status']))) : [];
         $countries   = isset($_POST['country']) ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['country']))) : [];
         $cities      = isset($_POST['city'])    ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['city']))) : [];
+
+        $cand_links_opt = get_option('kvt_candidate_links', []);
+        $board_map = [];
+        if (is_array($cand_links_opt)) {
+            foreach ($cand_links_opt as $slug => $cfg) {
+                $cid = isset($cfg['candidate']) ? (int) $cfg['candidate'] : 0;
+                if ($cid) $board_map[$cid] = home_url('/view-board/' . $slug . '/');
+            }
+        }
 
         $base_mode = empty($client_ids) && empty($process_ids);
 
@@ -5216,6 +5301,7 @@ JS;
                 'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
                 'client_comments' => get_post_meta($p->ID,'kvt_client_comments',true),
                 'activity_log' => get_post_meta($p->ID,'kvt_activity_log',true),
+                'board'       => isset($board_map[$p->ID]) ? $board_map[$p->ID] : '',
             ];
             $data[] = [
                 'id'     => $p->ID,
@@ -7142,6 +7228,28 @@ JS;
                 add_filter('wp_mail_from_name', $from_name_cb, 99);
             }
 
+            $smtp_host = get_option(self::OPT_SMTP_HOST, '');
+            $smtp_port = intval(get_option(self::OPT_SMTP_PORT));
+            $smtp_user = get_option(self::OPT_SMTP_USER, '');
+            $smtp_pass = get_option(self::OPT_SMTP_PASS, '');
+            $smtp_secure = get_option(self::OPT_SMTP_SECURE, '');
+            $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
+            $smtp_hook = null;
+            if ($smtp_host) {
+                $smtp_hook = function($phpmailer) use ($smtp_host, $smtp_port, $smtp_user, $smtp_pass, $smtp_secure) {
+                    $phpmailer->isSMTP();
+                    $phpmailer->Host = $smtp_host;
+                    if ($smtp_port) $phpmailer->Port = $smtp_port;
+                    if ($smtp_secure) $phpmailer->SMTPSecure = $smtp_secure;
+                    if ($smtp_user) {
+                        $phpmailer->SMTPAuth = true;
+                        $phpmailer->Username = $smtp_user;
+                        $phpmailer->Password = $smtp_pass;
+                    }
+                };
+                add_action('phpmailer_init', $smtp_hook, 99);
+            }
+
             $sent = 0;
             $errors = [];
             $last_error = null;
@@ -7173,6 +7281,9 @@ JS;
                     'sender' => $from_name ?: $from_email ?: get_bloginfo('name')
                 ]));
                 $body = $this->normalize_br_html($body_raw);
+                if ($signature) {
+                    $body .= '<br><br>' . $this->normalize_br_html($signature);
+                }
 
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
@@ -7188,6 +7299,7 @@ JS;
 
             if ($from_cb) remove_filter('wp_mail_from', $from_cb, 99);
             if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
+            if ($smtp_hook) remove_action('phpmailer_init', $smtp_hook, 99);
             remove_action('wp_mail_failed', $failed_hook);
 
             if ($last_error && empty($errors)) {
