@@ -1826,6 +1826,8 @@ JS;
         .kvt-card .kvt-comment textarea{width:100%;min-height:60px;padding:8px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-card .kvt-comment .row{display:flex;gap:8px;margin-top:6px}
         .kvt-card .kvt-comment .row button{padding:8px 10px;border-radius:8px;border:1px solid #e5e7eb;background:#0A212E;color:#fff;cursor:pointer}
+        .kvt-feedback-btn{margin-left:6px;padding:2px 6px;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;background:#eef2f7;color:#0A212E;cursor:pointer}
+        .kvt-feedback-btn:hover{background:#e2e8f0}
         .kvt-empty{padding:16px;color:#475569;font-style:italic}
         .kvt-delete{background:none !important;border:none !important;color:#b91c1c !important;font-size:18px;line-height:1;cursor:pointer;padding:0}
         .kvt-delete:hover{color:#7f1d1d !important}
@@ -3264,7 +3266,8 @@ function kvtInit(){
         const snip = lastNoteSnippet(noteSrc);
         if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
         const del = (!CLIENT_VIEW && !CANDIDATE_VIEW) ? '<span class="dashicons dashicons-trash kvt-row-remove" data-id="'+escAttr(r.id)+'"></span>' : '';
-        const name = del+'<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+icons.join('');
+        const feedbackBtn = (CLIENT_VIEW && ALLOW_COMMENTS) ? '<button type="button" class="kvt-feedback-btn" data-id="'+escAttr(r.id)+'">Give Feedback</button>' : '';
+        const name = del+'<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+icons.join('')+feedbackBtn;
         const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
         let cidx = stepStatuses.indexOf(r.status||'');
         if((r.status||'') === 'Descartados') cidx = stepStatuses.length;
@@ -3821,6 +3824,28 @@ function kvtInit(){
   });
 
   tBody && tBody.addEventListener('click', e=>{
+    const fbBtn = e.target.closest('.kvt-feedback-btn');
+    if(fbBtn && CLIENT_VIEW && ALLOW_COMMENTS){
+      e.preventDefault();
+      let cname = localStorage.getItem('kvtClientName') || '';
+      if(!cname){
+        cname = prompt('Tu nombre') || '';
+        if(!cname) return;
+        localStorage.setItem('kvtClientName', cname);
+      }
+      const msg = prompt('Comentario') || '';
+      if(!msg) return;
+      const p = new URLSearchParams();
+      p.set('action','kvt_client_comment');
+      p.set('_ajax_nonce',KVT_NONCE);
+      p.set('id',fbBtn.dataset.id);
+      p.set('slug',CLIENT_SLUG);
+      p.set('name',cname);
+      p.set('comment',msg);
+      fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+        .then(r=>r.json()).then(j=>{ if(j.success){ refresh(); } else { alert('No se pudo guardar.'); } });
+      return;
+    }
     if(CLIENT_VIEW) return;
     const step = e.target.closest('.kvt-stage-step');
     if(step){
