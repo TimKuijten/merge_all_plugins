@@ -29,6 +29,8 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_EMAIL_TEMPLATES = 'kvt_email_templates';
     const OPT_EMAIL_LOG = 'kvt_email_log';
     const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
+    const OPT_MIT_TIME = 'kvt_mit_time';
+    const OPT_MIT_RECIPIENTS = 'kvt_mit_recipients';
     const MIT_HISTORY_LIMIT = 20;
     const MIT_TIMEOUT      = 60;
 
@@ -238,6 +240,8 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_FROM_EMAIL);
         register_setting(self::OPT_GROUP, self::OPT_EMAIL_TEMPLATES);
         register_setting(self::OPT_GROUP, self::OPT_EMAIL_LOG);
+        register_setting(self::OPT_GROUP, self::OPT_MIT_TIME);
+        register_setting(self::OPT_GROUP, self::OPT_MIT_RECIPIENTS);
     }
     public function admin_menu() {
         global $admin_page_hooks;
@@ -625,6 +629,8 @@ JS;
         $smtp_sig  = get_option(self::OPT_SMTP_SIGNATURE, "");
         $from_name_def = get_option(self::OPT_FROM_NAME, "");
         $from_email_def = get_option(self::OPT_FROM_EMAIL, "");
+        $mit_time = get_option(self::OPT_MIT_TIME, '09:00');
+        $mit_recipients = get_option(self::OPT_MIT_RECIPIENTS, get_option('admin_email'));
         ?>
         <div class="wrap">
             <h1>Kovacic Pipeline — Ajustes</h1>
@@ -712,6 +718,20 @@ JS;
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_FROM_EMAIL; ?>">Email remitente por defecto</label></th>
                         <td><input type="email" name="<?php echo self::OPT_FROM_EMAIL; ?>" id="<?php echo self::OPT_FROM_EMAIL; ?>" class="regular-text" value="<?php echo esc_attr($from_email_def); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_MIT_TIME; ?>">Hora informe MIT</label></th>
+                        <td>
+                            <input type="time" name="<?php echo self::OPT_MIT_TIME; ?>" id="<?php echo self::OPT_MIT_TIME; ?>" value="<?php echo esc_attr($mit_time); ?>">
+                            <p class="description">Hora de envío semanal (lunes, zona Madrid).</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_MIT_RECIPIENTS; ?>">Emails informe MIT</label></th>
+                        <td>
+                            <input type="text" name="<?php echo self::OPT_MIT_RECIPIENTS; ?>" id="<?php echo self::OPT_MIT_RECIPIENTS; ?>" class="regular-text" value="<?php echo esc_attr($mit_recipients); ?>">
+                            <p class="description">Direcciones separadas por comas.</p>
+                        </td>
                     </tr>
                 </table>
                 <?php submit_button('Guardar ajustes'); ?>
@@ -1386,15 +1406,24 @@ JS;
     }
 
     public function schedule_mit_weekly_report() {
-        if (!wp_next_scheduled('kvt_mit_weekly_report')) {
-            $tz   = new DateTimeZone('Europe/Madrid');
-            $now  = new DateTime('now', $tz);
-            $next = clone $now;
-            $next->setTime(9, 0);
-            if ($now->format('N') != 1 || $now->getTimestamp() >= $next->getTimestamp()) {
-                $next = new DateTime('next monday 9:00', $tz);
-            }
-            wp_schedule_event($next->getTimestamp(), 'weekly', 'kvt_mit_weekly_report');
+        $tz   = new DateTimeZone('Europe/Madrid');
+        $time = get_option(self::OPT_MIT_TIME, '09:00');
+        if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $time)) {
+            $time = '09:00';
+        }
+        list($hour, $min) = array_map('intval', explode(':', $time));
+        $now  = new DateTime('now', $tz);
+        $next = clone $now;
+        $next->setTime($hour, $min);
+        if ($now->format('N') != 1 || $now->getTimestamp() >= $next->getTimestamp()) {
+            $next = new DateTime('next monday', $tz);
+            $next->setTime($hour, $min);
+        }
+        $timestamp = $next->getTimestamp();
+        $scheduled = wp_next_scheduled('kvt_mit_weekly_report');
+        if (!$scheduled || abs($scheduled - $timestamp) > 60) {
+            if ($scheduled) wp_unschedule_event($scheduled, 'kvt_mit_weekly_report');
+            wp_schedule_event($timestamp, 'weekly', 'kvt_mit_weekly_report');
         }
     }
 
@@ -1422,8 +1451,33 @@ JS;
         $data = json_decode(wp_remote_retrieve_body($resp), true);
         $text = trim($data['choices'][0]['message']['content'] ?? '');
         if (!$text) return;
-        $to = get_option('admin_email');
-        wp_mail($to, 'Informe semanal MIT', wp_kses_post($text), ['Content-Type: text/html; charset=UTF-8']);
+
+        $raw = get_option(self::OPT_MIT_RECIPIENTS, get_option('admin_email'));
+        $list = array_filter(array_map('trim', explode(',', (string) $raw)));
+        $emails = [];
+        foreach ($list as $email) {
+            $email = sanitize_email($email);
+            if ($email) $emails[] = $email;
+        }
+        if (empty($emails)) return;
+
+        $from_email = get_option(self::OPT_FROM_EMAIL, '');
+        if (!$from_email) $from_email = get_option('admin_email');
+        $from_name  = get_option(self::OPT_FROM_NAME, '');
+        if (!$from_name) $from_name = get_bloginfo('name');
+        $from_cb = null;
+        $from_name_cb = null;
+        if ($from_email) {
+            $from_cb = function() use ($from_email){ return $from_email; };
+            add_filter('wp_mail_from', $from_cb, 99);
+        }
+        if ($from_name) {
+            $from_name_cb = function() use ($from_name){ return $from_name; };
+            add_filter('wp_mail_from_name', $from_name_cb, 99);
+        }
+        wp_mail($emails, 'Informe semanal MIT', wp_kses_post($text), ['Content-Type: text/html; charset=UTF-8']);
+        if ($from_cb) remove_filter('wp_mail_from', $from_cb, 99);
+        if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
     }
 
     public function followup_admin_notice() {
