@@ -18,13 +18,52 @@ class KVT_Board_Viewer {
 
     public function add_rewrite() {
         add_rewrite_rule('^view-board/([^/]+)/?$', 'index.php?kvt_board=$matches[1]', 'top');
+        add_rewrite_rule('^boards/?$', 'index.php?kvt_board_list=1', 'top');
         add_filter('query_vars', function($vars){
             $vars[] = 'kvt_board';
+            $vars[] = 'kvt_board_list';
             return $vars;
         });
     }
 
     public function render_board() {
+        $list = get_query_var('kvt_board_list');
+        if ($list) {
+            if (!current_user_can('manage_options')) {
+                wp_die('Unauthorized');
+            }
+            status_header(200);
+            nocache_headers();
+            echo '<!DOCTYPE html><html><head><meta charset="utf-8">';
+            wp_head();
+            echo '</head><body class="kvt-wrapper">';
+            $client_links    = get_option('kvt_client_links', []);
+            $candidate_links = get_option('kvt_candidate_links', []);
+            echo '<h1>Candidate/Client boards</h1><table class="kvt-table"><thead><tr><th>Type</th><th>Client</th><th>Process</th><th>Candidate</th><th>URL</th><th>Actions</th></tr></thead><tbody>';
+            if (empty($client_links) && empty($candidate_links)) {
+                echo '<tr><td colspan="6">No boards found</td></tr>';
+            }
+            foreach ($client_links as $slug => $cfg) {
+                $client  = get_term_field('name', $cfg['client'], 'kvt_client');
+                $process = get_term_field('name', $cfg['process'], 'kvt_process');
+                $url     = home_url('/view-board/'.$slug.'/');
+                $del     = wp_nonce_url(admin_url('admin-post.php?action=kvt_delete_board&type=client&slug='.$slug), 'kvt_delete_board');
+                echo '<tr><td>Client</td><td>'.esc_html($client).'</td><td>'.esc_html($process).'</td><td>—</td><td><a href="'.esc_url($url).'" target="_blank">'.esc_html($slug).'</a></td><td><a href="'.esc_url($del).'">Delete</a></td></tr>';
+            }
+            foreach ($candidate_links as $slug => $cfg) {
+                $client  = get_term_field('name', $cfg['client'], 'kvt_client');
+                $process = get_term_field('name', $cfg['process'], 'kvt_process');
+                $cand    = get_the_title($cfg['candidate']);
+                $url     = home_url('/view-board/'.$slug.'/');
+                $del     = wp_nonce_url(admin_url('admin-post.php?action=kvt_delete_board&type=candidate&slug='.$slug), 'kvt_delete_board');
+                echo '<tr><td>Candidate</td><td>'.esc_html($client).'</td><td>'.esc_html($process).'</td><td>'.esc_html($cand).'</td><td><a href="'.esc_url($url).'" target="_blank">'.esc_html($slug).'</a></td><td><a href="'.esc_url($del).'">Delete</a></td></tr>';
+            }
+            echo '</tbody></table>';
+            wp_footer();
+            echo '</body></html>';
+            exit;
+        }
+
         $slug = get_query_var('kvt_board');
         if (!$slug) return;
         status_header(200);
