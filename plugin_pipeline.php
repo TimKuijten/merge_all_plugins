@@ -236,8 +236,14 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_SMTP_SIGNATURE);
         register_setting(self::OPT_GROUP, self::OPT_FROM_NAME);
         register_setting(self::OPT_GROUP, self::OPT_FROM_EMAIL);
-        register_setting(self::OPT_GROUP, self::OPT_EMAIL_TEMPLATES);
-        register_setting(self::OPT_GROUP, self::OPT_EMAIL_LOG);
+        register_setting(self::OPT_GROUP, self::OPT_EMAIL_TEMPLATES, [
+            'type'    => 'array',
+            'default' => [],
+        ]);
+        register_setting(self::OPT_GROUP, self::OPT_EMAIL_LOG, [
+            'type'    => 'array',
+            'default' => [],
+        ]);
         register_setting(self::OPT_GROUP, self::OPT_MIT_TIME);
         register_setting(self::OPT_GROUP, self::OPT_MIT_RECIPIENTS);
     }
