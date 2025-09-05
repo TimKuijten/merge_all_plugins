@@ -1479,6 +1479,21 @@ JS;
           </div>
         </div>
 
+        <!-- Feedback Modal -->
+        <div class="kvt-modal" id="kvt_feedback_modal" style="display:none;">
+          <div class="kvt-modal-content">
+            <div class="kvt-modal-header">
+              <h3>Feedback</h3>
+              <button type="button" class="kvt-modal-close" id="kvt_feedback_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
+            </div>
+            <div class="kvt-modal-body">
+              <input type="text" class="kvt-input" id="kvt_fb_name" placeholder="Tu nombre" style="margin-bottom:8px;">
+              <textarea class="kvt-input" id="kvt_fb_text" placeholder="Tu feedback"></textarea>
+              <div class="row" style="margin-top:12px;"><button type="button" id="kvt_fb_save">Guardar</button></div>
+            </div>
+          </div>
+        </div>
+
         <!-- Help Modal -->
  <div class="kvt-modal" id="kvt_help_modal" style="display:none;">
   <div class="kvt-modal-content">
@@ -1821,13 +1836,11 @@ JS;
         .kvt-card .kvt-public-notes{margin-top:8px}
         .kvt-card .kvt-public-notes textarea{width:100%;min-height:80px;padding:8px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-card .kvt-save-profile{padding:8px 10px;border-radius:8px;border:1px solid #e5e7eb;background:#0A212E;color:#fff;cursor:pointer;margin-top:6px}
-        .kvt-card .kvt-comment{margin-top:8px}
-        .kvt-card .kvt-comment input{width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px}
-        .kvt-card .kvt-comment textarea{width:100%;min-height:60px;padding:8px;border:1px solid #e5e7eb;border-radius:8px}
-        .kvt-card .kvt-comment .row{display:flex;gap:8px;margin-top:6px}
-        .kvt-card .kvt-comment .row button{padding:8px 10px;border-radius:8px;border:1px solid #e5e7eb;background:#0A212E;color:#fff;cursor:pointer}
         .kvt-feedback-btn{margin-left:6px;padding:2px 6px;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;background:#eef2f7;color:#0A212E;cursor:pointer}
         .kvt-feedback-btn:hover{background:#e2e8f0}
+        .kvt-feedback-section{margin-top:16px}
+        .kvt-feedback-list{list-style:none;margin:0;padding:0}
+        .kvt-feedback-list li{margin-bottom:8px}
         .kvt-empty{padding:16px;color:#475569;font-style:italic}
         .kvt-delete{background:none !important;border:none !important;color:#b91c1c !important;font-size:18px;line-height:1;cursor:pointer;padding:0}
         .kvt-delete:hover{color:#7f1d1d !important}
@@ -2380,6 +2393,13 @@ function kvtInit(){
   const infoClose = el('#kvt_info_close');
   const infoBody  = el('#kvt_info_body');
 
+  const fbModal = el('#kvt_feedback_modal');
+  const fbClose = el('#kvt_feedback_close');
+  const fbName  = el('#kvt_fb_name');
+  const fbText  = el('#kvt_fb_text');
+  const fbSave  = el('#kvt_fb_save');
+  let fbCandidate = null;
+
   const modal      = el('#kvt_modal');
   const modalClose = el('.kvt-modal-close', modal);
   const modalList  = el('#kvt_modal_list', modal);
@@ -2602,7 +2622,12 @@ function kvtInit(){
       const clientComments = Array.isArray(c.meta.client_comments) ? c.meta.client_comments : [];
       let myComment = null;
       if (clientComments.length) {
-        myComment = CLIENT_VIEW ? clientComments.find(cc => cc.slug === CLIENT_SLUG) : clientComments[clientComments.length-1];
+        if (CLIENT_VIEW) {
+          const bySlug = clientComments.filter(cc=>cc.slug===CLIENT_SLUG);
+          if (bySlug.length) myComment = bySlug[bySlug.length-1];
+        } else {
+          myComment = clientComments[clientComments.length-1];
+        }
       }
       let follow;
       let commentLine;
@@ -2643,60 +2668,13 @@ function kvtInit(){
       if (ALLOW_COMMENTS) {
         const cBtn = document.createElement('button');
         cBtn.type='button';
-        cBtn.textContent = myComment ? 'Editar comentario' : 'Comentar';
+        cBtn.textContent = 'Dar feedback';
         expand.appendChild(cBtn);
         cBtn.addEventListener('click', ()=>{
-          let form = card.querySelector('.kvt-comment');
-          if(form){ form.remove(); return; }
-          form = document.createElement('div');
-          form.className = 'kvt-comment';
-          form.innerHTML = '<input type="text" class="kvt-comment-name" placeholder="Tu nombre" value="'+escAttr(myComment?myComment.name:'')+'">'
-            +'<textarea class="kvt-comment-text" placeholder="Comentario">'+esc(myComment?myComment.comment:'')+'</textarea>'
-            +'<div class="row"><button type="button" class="kvt-save-comment">Guardar</button></div>';
-          card.appendChild(form);
-          const saveBtn = form.querySelector('.kvt-save-comment');
-          saveBtn.addEventListener('click', ()=>{
-            const name = form.querySelector('.kvt-comment-name').value.trim();
-            const msg  = form.querySelector('.kvt-comment-text').value.trim();
-            if(!name || !msg){ alert('Completa todos los campos'); return; }
-            const p = new URLSearchParams();
-            p.set('action','kvt_client_comment');
-            p.set('_ajax_nonce', KVT_NONCE);
-            p.set('id', c.id);
-            p.set('slug', CLIENT_SLUG);
-            p.set('name', name);
-            p.set('comment', msg);
-            fetch(KVT_AJAX,{method:'POST',body:p}).then(r=>r.json()).then(j=>{
-              if(j.success){
-                myComment = {name, comment:msg, slug:CLIENT_SLUG};
-                if(Array.isArray(c.meta.client_comments)){
-                  const idx = c.meta.client_comments.findIndex(cc=>cc.slug===CLIENT_SLUG);
-                  if(idx>=0) c.meta.client_comments[idx]=myComment; else c.meta.client_comments.push(myComment);
-                } else {
-                  c.meta.client_comments=[myComment];
-                }
-                const txt = ' Comentario: ' + ((!CLIENT_VIEW && name)? name + ': ' : '') + msg;
-                if(commentLine){
-                  commentLine.innerHTML='';
-                  const ic = document.createElement('span'); ic.className='dashicons dashicons-warning';
-                  commentLine.appendChild(ic);
-                  commentLine.appendChild(document.createTextNode(txt));
-                } else {
-                  commentLine = document.createElement('p');
-                  commentLine.className='kvt-followup';
-                  const ic = document.createElement('span'); ic.className='dashicons dashicons-warning';
-                  commentLine.appendChild(ic);
-                  commentLine.appendChild(document.createTextNode(txt));
-                  card.insertBefore(commentLine, sub);
-                }
-                cBtn.textContent='Editar comentario';
-                form.remove();
-                alert('Comentario guardado');
-              } else {
-                alert('Error');
-              }
-            });
-          });
+          fbCandidate = c.id;
+          fbName.value = localStorage.getItem('kvtClientName') || '';
+          fbText.value='';
+          fbModal.style.display='flex';
         });
       }
     }
@@ -2743,7 +2721,13 @@ function kvtInit(){
         const label = col ? col.label : key;
         return '<dt><strong>'+esc(label)+'</strong></dt><dd>'+esc(m[key]||'')+'</dd>';
       }).join('');
-      return '<div class="kvt-profile-cols"><dl class="kvt-profile-col">'+make(fields.slice(0,half))+'</dl><dl class="kvt-profile-col">'+make(fields.slice(half))+'</dl></div>';
+      let html = '<div class="kvt-profile-cols"><dl class="kvt-profile-col">'+make(fields.slice(0,half))+'</dl><dl class="kvt-profile-col">'+make(fields.slice(half))+'</dl></div>';
+      const comments = Array.isArray(m.client_comments) ? m.client_comments : [];
+      if(comments.length){
+        const items = comments.map(cc=>'<li><strong>'+esc(cc.name)+':</strong> '+esc(cc.comment)+'</li>').join('');
+        html += '<div class="kvt-feedback-section"><h4>Feedback</h4><ul class="kvt-feedback-list">'+items+'</ul></div>';
+      }
+      return html;
     }
     const input = (field,val,type='text',ph='',cls='')=>'<input class="kvt-input'+(cls?' '+cls:'')+'" data-field="'+field+'" type="'+type+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'">';
     const kvInp = (label, html)=>'<dt>'+esc(label)+'</dt><dd>'+html+'</dd>';
@@ -3247,8 +3231,16 @@ function kvtInit(){
           icons.push('<a href="'+escAttr(r.meta.cv_url)+'" class="kvt-name-icon dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>');
         }
         const comments=Array.isArray(r.meta.client_comments)?r.meta.client_comments:[];
-        if(comments.length && (!CLIENT_VIEW || ALLOW_COMMENTS)){
-          const cm=comments[comments.length-1];
+        let cm=null;
+        if(comments.length){
+          if(CLIENT_VIEW){
+            const bySlug = comments.filter(cc=>cc.slug===CLIENT_SLUG);
+            if(bySlug.length) cm = bySlug[bySlug.length-1];
+          } else {
+            cm = comments[comments.length-1];
+          }
+        }
+        if(cm && (!CLIENT_VIEW || ALLOW_COMMENTS)){
           icons.push('<span class="kvt-name-icon kvt-alert" title="'+escAttr(cm.comment)+'">!</span>');
         }
         if(r.meta.next_action && (!CLIENT_VIEW || ALLOWED_FIELDS.includes('next_action'))){
@@ -3649,6 +3641,26 @@ function kvtInit(){
   navLoadRoles && navLoadRoles.addEventListener('click', e=>{ e.preventDefault(); triggerLoadRoles(navLoadRoles); });
   infoClose && infoClose.addEventListener('click', ()=>{ infoModal.style.display='none'; });
   infoModal && infoModal.addEventListener('click', e=>{ if(e.target===infoModal) infoModal.style.display='none'; });
+  fbClose && fbClose.addEventListener('click', ()=>{ fbModal.style.display='none'; });
+  fbModal && fbModal.addEventListener('click', e=>{ if(e.target===fbModal) fbModal.style.display='none'; });
+  fbSave && fbSave.addEventListener('click', ()=>{
+    const name = fbName.value.trim();
+    const msg = fbText.value.trim();
+    if(!name || !msg){ alert('Completa todos los campos'); return; }
+    localStorage.setItem('kvtClientName', name);
+    const p = new URLSearchParams();
+    p.set('action','kvt_client_comment');
+    p.set('_ajax_nonce', KVT_NONCE);
+    p.set('id', fbCandidate||'');
+    p.set('slug', CLIENT_SLUG);
+    p.set('name', name);
+    p.set('comment', msg);
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+      .then(r=>r.json()).then(j=>{
+        if(j.success){ fbModal.style.display='none'; refresh(); }
+        else alert('No se pudo guardar.');
+      });
+  });
   aiBtn && aiBtn.addEventListener('click', ()=>{
     const desc = (aiInput.value||'').trim();
     if(!desc) return;
@@ -3827,23 +3839,10 @@ function kvtInit(){
     const fbBtn = e.target.closest('.kvt-feedback-btn');
     if(fbBtn && CLIENT_VIEW && ALLOW_COMMENTS){
       e.preventDefault();
-      let cname = localStorage.getItem('kvtClientName') || '';
-      if(!cname){
-        cname = prompt('Tu nombre') || '';
-        if(!cname) return;
-        localStorage.setItem('kvtClientName', cname);
-      }
-      const msg = prompt('Comentario') || '';
-      if(!msg) return;
-      const p = new URLSearchParams();
-      p.set('action','kvt_client_comment');
-      p.set('_ajax_nonce',KVT_NONCE);
-      p.set('id',fbBtn.dataset.id);
-      p.set('slug',CLIENT_SLUG);
-      p.set('name',cname);
-      p.set('comment',msg);
-      fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
-        .then(r=>r.json()).then(j=>{ if(j.success){ refresh(); } else { alert('No se pudo guardar.'); } });
+      fbCandidate = fbBtn.dataset.id;
+      fbName.value = localStorage.getItem('kvtClientName') || '';
+      fbText.value='';
+      fbModal.style.display='flex';
       return;
     }
     if(CLIENT_VIEW) return;
@@ -6293,25 +6292,12 @@ JS;
         }
         $existing = get_post_meta($id, 'kvt_client_comments', true);
         if (!is_array($existing)) $existing = [];
-        $found = false;
-        foreach ($existing as &$cc) {
-            if (isset($cc['slug']) && $cc['slug'] === $slug) {
-                $cc['name']    = $name;
-                $cc['comment'] = $comment;
-                $cc['date']    = current_time('mysql');
-                $found = true;
-                break;
-            }
-        }
-        unset($cc);
-        if (!$found) {
-            $existing[] = [
-                'name'    => $name,
-                'comment' => $comment,
-                'date'    => current_time('mysql'),
-                'slug'    => $slug,
-            ];
-        }
+        $existing[] = [
+            'name'    => $name,
+            'comment' => $comment,
+            'date'    => current_time('mysql'),
+            'slug'    => $slug,
+        ];
         update_post_meta($id, 'kvt_client_comments', $existing);
         wp_send_json_success(['name'=>$name,'comment'=>$comment]);
     }
