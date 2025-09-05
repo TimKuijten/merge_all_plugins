@@ -27,6 +27,7 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_FROM_EMAIL = 'kvt_from_email';
     const OPT_EMAIL_TEMPLATES = 'kvt_email_templates';
     const OPT_EMAIL_LOG = 'kvt_email_log';
+    const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
 
     public function __construct() {
         add_action('init',                       [$this, 'register_types']);
@@ -136,6 +137,9 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
         add_action('wp_ajax_kvt_save_template',        [$this, 'ajax_save_template']);
         add_action('wp_ajax_kvt_delete_template',      [$this, 'ajax_delete_template']);
+        add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
+
+        add_action('kvt_refresh_worker',               [$this, 'cron_refresh_worker']);
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
@@ -1166,6 +1170,7 @@ JS;
             if (isset($_POST[$k])) {
                 $val = ($k==='kvt_notes') ? wp_kses_post($_POST[$k])
                       : (($k==='kvt_email') ? sanitize_email($_POST[$k]) : sanitize_text_field($_POST[$k]));
+                if ($k==='kvt_first_name' || $k==='kvt_last_name') $val = $this->normalize_name($val);
                 if ($k === 'kvt_cv_uploaded' || $k === 'kvt_next_action') $val = $this->fmt_date_ddmmyyyy($val);
                 update_post_meta($post_id, $k, $val);
                 foreach ($fallbacks as $fb) update_post_meta($post_id, $fb, $val);
@@ -1478,6 +1483,7 @@ JS;
                         <button type="button" class="kvt-btn" id="kvt_assign_search">Asignar a proceso</button>
                         <button type="button" class="kvt-btn" id="kvt_export_client_board_btn">Exportar Tablero Cliente</button>
                         <button type="button" class="kvt-btn" id="kvt_export_candidate_board_btn">Exportar Tablero Candidato</button>
+                        <button type="button" class="kvt-btn" id="kvt_refresh_all">Actualizar todo</button>
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
                       <div class="kvt-tabs" id="kvt_board_tabs">
@@ -1593,7 +1599,7 @@ JS;
                           <td><?php echo esc_html($process); ?></td>
                           <td>&mdash;</td>
                           <td><a href="<?php echo esc_url($url); ?>" target="_blank"><?php echo esc_html($slug); ?></a></td>
-                          <td><a href="<?php echo esc_url($edit); ?>"><?php esc_html_e('Editar', 'kovacic'); ?></a> | <a href="<?php echo esc_url($del); ?>"><?php esc_html_e('Eliminar', 'kovacic'); ?></a></td>
+                          <td><a href="<?php echo esc_url($edit); ?>"><?php esc_html_e('Configurar', 'kovacic'); ?></a> | <a href="<?php echo esc_url($del); ?>"><?php esc_html_e('Eliminar', 'kovacic'); ?></a></td>
                         </tr>
                       <?php endforeach; ?>
                       <?php foreach ($candidate_links as $slug => $cfg) :
@@ -1609,7 +1615,7 @@ JS;
                           <td><?php echo esc_html($process); ?></td>
                           <td><?php echo esc_html($cand); ?></td>
                           <td><a href="<?php echo esc_url($url); ?>" target="_blank"><?php echo esc_html($slug); ?></a></td>
-                          <td><a href="<?php echo esc_url($edit); ?>"><?php esc_html_e('Editar', 'kovacic'); ?></a> | <a href="<?php echo esc_url($del); ?>"><?php esc_html_e('Eliminar', 'kovacic'); ?></a></td>
+                          <td><a href="<?php echo esc_url($edit); ?>"><?php esc_html_e('Configurar', 'kovacic'); ?></a> | <a href="<?php echo esc_url($del); ?>"><?php esc_html_e('Eliminar', 'kovacic'); ?></a></td>
                         </tr>
                       <?php endforeach; ?>
                     <?php endif; ?>
@@ -1709,6 +1715,7 @@ JS;
                     <div class="kvt-row" style="margin-top:8px;">
                       <button type="button" class="kvt-btn" id="kvt_email_preview">Vista previa</button>
                       <button type="button" class="kvt-btn" id="kvt_email_send">Enviar</button>
+                      <button type="button" class="kvt-btn" id="kvt_email_save_tpl">Guardar como plantilla</button>
                     </div>
                     <div id="kvt_email_status_msg"></div>
                   </div>
@@ -2023,6 +2030,8 @@ JS;
                 <input type="text" id="kvt_new_phone" placeholder="Teléfono">
                 <input type="text" id="kvt_new_country" placeholder="País">
                 <input type="text" id="kvt_new_city" placeholder="Ciudad">
+                <input type="text" id="kvt_new_role" placeholder="Puesto actual">
+                <input type="text" id="kvt_new_company" placeholder="Empresa actual">
                 <input type="text" id="kvt_new_tags" placeholder="Tags">
                 <input type="url" id="kvt_new_cv_url" placeholder="CV (URL)">
                 <input type="file" id="kvt_new_cv_file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
@@ -2568,6 +2577,7 @@ function kvtInit(){
   const emailFromEmail = el('#kvt_email_from_email');
   const emailUseSig = el('#kvt_email_use_signature');
   const emailSend = el('#kvt_email_send');
+  const emailSaveTplBtn = el('#kvt_email_save_tpl');
   const emailStatusMsg = el('#kvt_email_status_msg');
   const emailPager = el('#kvt_email_pager');
   const emailPrev = el('#kvt_email_prev');
@@ -2602,6 +2612,7 @@ function kvtInit(){
   const btnShare   = el('#kvt_share_board');
   const btnExportClientBoard = el('#kvt_export_client_board_btn');
   const btnExportCandidateBoard = el('#kvt_export_candidate_board_btn');
+  const btnRefreshAll = el('#kvt_refresh_all');
   const shareModal = el('#kvt_share_modal');
   const shareClose = el('#kvt_share_close');
   const shareFieldsWrap = el('#kvt_share_fields');
@@ -2682,6 +2693,16 @@ function kvtInit(){
   emailTplSelect && emailTplSelect.addEventListener('change',()=>{
     const t=KVT_TEMPLATES.find(x=>String(x.id)===String(emailTplSelect.value));
     if(t){ emailSubject.value=t.subject||''; emailBody.value=t.body||''; }
+  });
+
+  emailSaveTplBtn && emailSaveTplBtn.addEventListener('click', async ()=>{
+    const title = prompt('Título de la plantilla');
+    if(!title) return;
+    const subject=(emailSubject.value||'').trim();
+    const body=(emailBody.value||'').trim();
+    const res = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_save_template', _ajax_nonce:KVT_NONCE, title, subject, body})});
+    let j; try{ j=await res.json(); }catch(e){return;}
+    if(j.success){ KVT_TEMPLATES=j.data.templates||[]; populateTemplateSelect(); renderTplList(); alert('Plantilla guardada'); }
   });
 
   function renderSentEmails(){
@@ -4600,6 +4621,13 @@ function kvtInit(){
     buildShareOptions();
     if(shareModal) shareModal.style.display='flex';
   });
+  btnRefreshAll && btnRefreshAll.addEventListener('click', async ()=>{
+    if(!confirm('¿Actualizar todos los candidatos? Puede tardar.')) return;
+    const res = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_refresh_all', _ajax_nonce:KVT_NONCE})});
+    let j; try{ j=await res.json(); }catch(e){ return; }
+    if(j.success){ alert('Actualización iniciada para '+j.data.count+' candidatos.'); }
+    else { alert(j.data && j.data.msg ? j.data.msg : 'No se pudo iniciar.'); }
+  });
   tablePrev && tablePrev.addEventListener('click', ()=>{ if(currentPage>1){ currentPage--; refresh(); } });
   tableNext && tableNext.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage++; refresh(); } });
   shareClose && shareClose.addEventListener('click', ()=>{ shareModal.style.display='none'; forceSelect=false; selectedCandidateIds=[]; selectedCandidateId=0; });
@@ -4965,6 +4993,8 @@ function kvtInit(){
   const cphone   = el('#kvt_new_phone');
   const ccountry = el('#kvt_new_country');
   const ccity    = el('#kvt_new_city');
+  const crole    = el('#kvt_new_role');
+  const ccompany = el('#kvt_new_company');
   const ctags    = el('#kvt_new_tags');
   const ccvurl   = el('#kvt_new_cv_url');
   const ccvfile  = el('#kvt_new_cv_file');
@@ -4991,6 +5021,8 @@ function kvtInit(){
     if (cphone)   cphone.value='';
     if (ccountry) ccountry.value='';
     if (ccity)    ccity.value='';
+    if (crole)    crole.value='';
+    if (ccompany) ccompany.value='';
     if (ctags)    ctags.value='';
     if (ccvurl)   ccvurl.value='';
     if (ccvfile)  ccvfile.value='';
@@ -5029,6 +5061,8 @@ function kvtInit(){
       if(cphone && j.data.fields.phone) cphone.value = j.data.fields.phone;
       if(ccountry && j.data.fields.country) ccountry.value = j.data.fields.country;
       if(ccity && j.data.fields.city) ccity.value = j.data.fields.city;
+      if(crole && j.data.fields.role) crole.value = j.data.fields.role;
+      if(ccompany && j.data.fields.company) ccompany.value = j.data.fields.company;
     }
     alert('Datos del CV cargados.');
   });
@@ -5042,6 +5076,8 @@ function kvtInit(){
     params.set('phone',      cphone && cphone.value ? cphone.value : '');
     params.set('country',    ccountry && ccountry.value ? ccountry.value : '');
     params.set('city',       ccity && ccity.value ? ccity.value : '');
+    params.set('current_role', crole && crole.value ? crole.value : '');
+    params.set('company',    ccompany && ccompany.value ? ccompany.value : '');
     params.set('tags',       ctags && ctags.value ? ctags.value : '');
     params.set('cv_url',     ccvurl && ccvurl.value ? ccvurl.value : '');
     params.set('client_id',  ccli.value||'');
@@ -6033,6 +6069,8 @@ JS;
             'kvt_country'    => isset($_POST['country'])    ? sanitize_text_field($_POST['country'])    : '',
             'kvt_city'       => isset($_POST['city'])       ? sanitize_text_field($_POST['city'])       : '',
             'kvt_current_role'=> isset($_POST['current_role']) ? sanitize_text_field($_POST['current_role']) : '',
+            'kvt_role'       => isset($_POST['role']) ? sanitize_text_field($_POST['role']) : '',
+            'kvt_company'    => isset($_POST['company']) ? sanitize_text_field($_POST['company']) : '',
             'kvt_tags'       => isset($_POST['tags'])       ? sanitize_text_field($_POST['tags'])       : '',
             'kvt_cv_url'     => isset($_POST['cv_url'])     ? esc_url_raw($_POST['cv_url'])             : '',
             'kvt_cv_uploaded'=> isset($_POST['cv_uploaded'])? sanitize_text_field($_POST['cv_uploaded']): '',
@@ -6395,6 +6433,8 @@ JS;
         $phone      = isset($_POST['phone'])      ? sanitize_text_field($_POST['phone'])      : '';
         $country    = isset($_POST['country'])    ? sanitize_text_field($_POST['country'])    : '';
         $city       = isset($_POST['city'])       ? sanitize_text_field($_POST['city'])       : '';
+        $role       = isset($_POST['current_role']) ? sanitize_text_field($_POST['current_role']) : '';
+        $company    = isset($_POST['company'])    ? sanitize_text_field($_POST['company'])    : '';
         $tags       = isset($_POST['tags'])       ? sanitize_text_field($_POST['tags'])       : '';
         $cv_url     = isset($_POST['cv_url'])     ? esc_url_raw($_POST['cv_url'])             : '';
         $client_id  = isset($_POST['client_id'])  ? intval($_POST['client_id'])               : 0;
@@ -6419,9 +6459,15 @@ JS;
             'kvt_phone'      => $phone,
             'kvt_country'    => $country,
             'kvt_city'       => $city,
+            'kvt_role'       => $role,
+            'kvt_company'    => $company,
             'kvt_tags'       => $tags,
             'kvt_cv_url'     => $cv_url,
         ];
+        if ($role || $company) {
+            $combined = $role && $company ? $role . ' at ' . $company : ($role ?: $company);
+            $fields['kvt_current_role'] = $combined;
+        }
         foreach ($fields as $k => $v) {
             update_post_meta($new_id, $k, $v);
             update_post_meta($new_id, str_replace('kvt_','',$k), $v);
@@ -7214,6 +7260,16 @@ JS;
         if ($role && $company) $role_combined = $role . ' at ' . $company;
         elseif ($role) $role_combined = $role;
         elseif ($company) $role_combined = $company;
+        if ($role && $this->meta_get_compat($post_id, 'kvt_role', ['role']) === '') {
+            update_post_meta($post_id, 'kvt_role', $role);
+            update_post_meta($post_id, 'role', $role);
+            $updated['role'] = $role;
+        }
+        if ($company && $this->meta_get_compat($post_id, 'kvt_company', ['company']) === '') {
+            update_post_meta($post_id, 'kvt_company', $company);
+            update_post_meta($post_id, 'company', $company);
+            $updated['company'] = $company;
+        }
         if ($role_combined && $this->meta_get_compat($post_id, 'kvt_current_role', ['current_role']) === '') {
             update_post_meta($post_id, 'kvt_current_role', $role_combined);
             update_post_meta($post_id, 'current_role', $role_combined);
@@ -7419,6 +7475,33 @@ JS;
             $templates = array_values(array_filter($templates, function($t) use ($id){ return isset($t['id']) && $t['id'] !== $id; }));
             update_option(self::OPT_EMAIL_TEMPLATES, $templates);
             wp_send_json_success(['templates' => $templates]);
+        }
+
+        public function ajax_refresh_all() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+            $ids = get_posts(['post_type'=>self::CPT,'post_status'=>'any','fields'=>'ids','posts_per_page'=>-1]);
+            update_option(self::OPT_REFRESH_QUEUE, array_map('intval', $ids));
+            if (!wp_next_scheduled('kvt_refresh_worker')) {
+                wp_schedule_single_event(time()+5, 'kvt_refresh_worker');
+            }
+            wp_send_json_success(['count'=>count($ids)]);
+        }
+
+        public function cron_refresh_worker() {
+            $queue = get_option(self::OPT_REFRESH_QUEUE, []);
+            if (empty($queue)) return;
+            $key = get_option(self::OPT_OPENAI_KEY, '');
+            if (!$key) return;
+            $id = array_shift($queue);
+            update_option(self::OPT_REFRESH_QUEUE, $queue);
+            if ($id) {
+                $this->update_profile_from_cv($id, $key);
+                sleep(2);
+            }
+            if (!empty($queue)) {
+                wp_schedule_single_event(time()+5, 'kvt_refresh_worker');
+            }
         }
 
         public function ajax_send_email() {
