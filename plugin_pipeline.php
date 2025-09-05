@@ -797,7 +797,6 @@ JS;
         $next_action = $this->fmt_date_ddmmyyyy($next_raw);
         $next_note = $this->meta_get_compat($post->ID, 'kvt_next_action_note', ['next_action_note']);
         $notes   = $this->meta_get_compat($post->ID, 'kvt_notes',       ['notes']);
-        $public_notes = $this->meta_get_compat($post->ID, 'kvt_public_notes', ['public_notes']);
         ?>
         <table class="form-table">
             <tr><th><label>Nombre</label></th><td><input type="text" name="kvt_first_name" value="<?php echo esc_attr($first); ?>" class="regular-text"></td></tr>
@@ -846,9 +845,6 @@ JS;
 
             <tr><th><label>Notas</label></th>
                 <td><textarea name="kvt_notes" rows="6" class="large-text" placeholder="Notas internas"><?php echo esc_textarea($notes); ?></textarea></td>
-            </tr>
-            <tr><th><label>Notas públicas</label></th>
-                <td><textarea name="kvt_public_notes" rows="6" class="large-text" placeholder="Notas públicas"><?php echo esc_textarea($public_notes); ?></textarea></td>
             </tr>
         </table>
         <script>
@@ -1018,13 +1014,12 @@ JS;
             'kvt_next_action_note'=> ['next_action_note'],
             'kvt_status'     => [],
             'kvt_notes'      => ['notes'],
-            'kvt_public_notes' => ['public_notes'],
         ];
         foreach ($fields as $k => $fallbacks) {
             if ($k === 'kvt_cv_url' && $uploaded_url) continue;
             if ($k === 'kvt_cv_uploaded' && $uploaded_dt) continue;
             if (isset($_POST[$k])) {
-                $val = ($k==='kvt_notes' || $k==='kvt_public_notes') ? wp_kses_post($_POST[$k])
+                $val = ($k==='kvt_notes') ? wp_kses_post($_POST[$k])
                       : (($k==='kvt_email') ? sanitize_email($_POST[$k]) : sanitize_text_field($_POST[$k]));
                 if ($k === 'kvt_cv_uploaded' || $k === 'kvt_next_action') $val = $this->fmt_date_ddmmyyyy($val);
                 update_post_meta($post_id, $k, $val);
@@ -2082,7 +2077,7 @@ function kvtInit(){
     const actToggle = el('#k-toggle-activity');
     if (actToggle) actToggle.style.display = 'none';
     const sideHead = el('#k-sidebar .k-sidehead');
-    if (sideHead) sideHead.textContent = 'Registro';
+    if (sideHead) sideHead.textContent = 'History';
     const sideActions = el('#k-sidebar .k-sideactions');
     if (sideActions) sideActions.style.display = 'none';
     const sidebar = el('#k-sidebar');
@@ -2485,7 +2480,6 @@ function kvtInit(){
   function buildShareOptions(){
     if(shareFieldsWrap){
       const fieldsList = KVT_COLUMNS.filter(c=>c.key !== 'cv_uploaded');
-      if(!fieldsList.some(f=>f.key==='public_notes')) fieldsList.push({key:'public_notes',label:'Notas públicas'});
       shareFieldsWrap.innerHTML = fieldsList.map(c=>{
         const chk = !ALLOWED_FIELDS.length || ALLOWED_FIELDS.includes(c.key) ? 'checked' : '';
         return '<label><input type="checkbox" value="'+escAttr(c.key)+'" '+chk+'> '+esc(c.label)+'</label>';
@@ -2606,8 +2600,6 @@ function kvtInit(){
       const sub = document.createElement('p'); sub.className = 'kvt-sub';
       if (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) {
         sub.textContent = lastNoteSnippet(c.meta.notes);
-      } else if (ALLOWED_FIELDS.includes('public_notes')) {
-        sub.textContent = lastNoteSnippet(c.meta.public_notes);
       }
       const tagsWrap = document.createElement('div'); tagsWrap.className = 'kvt-tags';
       if ((!CLIENT_VIEW || ALLOWED_FIELDS.includes('tags')) && c.meta && c.meta.tags){
@@ -2714,7 +2706,7 @@ function kvtInit(){
   function buildProfileHTML(c){
     const m = c.meta||{};
     if (CLIENT_VIEW) {
-      const fields = ALLOWED_FIELDS.length ? ALLOWED_FIELDS : KVT_COLUMNS.map(col=>col.key);
+      const fields = (ALLOWED_FIELDS.length ? ALLOWED_FIELDS : KVT_COLUMNS.map(col=>col.key)).filter(f=>f!=='public_notes');
       const half = Math.ceil(fields.length/2);
       const make = fs=>fs.map(key=>{
         const col = KVT_COLUMNS.find(co=>co.key===key);
@@ -2800,8 +2792,14 @@ function kvtInit(){
       (showActivity?'<button type="button" class="kvt-tab" data-target="activity">Actividad</button>':'')+
       '</div>';
 
+    let fbHTML = '';
+    const comments = Array.isArray(m.client_comments) ? m.client_comments : [];
+    if(comments.length){
+      const items = comments.map(cc=>'<li><strong>'+esc(cc.name)+':</strong> '+esc(cc.comment)+'</li>').join('');
+      fbHTML = '<div class="kvt-feedback-section"><h4>Feedback</h4><ul class="kvt-feedback-list">'+items+'</ul></div>';
+    }
     const infoTab = '<div id="kvt_profile_tab_info" class="kvt-tab-panel active">'+
-      '<div class="kvt-profile-cols"><dl class="kvt-profile-col">'+left+'</dl><dl class="kvt-profile-col">'+right+'</dl></div>'+
+      '<div class="kvt-profile-cols"><dl class="kvt-profile-col">'+left+'</dl><dl class="kvt-profile-col">'+right+'</dl></div>'+ fbHTML +
       '<button type="button" class="kvt-save-profile">Guardar perfil</button>'+
       '</div>';
 
@@ -3254,7 +3252,7 @@ function kvtInit(){
           const note=r.meta.next_action_note? ' — '+r.meta.next_action_note:'';
           icons.push('<span class="kvt-name-icon dashicons dashicons-clock'+(overdue?' overdue':'')+'" title="'+escAttr(r.meta.next_action+note)+'"></span>');
         }
-        const noteSrc = (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) ? r.meta.notes : (ALLOWED_FIELDS.includes('public_notes') ? r.meta.public_notes : '');
+        const noteSrc = (!CLIENT_VIEW || ALLOWED_FIELDS.includes('notes')) ? r.meta.notes : '';
         const snip = lastNoteSnippet(noteSrc);
         if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
         const del = (!CLIENT_VIEW && !CANDIDATE_VIEW) ? '<span class="dashicons dashicons-trash kvt-row-remove" data-id="'+escAttr(r.id)+'"></span>' : '';
@@ -4778,8 +4776,6 @@ JS;
         foreach ($q->posts as $p) {
             $notes_raw = get_post_meta($p->ID,'kvt_notes',true);
             if ($notes_raw === '') $notes_raw = get_post_meta($p->ID,'notes',true);
-            $public_notes_raw = get_post_meta($p->ID,'kvt_public_notes',true);
-            if ($public_notes_raw === '') $public_notes_raw = get_post_meta($p->ID,'public_notes',true);
             $client_name  = $this->get_term_name($p->ID, self::TAX_CLIENT);
             $process_name = $this->get_term_name($p->ID, self::TAX_PROCESS);
             $meta = [
@@ -4801,8 +4797,6 @@ JS;
                 'next_action_note' => $this->meta_get_compat($p->ID,'kvt_next_action_note',['next_action_note']),
                 'notes'       => $notes_raw,
                 'notes_count' => $this->count_notes($notes_raw),
-                'public_notes'       => $public_notes_raw,
-                'public_notes_count' => $this->count_notes($public_notes_raw),
                 'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
                 'client_comments' => get_post_meta($p->ID,'kvt_client_comments',true),
                 'activity_log' => get_post_meta($p->ID,'kvt_activity_log',true),
@@ -5362,7 +5356,6 @@ JS;
             'kvt_next_action'=> isset($_POST['next_action'])? sanitize_text_field($_POST['next_action']): '',
             'kvt_next_action_note'=> isset($_POST['next_action_note'])? sanitize_text_field($_POST['next_action_note']): '',
             'kvt_notes'      => isset($_POST['notes'])      ? wp_kses_post($_POST['notes'])             : '',
-            'kvt_public_notes' => isset($_POST['public_notes']) ? wp_kses_post($_POST['public_notes']) : '',
         ];
         $fields['kvt_first_name'] = $this->normalize_name($fields['kvt_first_name']);
         $fields['kvt_last_name']  = $this->normalize_name($fields['kvt_last_name']);
@@ -5542,8 +5535,6 @@ JS;
         foreach ($q->posts as $p) {
             $notes_raw = get_post_meta($p->ID,'kvt_notes',true);
             if ($notes_raw === '') $notes_raw = get_post_meta($p->ID,'notes',true);
-            $public_notes_raw = get_post_meta($p->ID,'kvt_public_notes',true);
-            if ($public_notes_raw === '') $public_notes_raw = get_post_meta($p->ID,'public_notes',true);
             $items[] = [
                 'id'   => $p->ID,
                 'meta' => [
@@ -5559,8 +5550,6 @@ JS;
                     'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
                     'notes'       => $notes_raw,
                     'notes_count' => $this->count_notes($notes_raw),
-                    'public_notes'       => $public_notes_raw,
-                    'public_notes_count' => $this->count_notes($public_notes_raw),
                 ],
             ];
         }
