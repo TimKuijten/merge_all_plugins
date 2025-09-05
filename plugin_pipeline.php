@@ -2795,7 +2795,8 @@ function kvtInit(){
       return '<li>'+when+' — '+who+': '+text+'</li>';
     }).join('');
 
-    const activityTab = '<div id="kvt_profile_tab_activity" class="kvt-tab-panel"><div class="kvt-profile-activity">'+(logItems?('<ul>'+logItems+'</ul>'):'<p>No hay actividad</p>')+'</div></div>';
+    const showActivity = !CLIENT_VIEW && !CANDIDATE_VIEW;
+    const activityTab = showActivity ? '<div id="kvt_profile_tab_activity" class="kvt-tab-panel"><div class="kvt-profile-activity">'+(logItems?('<ul>'+logItems+'</ul>'):'<p>No hay actividad</p>')+'</div></div>' : '';
 
     const notesRaw = btoa(unescape(encodeURIComponent(m.notes||'')));
     const notesArr = String(m.notes||'').split('\n').filter(Boolean);
@@ -2808,7 +2809,7 @@ function kvtInit(){
       '<button type="button" class="kvt-tab active" data-target="info">Info</button>'+
       '<button type="button" class="kvt-tab" data-target="notes">Notas</button>'+
       '<button type="button" class="kvt-tab" data-target="next">Próxima acción</button>'+
-      '<button type="button" class="kvt-tab" data-target="activity">Actividad</button>'+
+      (showActivity?'<button type="button" class="kvt-tab" data-target="activity">Actividad</button>':'')+
       '</div>';
 
     const infoTab = '<div id="kvt_profile_tab_info" class="kvt-tab-panel active">'+
@@ -2827,7 +2828,7 @@ function kvtInit(){
       kvInp('Comentario', input('next_action_note', m.next_action_note||''))+
       '</dl><button type="button" class="kvt-save-next">Guardar próxima acción</button></div>';
 
-    return tabs + infoTab + notesTab + nextTab + activityTab;
+    return tabs + infoTab + notesTab + nextTab + (showActivity?activityTab:'');
   }
 
   function enableProfileEditHandlers(card, id){
@@ -3238,6 +3239,9 @@ function kvtInit(){
     tBody.innerHTML = rows.map(r=>{
         const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
         const icons=[];
+        if(r.meta.cv_url){
+          icons.push('<a href="'+escAttr(r.meta.cv_url)+'" class="kvt-name-icon dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>');
+        }
         const comments=Array.isArray(r.meta.client_comments)?r.meta.client_comments:[];
         if(comments.length && (!CLIENT_VIEW || ALLOW_COMMENTS)){
           const cm=comments[comments.length-1];
