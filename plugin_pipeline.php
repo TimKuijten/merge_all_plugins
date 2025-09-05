@@ -123,6 +123,7 @@ class Kovacic_Pipeline_Visualizer {
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
+        add_action('admin_post_kvt_delete_board',   [$this, 'handle_delete_board']);
 
         // Follow-up reminders
         add_action('wp',                            [$this, 'schedule_followup_cron']);
@@ -207,9 +208,18 @@ cv_uploaded|Fecha de subida");
         }
         add_submenu_page('kovacic', __('ATS', 'kovacic'), __('ATS', 'kovacic'), 'manage_options', 'kvt-tracker', [$this, 'tracker_page']);
         add_submenu_page('kovacic', __('Ajustes', 'kovacic'), __('Ajustes', 'kovacic'), 'manage_options', 'kvt-settings', [$this, 'settings_page']);
+        add_submenu_page('kovacic', __('Candidate/Client boards', 'kovacic'), __('Candidate/Client boards', 'kovacic'), 'manage_options', 'kvt-boards', [$this, 'boards_page']);
     }
 
     public function tracker_page() {
+        $edit_slug = isset($_GET['edit_board']) ? sanitize_text_field($_GET['edit_board']) : '';
+        if ($edit_slug) {
+            $links = [
+                'client'    => get_option('kvt_client_links', []),
+                'candidate' => get_option('kvt_candidate_links', []),
+            ];
+            wp_add_inline_script('kvt-tracker', 'const KVT_BOARD_LINKS='.wp_json_encode($links).';const KVT_EDIT_BOARD="'.esc_js($edit_slug).'";', 'before');
+        }
         ?>
         <div class="wrap kcvf">
           <header class="k-header">
@@ -610,6 +620,67 @@ JS;
             </form>
         </div>
         <?php
+    }
+
+    public function boards_page() {
+        $client_links    = get_option('kvt_client_links', []);
+        $candidate_links = get_option('kvt_candidate_links', []);
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Candidate/Client boards', 'kovacic'); ?></h1>
+            <table class="widefat">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e('Type', 'kovacic'); ?></th>
+                        <th><?php esc_html_e('Client', 'kovacic'); ?></th>
+                        <th><?php esc_html_e('Process', 'kovacic'); ?></th>
+                        <th><?php esc_html_e('Candidate', 'kovacic'); ?></th>
+                        <th><?php esc_html_e('URL', 'kovacic'); ?></th>
+                        <th><?php esc_html_e('Actions', 'kovacic'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php
+                if (empty($client_links) && empty($candidate_links)) {
+                    echo '<tr><td colspan="6">'.esc_html__('No boards found', 'kovacic').'</td></tr>';
+                }
+                foreach ($client_links as $slug => $cfg) {
+                    $client  = get_term_field('name', $cfg['client'], self::TAX_CLIENT);
+                    $process = get_term_field('name', $cfg['process'], self::TAX_PROCESS);
+                    $url     = home_url('/view-board/'.$slug.'/');
+                    $edit    = admin_url('admin.php?page=kvt-tracker&edit_board='.$slug);
+                    $del     = wp_nonce_url(admin_url('admin-post.php?action=kvt_delete_board&type=client&slug='.$slug), 'kvt_delete_board');
+                    echo '<tr><td>Client</td><td>'.esc_html($client).'</td><td>'.esc_html($process).'</td><td>—</td><td><a href="'.esc_url($url).'" target="_blank">'.esc_html($slug).'</a></td><td><a href="'.esc_url($edit).'">Edit</a> | <a href="'.esc_url($del).'">Delete</a></td></tr>';
+                }
+                foreach ($candidate_links as $slug => $cfg) {
+                    $client  = get_term_field('name', $cfg['client'], self::TAX_CLIENT);
+                    $process = get_term_field('name', $cfg['process'], self::TAX_PROCESS);
+                    $cand    = get_the_title($cfg['candidate']);
+                    $url     = home_url('/view-board/'.$slug.'/');
+                    $edit    = admin_url('admin.php?page=kvt-tracker&edit_board='.$slug);
+                    $del     = wp_nonce_url(admin_url('admin-post.php?action=kvt_delete_board&type=candidate&slug='.$slug), 'kvt_delete_board');
+                    echo '<tr><td>Candidate</td><td>'.esc_html($client).'</td><td>'.esc_html($process).'</td><td>'.esc_html($cand).'</td><td><a href="'.esc_url($url).'" target="_blank">'.esc_html($slug).'</a></td><td><a href="'.esc_url($edit).'">Edit</a> | <a href="'.esc_url($del).'">Delete</a></td></tr>';
+                }
+                ?>
+                </tbody>
+            </table>
+        </div>
+        <?php
+    }
+
+    public function handle_delete_board() {
+        if (!current_user_can('manage_options')) wp_die('Unauthorized');
+        check_admin_referer('kvt_delete_board');
+        $slug = isset($_GET['slug']) ? sanitize_text_field(wp_unslash($_GET['slug'])) : '';
+        $type = isset($_GET['type']) ? sanitize_text_field(wp_unslash($_GET['type'])) : 'client';
+        $option = $type === 'candidate' ? 'kvt_candidate_links' : 'kvt_client_links';
+        $links  = get_option($option, []);
+        if (isset($links[$slug])) {
+            unset($links[$slug]);
+            update_option($option, $links, false);
+        }
+        wp_redirect(admin_url('admin.php?page=kvt-boards'));
+        exit;
     }
 
     /* Proceso -> Cliente term meta */
@@ -1275,7 +1346,7 @@ JS;
                 <a href="#"><span class="dashicons dashicons-filter"></span> Nuevo filtro</a>
             </nav>
             <div class="kvt-content">
-            <?php if ($is_client_board): ?>
+            <?php if ($is_client_board || $is_candidate_board): ?>
             <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
             <?php endif; ?>
             <span class="dashicons dashicons-editor-help kvt-help" title="Haz clic para ver cómo funciona el tablero"></span>
@@ -1303,9 +1374,7 @@ JS;
                 </div>
             </div>
 
-            <?php if (!$is_candidate_board): ?>
             <div id="kvt_selected_info" class="kvt-selected-info" style="display:none;"></div>
-            <?php endif; ?>
 
             <div class="kvt-main">
                 <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:none;">
@@ -2063,11 +2132,11 @@ function kvtInit(){
   const CLIENT_VIEW = typeof KVT_CLIENT_VIEW !== 'undefined' && KVT_CLIENT_VIEW;
   const CANDIDATE_VIEW = typeof KVT_CANDIDATE_VIEW !== 'undefined' && KVT_CANDIDATE_VIEW;
   const CANDIDATE_ID = typeof KVT_CANDIDATE_ID !== 'undefined' ? parseInt(KVT_CANDIDATE_ID,10) : 0;
-  const ALLOWED_FIELDS = Array.isArray(KVT_ALLOWED_FIELDS) ? KVT_ALLOWED_FIELDS : [];
+  let ALLOWED_FIELDS = Array.isArray(KVT_ALLOWED_FIELDS) ? KVT_ALLOWED_FIELDS : [];
   const CLIENT_ID = typeof KVT_CLIENT_ID !== 'undefined' ? String(KVT_CLIENT_ID) : '';
   const PROCESS_ID = typeof KVT_PROCESS_ID !== 'undefined' ? String(KVT_PROCESS_ID) : '';
-  const ALLOWED_STEPS = Array.isArray(KVT_ALLOWED_STEPS) ? KVT_ALLOWED_STEPS : [];
-  const ALLOW_COMMENTS = typeof KVT_ALLOW_COMMENTS !== 'undefined' && KVT_ALLOW_COMMENTS;
+  let ALLOWED_STEPS = Array.isArray(KVT_ALLOWED_STEPS) ? KVT_ALLOWED_STEPS : [];
+  let ALLOW_COMMENTS = typeof KVT_ALLOW_COMMENTS !== 'undefined' && KVT_ALLOW_COMMENTS;
   const CLIENT_SLUG = typeof KVT_CLIENT_SLUG !== 'undefined' ? KVT_CLIENT_SLUG : '';
   const IS_ADMIN = typeof KVT_IS_ADMIN !== 'undefined' && KVT_IS_ADMIN;
   const CLIENT_LINKS = (typeof KVT_CLIENT_LINKS === 'object' && KVT_CLIENT_LINKS) ? KVT_CLIENT_LINKS : {};
@@ -3569,11 +3638,6 @@ function kvtInit(){
   }
 
   function updateSelectedInfo(){
-    if(CANDIDATE_VIEW){
-      if(selInfo) selInfo.style.display='none';
-      if(boardProcInfo) boardProcInfo.style.display='none';
-      return;
-    }
     const pid = selProcess && selProcess.value ? selProcess.value : '';
     if(!selInfo && !boardProcInfo){ return; }
     if(!pid){
@@ -3597,7 +3661,7 @@ function kvtInit(){
     const statusMap = {active:'Activo', completed:'Cerrado', closed:'Cancelado'};
     const status = statusMap[p.status] || (p.status ? p.status.charAt(0).toUpperCase()+p.status.slice(1) : '');
     let days='';
-    if(p.created){
+    if(!CANDIDATE_VIEW && p.created){
       const cd = new Date(p.created);
       if(!isNaN(cd)) days = Math.floor((Date.now()-cd.getTime())/86400000)+' días';
     }
@@ -3606,9 +3670,11 @@ function kvtInit(){
       'Cliente: '+esc(clientName),
       'Estado: '+esc(status)
     ];
-    if(days) parts.push('Activo: '+days);
-    if(typeof p.candidates!=='undefined') parts.push('Candidatos: '+p.candidates);
-    if(p.job_stage) parts.push('Etapa: '+esc(p.job_stage));
+    if(!CANDIDATE_VIEW){
+      if(days) parts.push('Activo: '+days);
+      if(typeof p.candidates!=='undefined') parts.push('Candidatos: '+p.candidates);
+      if(p.job_stage) parts.push('Etapa: '+esc(p.job_stage));
+    }
     const html = parts.map(t=>'<span>'+t+'</span>').join('');
     if(selInfo){ selInfo.style.display='flex'; selInfo.innerHTML = html; }
     if(boardProcInfo){ boardProcInfo.style.display='flex'; boardProcInfo.innerHTML = html; }
@@ -4698,6 +4764,22 @@ function kvtInit(){
   filterProcessOptions();
   refresh();
   updateSelectedInfo();
+  if (typeof KVT_EDIT_BOARD !== 'undefined' && KVT_EDIT_BOARD) {
+    const cfg = (KVT_BOARD_LINKS.client && KVT_BOARD_LINKS.client[KVT_EDIT_BOARD]) ? KVT_BOARD_LINKS.client[KVT_EDIT_BOARD] : (KVT_BOARD_LINKS.candidate && KVT_BOARD_LINKS.candidate[KVT_EDIT_BOARD] ? KVT_BOARD_LINKS.candidate[KVT_EDIT_BOARD] : null);
+    if (cfg) {
+      if (selClient) selClient.value = cfg.client || '';
+      if (selProcess) selProcess.value = cfg.process || '';
+      ALLOWED_FIELDS = Array.isArray(cfg.fields) ? cfg.fields : [];
+      ALLOWED_STEPS = Array.isArray(cfg.steps) ? cfg.steps : [];
+      ALLOW_COMMENTS = !!cfg.comments;
+      if (cfg.candidate) { shareMode = 'candidate'; selectedCandidateId = parseInt(cfg.candidate,10) || 0; }
+      filterProcessOptions();
+      refresh();
+      updateSelectedInfo();
+      buildShareOptions();
+      if (shareModal) shareModal.style.display = 'flex';
+    }
+  }
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', kvtInit);
