@@ -30,6 +30,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('admin_menu',                 [$this, 'admin_menu']);
         add_action('admin_enqueue_scripts',      [$this, 'admin_assets']);
         add_action('wp_footer',                  [$this, 'mit_lightbulb']);
+        add_action('phpmailer_init',             [$this, 'apply_smtp_settings']);
 
         // Term meta: Proceso -> Cliente
         add_action(self::TAX_PROCESS . '_add_form_fields',  [$this, 'process_add_fields']);
@@ -1629,6 +1630,10 @@ JS;
                         <?php endforeach; ?>
                       </select>
                     </div>
+                    <div class="kvt-filter-field">
+                      <label for="kvt_email_search">Buscar</label>
+                      <input type="text" id="kvt_email_search" placeholder="Buscar...">
+                    </div>
                   </div>
                   <div class="kvt-row" style="margin-bottom:10px;">
                     <button class="kvt-btn" id="kvt_email_select_all">Seleccionar todo</button>
@@ -1661,7 +1666,10 @@ JS;
                   <div class="kvt-filter-field">
                     <input type="text" id="kvt_email_from_name" class="kvt-input" placeholder="Nombre remitente">
                     <input type="email" id="kvt_email_from_email" class="kvt-input" placeholder="Email remitente">
-                    <label style="margin-top:4px;display:flex;align-items:center;"><input type="checkbox" id="kvt_email_use_signature" checked> Incluir firma</label>
+                    <label for="kvt_email_use_signature" style="display:flex;align-items:center;font-weight:400;gap:4px;">
+                      <input type="checkbox" id="kvt_email_use_signature" checked>
+                      Incluir firma
+                    </label>
                   </div>
                   <div class="kvt-row" style="margin-top:8px;">
                     <button type="button" class="kvt-btn" id="kvt_email_preview">Vista previa</button>
@@ -2145,7 +2153,7 @@ JS;
         #kvt_email_tbody tr:nth-child(even){background:#f1f5f9}
         #kvt_email_tbody tr:nth-child(odd){background:#fff}
         #kvt_email_filters .kvt-filter-field{display:flex;flex-direction:column}
-        #kvt_email_filters select{min-width:180px;width:auto}
+        #kvt_email_filters select,#kvt_email_filters input{min-width:500px;width:500px}
         .kvt-base .kvt-row:nth-child(even){background:#f1f5f9}
         .kvt-base .kvt-row:nth-child(odd){background:#fff}
         .kvt-active-days{font-size:14px;font-weight:600}
@@ -2488,6 +2496,7 @@ function kvtInit(){
   const emailStatusSel = el('#kvt_email_status');
   const emailCountry = el('#kvt_email_country');
   const emailCity = el('#kvt_email_city');
+  const emailSearch = el('#kvt_email_search');
   const emailSelectAll = el('#kvt_email_select_all');
   const emailClear = el('#kvt_email_clear');
   const emailTbody = el('#kvt_email_tbody');
@@ -2602,7 +2611,8 @@ function kvtInit(){
     const s=getVals(emailStatusSel); if(s.length) params.set('status', s.join(','));
     const co=getVals(emailCountry); if(co.length) params.set('country', co.join(','));
     const ci=getVals(emailCity); if(ci.length) params.set('city', ci.join(','));
-    const hasFilter = c.length || p.length || s.length || co.length || ci.length;
+    const q=emailSearch?emailSearch.value.trim():''; if(q) params.set('search', q);
+    const hasFilter = c.length || p.length || s.length || co.length || ci.length || q.length;
     if(!hasFilter){ params.set('per_page',15); params.set('page',pg); }
     else { params.set('all','1'); }
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
@@ -2641,6 +2651,7 @@ function kvtInit(){
   [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
     sel && sel.addEventListener('change', ()=>loadEmailCandidates(1));
   });
+  emailSearch && emailSearch.addEventListener('input', ()=>loadEmailCandidates(1));
 
   emailPrev && emailPrev.addEventListener('click', ()=>{ if(emailPageNum>1) loadEmailCandidates(emailPageNum-1); });
   emailNext && emailNext.addEventListener('click', ()=>{ if(emailPageNum<emailPageTotal) loadEmailCandidates(emailPageNum+1); });
@@ -7207,6 +7218,24 @@ JS;
             wp_send_json_success(['subject_template' => $subject, 'body_template' => $html]);
         }
 
+        public function apply_smtp_settings($phpmailer) {
+            $host = get_option(self::OPT_SMTP_HOST, '');
+            if (!$host) return;
+            $phpmailer->isSMTP();
+            $phpmailer->Host = $host;
+            $port = intval(get_option(self::OPT_SMTP_PORT));
+            if ($port) $phpmailer->Port = $port;
+            $secure = get_option(self::OPT_SMTP_SECURE, '');
+            if ($secure && $secure !== 'none') $phpmailer->SMTPSecure = $secure;
+            $user = get_option(self::OPT_SMTP_USER, '');
+            $pass = get_option(self::OPT_SMTP_PASS, '');
+            if ($user || $pass) {
+                $phpmailer->SMTPAuth = true;
+                $phpmailer->Username = $user;
+                $phpmailer->Password = $pass;
+            }
+        }
+
         public function ajax_send_email() {
             check_ajax_referer('kvt_nonce');
             if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
@@ -7237,27 +7266,7 @@ JS;
                 add_filter('wp_mail_from_name', $from_name_cb, 99);
             }
 
-            $smtp_host = get_option(self::OPT_SMTP_HOST, '');
-            $smtp_port = intval(get_option(self::OPT_SMTP_PORT));
-            $smtp_user = get_option(self::OPT_SMTP_USER, '');
-            $smtp_pass = get_option(self::OPT_SMTP_PASS, '');
-            $smtp_secure = get_option(self::OPT_SMTP_SECURE, '');
             $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
-            $smtp_hook = null;
-            if ($smtp_host) {
-                $smtp_hook = function($phpmailer) use ($smtp_host, $smtp_port, $smtp_user, $smtp_pass, $smtp_secure) {
-                    $phpmailer->isSMTP();
-                    $phpmailer->Host = $smtp_host;
-                    if ($smtp_port) $phpmailer->Port = $smtp_port;
-                    if ($smtp_secure) $phpmailer->SMTPSecure = $smtp_secure;
-                    if ($smtp_user) {
-                        $phpmailer->SMTPAuth = true;
-                        $phpmailer->Username = $smtp_user;
-                        $phpmailer->Password = $smtp_pass;
-                    }
-                };
-                add_action('phpmailer_init', $smtp_hook, 99);
-            }
 
             $sent = 0;
             $errors = [];
@@ -7308,7 +7317,6 @@ JS;
 
             if ($from_cb) remove_filter('wp_mail_from', $from_cb, 99);
             if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
-            if ($smtp_hook) remove_action('phpmailer_init', $smtp_hook, 99);
             remove_action('wp_mail_failed', $failed_hook);
 
             if ($last_error && empty($errors)) {
