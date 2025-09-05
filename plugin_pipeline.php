@@ -8,6 +8,7 @@ Author: Tim Kuijten - Kovacic Executive Talent Research
 
 if (!defined('ABSPATH')) exit;
 
+require_once __DIR__ . '/pipeline-mailer.php';
 class Kovacic_Pipeline_Visualizer {
     const CPT           = 'kvt_candidate';
     const TAX_CLIENT    = 'kvt_client';
@@ -1338,6 +1339,7 @@ JS;
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
                 <a href="#" data-view="boards" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
+                <a href="#" data-view="email"><span class="dashicons dashicons-email-alt"></span> Correo con IA</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
             </nav>
@@ -1534,6 +1536,9 @@ JS;
                     <h4>Assistente MIT</h4>
                     <p id="kvt_mit_content"></p>
                     <ul id="kvt_mit_news"></ul>
+                </div>
+                <div id="kvt_email_view" style="display:none;">
+                    <?php echo do_shortcode('[kvt_emailer]'); ?>
                 </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
@@ -2311,6 +2316,7 @@ function kvtInit(){
   const filtersBar = el('#kvt_filters_bar');
   const calendarWrap = el('#kvt_calendar');
   const mitWrap = el('#kvt_mit_view');
+  const emailWrap = el('#kvt_email_view');
   const keywordBoard = el('#kvt_keyword_view');
   const aiBoard = el('#kvt_ai_view');
   const boardsView = el('#kvt_boards_view');
@@ -2397,6 +2403,7 @@ function kvtInit(){
     if(activeWrap) activeWrap.style.display='none';
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
+    if(emailWrap) emailWrap.style.display='none';
     if(keywordBoard) keywordBoard.style.display='none';
     if(aiBoard) aiBoard.style.display='none';
     if(boardsView) boardsView.style.display='none';
@@ -2478,6 +2485,18 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(keywordBoard) keywordBoard.style.display='block';
+    } else if(view==='email'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(overview) overview.style.display='none';
+      if(atsBar) atsBar.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(boardBase) boardBase.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(emailWrap) emailWrap.style.display='block';
     } else if(view==='boards'){
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -6843,3 +6862,4 @@ JS;
 
 register_activation_hook(__FILE__, ['Kovacic_Pipeline_Visualizer', 'activate']);
 new Kovacic_Pipeline_Visualizer();
+new KVT_Pipeline_Mailer();
