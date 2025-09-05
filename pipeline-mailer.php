@@ -1,0 +1,1323 @@
+<?php
+
+if (!defined('ABSPATH')) exit;
+
+class KVT_Pipeline_Mailer {
+    const OPTION_KEY   = 'kt_abm_settings';
+    const NONCE_KEY    = 'kt_abm_nonce';
+    const ACCENT       = '#0A212E';
+    const DEFAULT_FROM = 'timkuijten@kovacictalent.com';
+    const SENT_LOG     = 'kt_abm_sent_log';
+    const CAPABILITY   = 'edit_posts';
+
+    public function __construct() {
+        add_action('admin_menu',               [$this, 'menu']);
+        add_action('admin_init',               [$this, 'register_settings']);
+        add_action('admin_enqueue_scripts',    [$this, 'enqueue']);
+        add_action('wp_ajax_kt_abm_import_candidates', [$this, 'ajax_import_candidates']);
+        add_action('wp_ajax_kt_abm_generate',  [$this, 'ajax_generate']);
+        add_action('wp_ajax_kt_abm_send',      [$this, 'ajax_send']);
+        add_action('wp_ajax_kt_abm_eml_zip',   [$this, 'ajax_eml_zip']); // EML ZIP
+    }
+
+    public function menu() {
+        add_submenu_page('kovacic', __('Correo con IA', 'kt-abm'), __('Correo con IA', 'kt-abm'), self::CAPABILITY, 'kvt-email', [$this, 'page']);
+        add_submenu_page('kovacic', __('Correos enviados', 'kt-abm'), __('Correos enviados', 'kt-abm'), self::CAPABILITY, 'kvt-email-sent', [$this, 'sent_page']);
+    }
+
+    public function register_settings() {
+        register_setting(self::OPTION_KEY, self::OPTION_KEY, function($val){
+            $out = [];
+            $out['openai_api_key'] = isset($val['openai_api_key']) ? sanitize_text_field($val['openai_api_key']) : '';
+            $out['openai_model']   = isset($val['openai_model']) ? sanitize_text_field($val['openai_model']) : 'gpt-4o-mini';
+            $out['from_email']     = isset($val['from_email']) && $val['from_email'] !== ''
+                                    ? sanitize_email($val['from_email'])
+                                    : self::DEFAULT_FROM;
+            $out['from_name']      = isset($val['from_name']) ? sanitize_text_field($val['from_name']) : get_bloginfo('name');
+            return $out;
+        });
+
+        add_settings_section('kt_abm_main', __('Ajustes', 'kt-abm'), '__return_false', self::OPTION_KEY);
+
+        add_settings_field('openai_api_key', __('Clave de API de OpenAI', 'kt-abm'), function(){
+            $o = get_option(self::OPTION_KEY, []);
+            printf('<input type="password" name="%s[openai_api_key]" value="%s" class="regular-text" />',
+                esc_attr(self::OPTION_KEY), esc_attr($o['openai_api_key'] ?? '')
+            );
+        }, self::OPTION_KEY, 'kt_abm_main');
+
+        add_settings_field('openai_model', __('Modelo de OpenAI', 'kt-abm'), function(){
+            $o = get_option(self::OPTION_KEY, []);
+            printf('<input type="text" name="%s[openai_model]" value="%s" class="regular-text" placeholder="gpt-4o-mini" />',
+                esc_attr(self::OPTION_KEY), esc_attr($o['openai_model'] ?? 'gpt-4o-mini')
+            );
+        }, self::OPTION_KEY, 'kt_abm_main');
+
+        add_settings_field('from_email', __('Correo del remitente (por defecto)', 'kt-abm'), function(){
+            $o = get_option(self::OPTION_KEY, []);
+            $val = $o['from_email'] ?? self::DEFAULT_FROM;
+            printf('<input type="email" name="%s[from_email]" value="%s" class="regular-text" />',
+                esc_attr(self::OPTION_KEY), esc_attr($val)
+            );
+        }, self::OPTION_KEY, 'kt_abm_main');
+
+        add_settings_field('from_name', __('Nombre del remitente (opcional)', 'kt-abm'), function(){
+            $o = get_option(self::OPTION_KEY, []);
+            printf('<input type="text" name="%s[from_name]" value="%s" class="regular-text" placeholder="%s" />',
+                esc_attr(self::OPTION_KEY),
+                esc_attr($o['from_name'] ?? get_bloginfo('name')),
+                esc_attr(get_bloginfo('name'))
+            );
+        }, self::OPTION_KEY, 'kt_abm_main');
+    }
+
+    public function enqueue($hook) {
+        $is_main = $hook === 'kovacic_page_kvt-email';
+        $is_sent = $hook === 'kovacic_page_kvt-email-sent';
+        if (!$is_main && !$is_sent) return;
+
+        // Styles (ALL buttons #0A212E with white text)
+        $css = "
+        :root{--kt-accent: ".self::ACCENT.";}
+        .kt-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin:0 0 16px}
+        .kt-btn{
+            background:var(--kt-accent);
+            color:#fff;
+            border:1px solid var(--kt-accent);
+            border-radius:10px;
+            padding:10px 14px;
+            cursor:pointer;
+        }
+        .kt-btn:hover{filter:brightness(0.95)}
+        .kt-btn.kt-primary{background:var(--kt-accent);border-color:var(--kt-accent);color:#fff}
+        .kt-grid{display:grid;gap:16px}
+        .kt-cols-4{grid-template-columns:2fr 1fr 1fr 1fr}
+        .kt-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+        .kt-input, .kt-textarea{width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px}
+        .kt-table-wrap{width:100%;overflow-x:auto}
+        .kt-table{width:max-content;border-collapse:separate;border-spacing:0;min-width:1000px}
+        .kt-table th, .kt-table td{padding:8px 10px;border-bottom:1px solid #eef0f3;text-align:left;white-space:nowrap}
+        .kt-muted{color:#6b7280}
+        .kt-tag{display:inline-block;padding:6px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#f3f4f6}
+        .kt-preview{white-space:pre-wrap;border:1px dashed #e5e7eb;border-radius:12px;padding:12px;background:#fcfcfd;min-height:100px}
+        .kt-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+        .kt-hr{border:0;border-top:1px solid #eef0f3;margin:10px 0}
+        h1.kt-title{color:".self::ACCENT."}
+
+        /* Multi-select dropdown with checkboxes */
+        .kt-dd{position:relative}
+        .kt-dd-btn{width:100%; display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:10px; background:#fff; color:#111; cursor:pointer}
+        .kt-dd-btn span.summary{color:#374151; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+        .kt-dd-btn .chev{transform:rotate(0deg); transition:transform .15s}
+        .kt-dd.open .kt-dd-btn .chev{transform:rotate(180deg)}
+        .kt-dd-menu{position:absolute; z-index:50; top:100%; left:0; right:0; background:#fff; border:1px solid #e5e7eb; border-radius:12px; margin-top:6px; box-shadow:0 10px 30px rgba(0,0,0,.06); padding:8px; display:none; max-height:280px; overflow:auto}
+        .kt-dd.open .kt-dd-menu{display:block}
+        .kt-dd-search{width:100%; padding:8px 10px; border:1px solid #e5e7eb; border-radius:8px; margin-bottom:8px}
+        .kt-dd-actions{display:flex; gap:8px; margin:6px 0 8px}
+        .kt-dd-actions .kt-mini{padding:6px 8px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb; cursor:pointer}
+        .kt-dd-item{display:flex; align-items:center; gap:8px; padding:6px 6px; border-radius:8px; cursor:pointer}
+        .kt-dd-item:hover{background:#f8fafc}
+        .kt-dd-none{padding:8px; color:#6b7280}
+        ";
+        wp_register_style('kt-abm', false);
+        wp_add_inline_style('kt-abm', $css);
+        wp_enqueue_style('kt-abm');
+
+        if (!$is_main) return;
+
+        // Data for AJAX
+        wp_register_script('kt-abm', false, [], false, true);
+        wp_enqueue_script('kt-abm');
+        $payload = [
+            'ajax'  => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce(self::NONCE_KEY),
+        ];
+        wp_add_inline_script('kt-abm', 'const KT_ABM = '.wp_json_encode($payload).';');
+
+        // Inline App JS
+        ob_start(); ?>
+<script>
+// ===============================
+// App JS (first_name + surname; EML ZIP; delete selected; NO importar base)
+// ===============================
+
+// ---- Utilities ----
+function ktParseCSV(text){
+  const count = (s, ch) => (s.match(new RegExp(ch, 'g'))||[]).length;
+  if (count(text, ';') > count(text, ',')) text = text.replace(/;/g, ',');
+  if (count(text, '\t') > Math.max(count(text, ','), count(text, ';'))) text = text.replace(/\t/g, ',');
+
+  const rows = []; let i=0, f='', r=[], q=false;
+  const pf=()=>{r.push(f); f=''}; const pr=()=>{ if(r.length){rows.push(r); r=[]} };
+  while(i<text.length){
+    const c=text[i];
+    if(q){
+      if(c=='"' && text[i+1]=='"'){ f+='"'; i+=2; continue; }
+      if(c=='"'){ q=false; i++; continue; }
+      f+=c; i++; continue;
+    } else {
+      if(c=='"'){ q=true; i++; continue; }
+      if(c==','){ pf(); i++; continue; }
+      if(c=='\n' || c=='\r'){ pf(); pr(); while(text[i+1]=='\n'||text[i+1]=='\r') i++; i++; continue; }
+      f+=c; i++; continue;
+    }
+  }
+  pf(); pr();
+  if(!rows.length) return [];
+
+  const norm = (h) => (h||'')
+    .replace(/^\uFEFF/, '')
+    .replace(/^\s*\d+\.\s*/, '')
+    .trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g,'');
+
+  const headerRaw = rows[0] || [];
+  const headerNorm = headerRaw.map(norm);
+
+  const known = [
+    'email','correo','mail',
+    'first_name','firstname','first','nombre',
+    'surname','last_name','lastname','apellido','apellidos','last',
+    'country','pais',
+    'city','ciudad',
+    'client','cliente',
+    'role','rol','cargo','proceso',
+    'status','estado'
+  ];
+  const headerLooksValid = headerNorm.some(h => known.includes(h));
+
+  let dataRows, header;
+  if (headerLooksValid) {
+    header = headerNorm;
+    dataRows = rows.slice(1);
+  } else {
+    header = ['email','first_name','surname','country','city','client','role','status'];
+    dataRows = rows;
+  }
+
+  const idxOf = (aliases) => {
+    for (const a of aliases) {
+      const k = header.indexOf(a);
+      if (k !== -1) return k;
+    }
+    return -1;
+  };
+
+  const idx = {
+    email:      idxOf(['email','correo','mail']),
+    first_name: idxOf(['first_name','firstname','first','nombre']),
+    surname:    idxOf(['surname','last_name','lastname','apellido','apellidos','last']),
+    country:    idxOf(['country','pais']),
+    city:       idxOf(['city','ciudad']),
+    client:     idxOf(['client','cliente']),
+    role:       idxOf(['role','rol','cargo','proceso']),
+    status:     idxOf(['status','estado'])
+  };
+
+  const out=[];
+  for(let r=0; r<dataRows.length; r++){
+    const row = dataRows[r];
+    if(!row || row.length===0) continue;
+    const get=(k)=> idx[k]>=0 ? (row[idx[k]]||'').toString().trim() : '';
+    const email = get('email');
+    if(!email) continue;
+    out.push({
+      email,
+      first_name: get('first_name'),
+      surname: get('surname'),
+      country: get('country'),
+      city: get('city'),
+      client: get('client'),
+      role: get('role'),
+      status: get('status')
+    });
+  }
+  return out;
+}
+
+function ktAppendSignature(tpl){
+  const el=document.getElementById('ktSignature');
+  const sig=el ? el.value : '';
+  if(!sig) return tpl;
+  return tpl.includes('{{sender}}') ? tpl.replace('{{sender}}','{{sender}}<br>'+sig) : tpl + '<br>'+sig;
+}
+
+
+function ktUniq(arr){ return [...new Set(arr.filter(Boolean).map(x=>x.trim()))].sort((a,b)=>a.localeCompare(b)); }
+function ktEscape(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function ktRender(tpl, data){ return tpl.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,(m,k)=> (data[k] ?? m)); }
+
+// ---- App State ----
+let KT_CONTACTS=[], KT_VIEW=[], KT_SELECTED=new Set();
+let KT_PAGE=1, KT_PER_PAGE=20;
+let FILTERS = { roles: [], countries: [], cities: [], clients: [], statuses: [] };
+
+// ---- Persistence (disabled) ----
+function loadSaved(){}
+function saveState(){}
+
+// De-dup by email
+function mergeContacts(newOnes){
+  const map = new Map();
+  const toKey = (e) => (e.email||'').trim().toLowerCase();
+  let added = 0, skipped = 0;
+
+  for(const c of KT_CONTACTS){
+    const k = toKey(c); if(!k) continue;
+    map.set(k, c);
+  }
+  for(const n of newOnes){
+    const k = toKey(n); if(!k) continue;
+    if(map.has(k)){
+      const cur = map.get(k);
+      const merged = {
+        email: cur.email,
+        first_name: n.first_name || cur.first_name || '',
+        surname: n.surname || cur.surname || '',
+        country: n.country || cur.country || '',
+        city: n.city || cur.city || '',
+        client: n.client || cur.client || '',
+        role: n.role || cur.role || '',
+        status: n.status || cur.status || '',
+        board: n.board || cur.board || ''
+      };
+      map.set(k, merged);
+      skipped++;
+    } else {
+      map.set(k, n);
+      added++;
+    }
+  }
+  KT_CONTACTS = Array.from(map.values());
+  return {added, skipped};
+}
+
+// ------------ Dropdown manager ------------
+const ktDD = {
+  toggle(id){
+    const el = document.getElementById(id);
+    if(!el) return;
+    const open = el.classList.contains('open');
+    document.querySelectorAll('.kt-dd.open').forEach(dd => dd.classList.remove('open'));
+    if(!open) el.classList.add('open');
+  },
+  closeAll(){ document.querySelectorAll('.kt-dd.open').forEach(dd => dd.classList.remove('open')); },
+  build(id, values){
+    const el = document.getElementById(id);
+    if(!el) return;
+    const key = el.dataset.key;
+    const list = el.querySelector('.kt-dd-list');
+    const sel = new Set(FILTERS[key] || []);
+    const items = (values||[]).filter(Boolean);
+    if(!items.length){
+      list.innerHTML = `<div class="kt-dd-none">Sin opciones</div>`;
+    } else {
+      list.innerHTML = items.map(v => {
+        const checked = sel.has(v) ? 'checked' : '';
+        return `
+          <label class="kt-dd-item">
+            <input type="checkbox" value="${ktEscape(v)}" ${checked} onchange="ktDD.onToggle('${id}', this.value, this.checked)" />
+            <span>${ktEscape(v)}</span>
+          </label>
+        `;
+      }).join('');
+    }
+    this.updateSummary(id);
+  },
+  filter(id, q){
+    const el = document.getElementById(id);
+    if(!el) return;
+    const list = el.querySelector('.kt-dd-list');
+    q = (q||'').toLowerCase();
+    for(const row of list.children){
+      const txt = row.innerText.toLowerCase();
+      row.style.display = !q || txt.includes(q) ? '' : 'none';
+    }
+  },
+  onToggle(id, val, isChecked){
+    const key = document.getElementById(id).dataset.key;
+    const arr = new Set(FILTERS[key] || []);
+    if(isChecked) arr.add(val); else arr.delete(val);
+    FILTERS[key] = Array.from(arr);
+    this.updateSummary(id);
+    ktApply();
+  },
+  selectAll(id){
+    const el = document.getElementById(id);
+    if(!el) return;
+    const key = el.dataset.key;
+    const checkboxes = el.querySelectorAll('.kt-dd-list input[type="checkbox"]:not([style*="display: none"])');
+    const vals = [];
+    checkboxes.forEach(cb => { cb.checked = true; vals.push(cb.value); });
+    FILTERS[key] = vals;
+    this.updateSummary(id);
+    ktApply();
+  },
+  clear(id){
+    const el = document.getElementById(id);
+    if(!el) return;
+    const key = el.dataset.key;
+    el.querySelectorAll('.kt-dd-list input[type="checkbox"]').forEach(cb => cb.checked = false);
+    FILTERS[key] = [];
+    this.updateSummary(id);
+    ktApply();
+  },
+  updateSummary(id){
+    const el = document.getElementById(id);
+    if(!el) return;
+    const key = el.dataset.key;
+    const summary = document.getElementById(id+'Summary');
+    const n = (FILTERS[key]||[]).length;
+    summary.textContent = n ? `${n} seleccionados` : (key==='cities' ? 'Todas' : 'Todos');
+    saveState();
+  }
+};
+
+// Close dropdowns on outside click / ESC
+document.addEventListener('click', (e)=>{
+  if(!e.target.closest('.kt-dd')) ktDD.closeAll();
+});
+document.addEventListener('keydown', (e)=>{
+  if(e.key==='Escape') ktDD.closeAll();
+});
+
+// ---- Table / Selection ----
+function rowKeyFrom(c, idx){ return (c.email||'')+'|'+idx; }
+function ktRowToggle(cb){
+  const k=cb.getAttribute('data-key');
+  if(cb.checked) KT_SELECTED.add(k); else KT_SELECTED.delete(k);
+  document.getElementById('ktSel').innerText = `${KT_SELECTED.size} seleccionados`;
+  saveState();
+}
+function ktSelectAll(on){
+  KT_VIEW.forEach((c,i)=>{ const k=rowKeyFrom(c,i); if(on) KT_SELECTED.add(k); else KT_SELECTED.delete(k); });
+  ktRenderTable();
+  saveState();
+}
+function ktPrevPage(){
+  if(KT_PAGE>1){ KT_PAGE--; ktRenderTable(); saveState(); }
+}
+function ktNextPage(){
+  const total=Math.ceil(KT_VIEW.length/KT_PER_PAGE);
+  if(KT_PAGE<total){ KT_PAGE++; ktRenderTable(); saveState(); }
+}
+function ktRenderTable(){
+  const tb=document.getElementById('ktTbody'); if(!tb) return;
+  const totalPages = Math.max(1, Math.ceil(KT_VIEW.length / KT_PER_PAGE));
+  if(KT_PAGE>totalPages) KT_PAGE = totalPages;
+  const start = (KT_PAGE-1)*KT_PER_PAGE;
+  const page = KT_VIEW.slice(start, start + KT_PER_PAGE);
+  let html='';
+  page.forEach((c,i)=>{
+    const k=rowKeyFrom(c,start+i);
+    const checked = KT_SELECTED.has(k) ? 'checked' : '';
+    html += `<tr>
+      <td><input type="checkbox" data-key="${k}" ${checked} onchange="ktRowToggle(this)"></td>
+      <td>${ktEscape(c.email)}</td>
+      <td>${ktEscape(c.first_name)}</td>
+      <td>${ktEscape(c.surname)}</td>
+      <td>${ktEscape(c.country)}</td>
+      <td>${ktEscape(c.city)}</td>
+      <td>${ktEscape(c.client)}</td>
+      <td>${ktEscape(c.role)}</td>
+      <td>${ktEscape(c.status)}</td>
+    </tr>`;
+  });
+  tb.innerHTML = html;
+  document.getElementById('ktSel').innerText = `${KT_SELECTED.size} seleccionados`;
+  const pi=document.getElementById('ktPageInfo');
+  if(pi) pi.innerText = `Página ${KT_PAGE} de ${totalPages}`;
+}
+
+// ---- Delete selected ----
+function ktDeleteSelected(){
+  if(!KT_SELECTED.size){ alert('No hay filas seleccionadas.'); return; }
+  if(!confirm(`¿Eliminar ${KT_SELECTED.size} contacto(s) de la lista?`)) return;
+
+  const keep = [];
+  let i=0;
+  for(const c of KT_VIEW){
+    const k=rowKeyFrom(c,i++);
+    if(!KT_SELECTED.has(k)) keep.push(c);
+  }
+  // KT_VIEW -> keep; also need to rebuild KT_CONTACTS without the deleted ones.
+  const keepSet = new Set(keep.map(c => (c.email||'').toLowerCase()+'|'+(c.first_name||'')+'|'+(c.surname||'')));
+  KT_CONTACTS = KT_CONTACTS.filter(c => keepSet.has((c.email||'').toLowerCase()+'|'+(c.first_name||'')+'|'+(c.surname||'')));
+
+  KT_SELECTED.clear();
+  ktAfterLoad();
+  saveState();
+}
+
+// ---- Flows ----
+function ktAfterLoad(){
+  KT_PAGE = 1;
+  document.getElementById('ktCount').innerText = `${KT_CONTACTS.length} contactos`;
+
+  const roles     = ktUniq(KT_CONTACTS.map(x=>x.role));
+  const countries = ktUniq(KT_CONTACTS.map(x=>x.country));
+  const cities    = ktUniq(KT_CONTACTS.map(x=>x.city));
+  const clients   = ktUniq(KT_CONTACTS.map(x=>x.client));
+  const statuses  = ktUniq(KT_CONTACTS.map(x=>x.status));
+
+  ktDD.build('ddRole', roles);
+  ktDD.build('ddClient', clients);
+  ktDD.build('ddStatus', statuses);
+  ktDD.build('ddCountry', countries);
+  ktDD.build('ddCity', cities);
+
+  ktApply();
+  saveState();
+}
+
+function ktLoadCSV(){
+  const file=document.getElementById('ktCsvFile').files[0];
+  const pasted=document.getElementById('ktCsvPaste').value.trim();
+
+  const handleParsed = (arr) => {
+    if(!Array.isArray(arr) || !arr.length){
+      alert('No se detectaron contactos. Revisa separadores/cabeceras.');
+      return;
+    }
+    const {added, skipped} = mergeContacts(arr);
+    ktAfterLoad();
+    alert(`Loaded: ${arr.length}\nAdded: ${added}\nSkipped (duplicates): ${skipped}`);
+  };
+
+  if(file){
+    const r=new FileReader();
+    r.onload=e=>{ handleParsed( ktParseCSV(e.target.result) ); };
+    r.readAsText(file);
+  } else if(pasted){
+    handleParsed( ktParseCSV(pasted) );
+  } else {
+    alert('Sube un archivo CSV o pega el CSV primero.');
+  }
+}
+
+async function ktImportCandidates(){
+  const res = await fetch(KT_ABM.ajax, {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({action:'kt_abm_import_candidates', _ajax_nonce:KT_ABM.nonce})
+  });
+  let payload;
+  try { payload = await res.json(); }
+  catch(e){ console.error('kt_abm_import_candidates JSON parse error', e); alert('Respuesta inválida del servidor (import).'); return; }
+  if(!payload.success){
+    const msg = payload.data && payload.data.error ? payload.data.error : 'Error desconocido al importar';
+    alert('Error: ' + msg);
+    return;
+  }
+  const arr = Array.isArray(payload.data) ? payload.data : [];
+  const {added, skipped} = mergeContacts(arr);
+  ktAfterLoad();
+}
+
+function ktApply(){
+  KT_PAGE = 1;
+  KT_SELECTED.clear();
+  const q=(document.getElementById('ktQ').value||'').trim().toLowerCase();
+
+  const rolesSel     = (FILTERS.roles||[]).map(v => v.toLowerCase());
+  const countriesSel = (FILTERS.countries||[]).map(v => v.toLowerCase());
+  const citiesSel    = (FILTERS.cities||[]).map(v => v.toLowerCase());
+  const clientsSel   = (FILTERS.clients||[]).map(v => v.toLowerCase());
+  const statusesSel  = (FILTERS.statuses||[]).map(v => v.toLowerCase());
+
+  KT_VIEW = KT_CONTACTS.filter(c => {
+    const fullName = (c.first_name + ' ' + c.surname).trim();
+    const hit = !q || [c.email, fullName, c.country, c.city, c.client, c.role, c.status]
+                   .some(v => (v||'').toLowerCase().includes(q));
+
+    const inRole     = !rolesSel.length     || rolesSel.includes((c.role||'').toLowerCase());
+    const inCountry  = !countriesSel.length || countriesSel.includes((c.country||'').toLowerCase());
+    const inCity     = !citiesSel.length    || citiesSel.includes((c.city||'').toLowerCase());
+    const inClient   = !clientsSel.length   || clientsSel.includes((c.client||'').toLowerCase());
+    const inStatus   = !statusesSel.length  || statusesSel.includes((c.status||'').toLowerCase());
+    return hit && inRole && inCountry && inCity && inClient && inStatus;
+  });
+  ktRenderTable();
+  saveState();
+}
+
+// ---- AI + Preview + Send ----
+async function ktGenerate(){
+  const prompt=(document.getElementById('ktPrompt').value||'').trim();
+  if(!prompt){ alert('Escribe un prompt primero.'); return; }
+  const res = await fetch(KT_ABM.ajax, {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({action:'kt_abm_generate', _ajax_nonce:KT_ABM.nonce, prompt})
+  });
+  let payload;
+  try { payload = await res.json(); } catch(e){ console.error('kt_abm_generate JSON parse error', e); alert('Respuesta inválida del servidor (generate).'); return; }
+  if(!payload.success){
+    const msg = payload.data && payload.data.error ? payload.data.error : 'Error desconocido en generación';
+    alert('Error: ' + msg);
+    return;
+  }
+  const data = payload.data || {};
+  document.getElementById('ktSubject').value = data.subject_template || '';
+  document.getElementById('ktBody').value    = data.body_template || '';
+  saveState();
+}
+
+function ktSelectedRows(){
+  const out=[]; let i=0;
+  for(const c of KT_VIEW){ const k=rowKeyFrom(c,i++); if(KT_SELECTED.has(k)) out.push(c); }
+  return out;
+}
+
+function ktPreview(){
+  const rows=ktSelectedRows();
+  if(!rows.length){ alert('Selecciona al menos un contacto.'); return; }
+  const c=rows[0];
+  const subj=ktRender(document.getElementById('ktSubject').value, c);
+  const body=ktRender(
+    ktAppendSignature(document.getElementById('ktBody').value),
+    {...c, sender: document.getElementById('ktFromName').value || document.getElementById('ktFromEmail').value || 'Yo'}
+  );
+  document.getElementById('ktPreview').innerHTML = '<strong>Asunto:</strong> '+ktEscape(subj)+'<div class="kt-hr"></div>'+body;
+}
+
+async function ktSend(){
+  const rows=ktSelectedRows();
+  if(!rows.length){ alert('Selecciona al menos un contacto.'); return; }
+  const subject_template=(document.getElementById('ktSubject').value||'').trim();
+  const body_template=ktAppendSignature((document.getElementById('ktBody').value||'').trim());
+  if(!subject_template || !body_template){ alert('Completa asunto y cuerpo.'); return; }
+  if(!confirm(`¿Enviar a ${rows.length} contactos ahora?`)) return;
+
+  const payloadData = {
+    recipients: rows,
+    subject_template,
+    body_template,
+    from_email: (document.getElementById('ktFromEmail').value||'').trim(),
+    from_name:  (document.getElementById('ktFromName').value||'').trim()
+  };
+
+  const res = await fetch(KT_ABM.ajax, {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({action:'kt_abm_send', _ajax_nonce:KT_ABM.nonce, payload: JSON.stringify(payloadData)})
+  });
+  let payload;
+  try { payload = await res.json(); } catch(e){ console.error('kt_abm_send JSON parse error', e); alert('Respuesta inválida del servidor (send).'); return; }
+  if(!payload.success){
+    const msg = payload.data && payload.data.error ? payload.data.error : 'Error desconocido al enviar';
+    alert('Error: ' + msg);
+    return;
+  }
+  const data = payload.data || {};
+  document.getElementById('ktPreview').textContent =
+    'Enviados: '+(data.sent||0)+' | Errores: '+((data.errors||[]).length)+
+    ((data.errors||[]).length ? ('\n'+JSON.stringify(data.errors,null,2)) : '');
+}
+
+// ---- Download EML drafts (ZIP) ----
+function ktDownloadEMLZip(){
+  const rows = ktSelectedRows();
+  if(!rows.length){ alert('Selecciona al menos un contacto.'); return; }
+  const subject_template=(document.getElementById('ktSubject').value||'').trim();
+  const body_template=ktAppendSignature((document.getElementById('ktBody').value||'').trim());
+  if(!subject_template || !body_template){ alert('Completa asunto y cuerpo.'); return; }
+
+  const payloadData = {
+    recipients: rows,
+    subject_template,
+    body_template,
+    from_email: (document.getElementById('ktFromEmail').value||'').trim(),
+    from_name:  (document.getElementById('ktFromName').value||'').trim()
+  };
+
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = KT_ABM.ajax;
+  form.target = '_blank';
+
+  const add = (k,v)=>{ const inp=document.createElement('input'); inp.type='hidden'; inp.name=k; inp.value=v; form.appendChild(inp); };
+  add('action','kt_abm_eml_zip');
+  add('_ajax_nonce', KT_ABM.nonce);
+  add('payload', JSON.stringify(payloadData));
+
+  document.body.appendChild(form);
+  form.submit();
+  setTimeout(()=>form.remove(), 1000);
+}
+
+// ---- Bootstrapping ----
+(function init(){
+  KT_CONTACTS = [];
+  KT_SELECTED.clear();
+  FILTERS = {roles:[],countries:[],cities:[],clients:[],statuses:[]};
+  ktAfterLoad();
+  ktImportCandidates();
+})();
+</script>
+<?php
+        wp_add_inline_script('kt-abm', ob_get_clean());
+    }
+
+    public function page() {
+        if (!current_user_can(self::CAPABILITY)) return;
+        $o = get_option(self::OPTION_KEY, []);
+        $smtp_options = get_option('smtp_helper_options', []);
+        $from_default = $smtp_options['from_email'] ?? ($o['from_email'] ?? self::DEFAULT_FROM);
+        $from_name_default = $smtp_options['from_name'] ?? ($o['from_name'] ?? get_bloginfo('name'));
+        $signature_default = $smtp_options['signature'] ?? '';
+        ?>
+        <div class="wrap">
+            <h1 class="kt-title">Correo con IA</h1>
+
+            <div class="kt-card">
+                <h2 style="margin-top:0;">Prompt de IA</h2>
+                <textarea id="ktPrompt" class="kt-textarea" placeholder="Escribe un correo de acercamiento para el proceso {{role}} en {{city}} (120–150 palabras) con un CTA claro. Usa {{first_name}} en el saludo."></textarea>
+                <p class="kt-muted" style="margin-top:6px">
+                    El correo generado siempre debe usar estos placeholders:
+                    <strong>Nombre</strong> = <code>{{first_name}}</code>,
+                    <strong>Apellido</strong> = <code>{{surname}}</code>,
+                    <strong>País</strong> = <code>{{country}}</code>,
+                    <strong>Ciudad</strong> = <code>{{city}}</code>,
+                    <strong>Cliente</strong> = <code>{{client}}</code>,
+                    <strong>Proceso</strong> = <code>{{role}}</code>,
+                    <strong>Estado</strong> = <code>{{status}}</code>,
+                    <strong>Tablero</strong> = <code>{{board}}</code>,
+                    <strong>El remitente</strong> = <code>{{sender}}</code>.
+                </p>
+                <p class="kt-muted" style="margin-top:6px">
+                    <strong>Aviso:</strong> Los placeholders se rellenan con la información del candidato. Si estás promocionando un nuevo puesto, no uses <code>{{role}}</code> para el nombre del puesto en el texto, escribe el nombre real del proceso (por ejemplo, “Director/a Comercial”) para evitar que se reemplace por el <em>proceso vinculado</em> al candidato.
+                </p>
+                <div class="kt-row" style="margin-top:10px">
+                    <button class="kt-btn" onclick="ktGenerate()">Generar</button>
+                </div>
+            </div>
+
+            <div class="kt-card">
+                <h2 style="margin-top:0;">Plantilla</h2>
+                <label>Asunto</label>
+                <input id="ktSubject" class="kt-input" type="text" placeholder="{{first_name}}, nota rápida de Kovacic Executive Talent" />
+                <label style="margin-top:8px">Cuerpo (se permite HTML)</label>
+                <textarea id="ktBody" class="kt-textarea" placeholder="Hola {{first_name}}, ..."></textarea>
+                <label style="margin-top:8px">Firma (HTML)</label>
+                <textarea id="ktSignature" class="kt-textarea" placeholder="Tu firma..."><?php echo esc_textarea($signature_default); ?></textarea>
+                <div class="kt-row" style="margin-top:8px">
+                    <button class="kt-btn" onclick="ktPreview()">Vista previa</button>
+                </div>
+
+                <div class="kt-row" style="margin-top:8px; gap:12px;">
+                    <div>
+                        <label>Correo del remitente</label>
+                        <input id="ktFromEmail" class="kt-input" type="email" value="<?php echo esc_attr($from_default); ?>" />
+                    </div>
+                    <div>
+                        <label>Nombre del remitente</label>
+                        <input id="ktFromName" class="kt-input" type="text" value="<?php echo esc_attr($from_name_default); ?>" />
+                    </div>
+                </div>
+                <p class="kt-muted" style="margin-top:6px">Variables: <code>{{first_name}}</code>, <code>{{surname}}</code>, <code>{{country}}</code>, <code>{{city}}</code>, <code>{{role}}</code> (proceso), <code>{{board}}</code>, <code>{{sender}}</code></p>
+            </div>
+
+            <div class="kt-grid kt-cols-3">
+                <div class="kt-card" style="grid-column: span 2;">
+                    <div class="kt-row" style="margin-bottom:10px;align-items:center;flex-wrap:wrap;gap:10px">
+                        <input id="ktQ" class="kt-input" type="text" placeholder="Buscar por nombre, email, país, ciudad, cliente, proceso o estado" oninput="ktApply()" style="flex:1;max-width:300px" />
+                        <span class="kt-tag" id="ktCount">0 contactos</span>
+                    </div>
+                    <div class="kt-row" style="margin-bottom:10px;flex-wrap:wrap;gap:10px">
+                        <div>
+                            <label>Proceso</label>
+                            <div id="ddRole" class="kt-dd" data-key="roles">
+                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddRole')">
+                                    <span class="summary" id="ddRoleSummary">Todos</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                                </button>
+                                <div class="kt-dd-menu">
+                                    <input class="kt-dd-search" placeholder="Buscar proceso..." oninput="ktDD.filter('ddRole', this.value)">
+                                    <div class="kt-dd-actions">
+                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddRole')">Seleccionar todo</button>
+                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddRole')">Limpiar</button>
+                                    </div>
+                                    <div class="kt-dd-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label>Cliente</label>
+                            <div id="ddClient" class="kt-dd" data-key="clients">
+                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddClient')">
+                                    <span class="summary" id="ddClientSummary">Todos</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                                </button>
+                                <div class="kt-dd-menu">
+                                    <input class="kt-dd-search" placeholder="Buscar cliente..." oninput="ktDD.filter('ddClient', this.value)">
+                                    <div class="kt-dd-actions">
+                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddClient')">Seleccionar todo</button>
+                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddClient')">Limpiar</button>
+                                    </div>
+                                    <div class="kt-dd-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label>Estado</label>
+                            <div id="ddStatus" class="kt-dd" data-key="statuses">
+                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddStatus')">
+                                    <span class="summary" id="ddStatusSummary">Todos</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                                </button>
+                                <div class="kt-dd-menu">
+                                    <input class="kt-dd-search" placeholder="Buscar estado..." oninput="ktDD.filter('ddStatus', this.value)">
+                                    <div class="kt-dd-actions">
+                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddStatus')">Seleccionar todo</button>
+                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddStatus')">Limpiar</button>
+                                    </div>
+                                    <div class="kt-dd-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label>País</label>
+                            <div id="ddCountry" class="kt-dd" data-key="countries">
+                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddCountry')">
+                                    <span class="summary" id="ddCountrySummary">Todos</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                                </button>
+                                <div class="kt-dd-menu">
+                                    <input class="kt-dd-search" placeholder="Buscar país..." oninput="ktDD.filter('ddCountry', this.value)">
+                                    <div class="kt-dd-actions">
+                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddCountry')">Seleccionar todo</button>
+                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddCountry')">Limpiar</button>
+                                    </div>
+                                    <div class="kt-dd-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label>Ciudad</label>
+                            <div id="ddCity" class="kt-dd" data-key="cities">
+                                <button type="button" class="kt-dd-btn" onclick="ktDD.toggle('ddCity')">
+                                    <span class="summary" id="ddCitySummary">Todas</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 20 20"><path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                                </button>
+                                <div class="kt-dd-menu">
+                                    <input class="kt-dd-search" placeholder="Buscar ciudad..." oninput="ktDD.filter('ddCity', this.value)">
+                                    <div class="kt-dd-actions">
+                                        <button type="button" class="kt-mini" onclick="ktDD.selectAll('ddCity')">Seleccionar todo</button>
+                                        <button type="button" class="kt-mini" onclick="ktDD.clear('ddCity')">Limpiar</button>
+                                    </div>
+                                    <div class="kt-dd-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kt-row" style="margin-bottom:10px">
+                        <button class="kt-btn" onclick="ktSelectAll(true)">Seleccionar todo</button>
+                        <button class="kt-btn" style="margin-left:8px" onclick="ktSelectAll(false)">Limpiar</button>
+                        <span class="kt-muted" id="ktSel" style="margin-left:8px">0 seleccionados</span>
+                    </div>
+                    <div class="kt-table-wrap">
+                        <table class="kt-table">
+                            <thead>
+                                <tr>
+                                    <th></th><th>Email</th><th>Nombre</th><th>Apellido</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ktTbody"></tbody>
+                        </table>
+                    </div>
+                    <div class="kt-row" style="margin-top:10px">
+                        <button class="kt-btn" onclick="ktPrevPage()">Anterior</button>
+                        <button class="kt-btn" style="margin-left:8px" onclick="ktNextPage()">Siguiente</button>
+                        <span class="kt-muted" id="ktPageInfo" style="margin-left:8px"></span>
+                    </div>
+                    <div class="kt-row" style="margin-top:10px">
+                        <button class="kt-btn" onclick="ktDeleteSelected()">Eliminar seleccionados</button>
+                    </div>
+                </div>
+                <div class="kt-card">
+                    <h2 style="margin-top:0;">Vista previa</h2>
+                    <div id="ktPreview" class="kt-preview">Usa “Vista previa” tras seleccionar al menos un contacto.</div>
+                </div>
+                <div class="kt-row" style="margin-top:8px; gap:8px;">
+                    <button class="kt-btn" onclick="ktDownloadEMLZip()">Descargar borradores (.zip)</button>
+                    <button class="kt-btn kt-primary" onclick="ktSend()">Enviar correos</button>
+                </div>
+            </div>
+
+            <div class="kt-card">
+                <form method="post" action="options.php">
+                    <?php
+                        settings_fields(self::OPTION_KEY);
+                        do_settings_sections(self::OPTION_KEY);
+                        submit_button(__('Guardar ajustes', 'kt-abm'));
+                    ?>
+                </form>
+            </div>
+        </div>
+        <?php
+    }
+
+    // ---------- AJAX: IA template ----------
+    public function ajax_generate() {
+        check_ajax_referer(self::NONCE_KEY);
+        if (!current_user_can(self::CAPABILITY)) wp_send_json_error(['error' => 'No autorizado'], 403);
+
+        $prompt = isset($_POST['prompt']) ? wp_unslash($_POST['prompt']) : '';
+        if (!$prompt) wp_send_json_error(['error' => 'Falta el prompt'], 400);
+
+        $o = get_option(self::OPTION_KEY, []);
+        $api_key = $o['openai_api_key'] ?? '';
+        $model   = $o['openai_model']   ?? 'gpt-4o-mini';
+
+        $fallback = [
+            'subject'   => '{{first_name}}, nota rápida para el proceso {{role}} en {{city}}',
+            'body_html' => 'Hola {{first_name}},<br><br>Te escribo desde Kovacic Talent. Por tu experiencia en el proceso <strong>{{role}}</strong> en {{city}}, {{country}}, creo que esto puede interesarte.<br><br>'.esc_html($prompt).'<br><br>Si te encaja, responde a este correo y te cuento más.<br><br>Saludos,<br>{{sender}}'
+        ];
+
+        if (!$api_key) {
+            wp_send_json_success(['subject_template' => $fallback['subject'], 'body_template' => $fallback['body_html']]);
+        }
+
+        $sys = "Eres un redactor de emails de Kovacic Executive Talent Research. Devuelve un JSON con las claves 'subject' y 'body_html'. ".
+               "Debes usar SIEMPRE estos placeholders cuando corresponda y NO inventar otros: ".
+               "Nombre = {{first_name}}, Apellido = {{surname}}, País = {{country}}, Ciudad = {{city}}, Cliente = {{client}}, Proceso = {{role}}, Estado = {{status}}, Tablero = {{board}}, El remitente = {{sender}}. ".
+               "El cuerpo debe ser HTML y usar saltos de línea <br> (NO uses etiquetas <p>). Y Nunca uses '—'.";
+
+        $req = [
+            'model' => $model,
+            'temperature' => 0.7,
+            'response_format' => ['type' => 'json_object'],
+            'messages' => [
+                ['role' => 'system', 'content' => $sys],
+                ['role' => 'user', 'content' => $prompt],
+            ],
+        ];
+
+        $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer '.$api_key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => wp_json_encode($req),
+            'timeout' => 30,
+        ]);
+
+        if (is_wp_error($resp)) {
+            wp_send_json_success(['subject_template' => $fallback['subject'], 'body_template' => $fallback['body_html']]);
+        }
+
+        $code = wp_remote_retrieve_response_code($resp);
+        $body = wp_remote_retrieve_body($resp);
+        $json = json_decode($body, true);
+
+        if ($code !== 200 || empty($json['choices'][0]['message']['content'])) {
+            wp_send_json_success(['subject_template' => $fallback['subject'], 'body_template' => $fallback['body_html']]);
+        }
+
+        $content = json_decode($json['choices'][0]['message']['content'], true);
+        $subject = isset($content['subject']) ? (string)$content['subject'] : $fallback['subject'];
+        $html    = isset($content['body_html']) ? (string)$content['body_html'] : $fallback['body_html'];
+
+        wp_send_json_success(['subject_template' => $subject, 'body_template' => $html]);
+    }
+
+    public function sent_page() {
+        if (!current_user_can(self::CAPABILITY)) return;
+        $log = get_option(self::SENT_LOG, []);
+        if (!is_array($log)) $log = [];
+        $log = array_reverse($log);
+        $per_page = 10;
+        $page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+        $total = count($log);
+        $items = array_slice($log, ($page - 1) * $per_page, $per_page);
+
+        echo '<div class="wrap">';
+        echo '<h1 class="kt-title">'.esc_html__('Correos enviados', 'kt-abm').'</h1>';
+        echo '<div class="kt-table-wrap"><table class="kt-table"><thead><tr>';
+        echo '<th>'.esc_html__('Fecha', 'kt-abm').'</th>';
+        echo '<th>'.esc_html__('Para', 'kt-abm').'</th>';
+        echo '<th>'.esc_html__('Asunto', 'kt-abm').'</th>';
+        echo '</tr></thead><tbody>';
+        if ($items) {
+            foreach ($items as $e) {
+                $time = esc_html($e['time'] ?? '');
+                $to = esc_html($e['to'] ?? '');
+                $subject = esc_html($e['subject'] ?? '');
+                $body = wp_kses_post($e['body'] ?? '');
+                echo '<tr><td>'.$time.'</td><td>'.$to.'</td><td><details><summary>'.$subject.'</summary><div class="kt-preview">'.$body.'</div></details></td></tr>';
+            }
+        } else {
+            echo '<tr><td colspan="3">'.esc_html__('No hay correos enviados todavía.', 'kt-abm').'</td></tr>';
+        }
+        echo '</tbody></table></div>';
+
+        $total_pages = ceil($total / $per_page);
+        if ($total_pages > 1) {
+            echo '<div class="tablenav"><div class="tablenav-pages">';
+            echo paginate_links([
+                'base'    => add_query_arg('paged', '%#%'),
+                'format'  => '',
+                'prev_text' => '&laquo;',
+                'next_text' => '&raquo;',
+                'total'   => $total_pages,
+                'current' => $page,
+            ]);
+            echo '</div></div>';
+        }
+
+        echo '</div>';
+    }
+
+    // ---------- AJAX: Send emails ----------
+    public function ajax_send() {
+        check_ajax_referer(self::NONCE_KEY);
+        if (!current_user_can(self::CAPABILITY)) wp_send_json_error(['error' => 'No autorizado'], 403);
+
+        $payload_json = isset($_POST['payload']) ? wp_unslash($_POST['payload']) : '';
+        if (!$payload_json) wp_send_json_error(['error' => 'Falta el payload'], 400);
+
+        $payload = json_decode($payload_json, true);
+        if (!$payload) wp_send_json_error(['error' => 'JSON inválido'], 400);
+
+        $subject_tpl  = (string)($payload['subject_template'] ?? '');
+        $body_tpl     = (string)($payload['body_template'] ?? '');
+        $recipients   = (array)($payload['recipients'] ?? []);
+        $from_email   = sanitize_email($payload['from_email'] ?? '');
+        $from_name    = sanitize_text_field($payload['from_name'] ?? '');
+
+        $o = get_option(self::OPTION_KEY, []);
+        if (!$from_email) $from_email = sanitize_email($o['from_email'] ?? self::DEFAULT_FROM);
+        if (!$from_email) $from_email = self::DEFAULT_FROM;
+        if (!$from_name)  $from_name  = sanitize_text_field($o['from_name'] ?? get_bloginfo('name'));
+
+        $from_cb = null;
+        $from_name_cb = null;
+
+        if ($from_email) {
+            $from_cb = function() use ($from_email){ return $from_email; };
+            add_filter('wp_mail_from', $from_cb, 99);
+        }
+        if ($from_name)  {
+            $from_name_cb = function() use ($from_name){ return $from_name; };
+            add_filter('wp_mail_from_name', $from_name_cb, 99);
+        }
+
+        $sent = 0; $errors = [];
+        $log = get_option(self::SENT_LOG, []);
+        if (!is_array($log)) $log = [];
+        $last_error = null;
+        $failed_hook = function($wp_error) use (&$last_error) {
+            if (is_wp_error($wp_error)) {
+                $last_error = $wp_error->get_error_message();
+            } else {
+                $last_error = is_string($wp_error) ? $wp_error : 'Unknown mail error';
+            }
+        };
+        add_action('wp_mail_failed', $failed_hook);
+
+        foreach ($recipients as $r) {
+            $email      = isset($r['email']) ? sanitize_email($r['email']) : '';
+            $first_name = isset($r['first_name']) ? sanitize_text_field($r['first_name']) : '';
+            $surname    = isset($r['surname']) ? sanitize_text_field($r['surname']) : '';
+            $country    = isset($r['country']) ? sanitize_text_field($r['country']) : '';
+            $city       = isset($r['city']) ? sanitize_text_field($r['city']) : '';
+            $role       = isset($r['role']) ? sanitize_text_field($r['role']) : '';
+            $board      = isset($r['board']) ? esc_url_raw($r['board']) : '';
+            if (!$email) continue;
+
+            $data = compact('first_name','surname','country','city','role','board');
+            $subject = $this->render($subject_tpl, $data);
+
+            $body_raw = $this->render($body_tpl, array_merge($data, [
+                'sender' => $from_name ?: $from_email ?: get_bloginfo('name')
+            ]));
+
+            // Normalize to <br>-style HTML (strip any <p> accidentally present)
+            $body = $this->normalize_br_html($body_raw);
+
+            $headers = ['Content-Type: text/html; charset=UTF-8'];
+            if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
+
+            $ok = wp_mail($email, $subject, $body, $headers);
+            if ($ok) {
+                $sent++;
+                $log[] = [
+                    'time'    => current_time('mysql'),
+                    'to'      => $email,
+                    'subject' => $subject,
+                    'body'    => $body,
+                    'from'    => $from_email,
+                ];
+            } else {
+                $errors[] = ['email'=>$email, 'error'=>$last_error ?: 'wp_mail falló'];
+            }
+            usleep(250000);
+        }
+
+        if ($from_cb)      remove_filter('wp_mail_from', $from_cb, 99);
+        if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
+        remove_action('wp_mail_failed', $failed_hook);
+
+        update_option(self::SENT_LOG, $log, false);
+
+        if ($last_error) $errors[] = ['email'=>'(general)', 'error'=>$last_error];
+
+        wp_send_json_success(['sent'=>$sent, 'errors'=>$errors]);
+    }
+
+    // ---------- AJAX: Generate EML ZIP ----------
+    public function ajax_eml_zip() {
+        check_ajax_referer(self::NONCE_KEY);
+        if (!current_user_can(self::CAPABILITY)) {
+            status_header(403);
+            echo 'No autorizado';
+            exit;
+        }
+
+        $payload_json = isset($_POST['payload']) ? wp_unslash($_POST['payload']) : '';
+        if (!$payload_json) { status_header(400); echo 'Falta el payload'; exit; }
+        $payload = json_decode($payload_json, true);
+        if (!$payload) { status_header(400); echo 'JSON inválido'; exit; }
+
+        $subject_tpl = (string)($payload['subject_template'] ?? '');
+        $body_tpl    = (string)($payload['body_template'] ?? '');
+        $recipients  = (array)($payload['recipients'] ?? []);
+        $from_email  = sanitize_email($payload['from_email'] ?? '');
+        $from_name   = sanitize_text_field($payload['from_name'] ?? '');
+
+        $o = get_option(self::OPTION_KEY, []);
+        if (!$from_email) $from_email = sanitize_email($o['from_email'] ?? self::DEFAULT_FROM);
+        if (!$from_email) $from_email = self::DEFAULT_FROM;
+        if (!$from_name)  $from_name  = sanitize_text_field($o['from_name'] ?? get_bloginfo('name'));
+
+        if (!class_exists('ZipArchive')) { status_header(500); echo 'ZipArchive no está disponible en este servidor.'; exit; }
+
+        $zip_path = tempnam(sys_get_temp_dir(), 'kt_eml_');
+        $zip = new ZipArchive();
+        if ($zip->open($zip_path, ZipArchive::OVERWRITE) !== true) { status_header(500); echo 'No se pudo crear el ZIP temporal.'; exit; }
+
+        $sender_disp = $from_name ? $from_name.' <'.$from_email.'>' : $from_email;
+
+        $i = 0;
+        foreach ($recipients as $r) {
+            $email      = isset($r['email']) ? sanitize_email($r['email']) : '';
+            if (!$email) continue;
+
+            $first_name = isset($r['first_name']) ? sanitize_text_field($r['first_name']) : '';
+            $surname    = isset($r['surname']) ? sanitize_text_field($r['surname']) : '';
+            $country    = isset($r['country']) ? sanitize_text_field($r['country']) : '';
+            $city       = isset($r['city']) ? sanitize_text_field($r['city']) : '';
+            $role       = isset($r['role']) ? sanitize_text_field($r['role']) : '';
+            $board      = isset($r['board']) ? esc_url_raw($r['board']) : '';
+
+            $data = compact('first_name','surname','country','city','role','board');
+            $subject   = $this->render($subject_tpl, $data);
+            $body_raw  = $this->render($body_tpl, array_merge($data, ['sender' => $from_name ?: $from_email ?: get_bloginfo('name')]));
+
+            // Normalize to <br>-style HTML before packing into .eml
+            $body_html = $this->normalize_br_html($body_raw);
+
+            $to_disp = trim(($first_name . ' ' . $surname));
+            $to_disp = $to_disp ? ($to_disp.' <'.$email.'>') : $email;
+
+            $eml = $this->build_eml(
+                $sender_disp,
+                $to_disp,
+                $subject,
+                $body_html
+            );
+
+            $fname = $this->safe_filename(($first_name ?: 'contacto').'_'.$i.'_'.$email.'.eml');
+            $zip->addFromString($fname, $eml);
+            $i++;
+        }
+
+        $zip->close();
+
+        $fname_zip = 'borradores_eml_'.gmdate('Ymd_His').'.zip';
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="'.$fname_zip.'"');
+        header('Content-Length: '.filesize($zip_path));
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        readfile($zip_path);
+        @unlink($zip_path);
+        exit;
+    }
+
+    // ---------- AJAX: Import Candidate Base ----------
+    public function ajax_import_candidates() {
+        check_ajax_referer(self::NONCE_KEY);
+        if (!current_user_can(self::CAPABILITY)) wp_send_json_error(['error' => 'No autorizado'], 403);
+
+        $q = new WP_Query([
+            'post_type'      => 'kvt_candidate',
+            'post_status'    => 'any',
+            'posts_per_page' => -1,
+            'no_found_rows'  => true,
+        ]);
+
+        $links = get_option('kvt_candidate_links', []);
+        $slug_map = [];
+        if (is_array($links)) {
+            foreach ($links as $slug => $cfg) {
+                if (!empty($cfg['candidate'])) {
+                    $slug_map[(int) $cfg['candidate']] = $slug;
+                }
+            }
+        }
+
+        $rows = [];
+        foreach ($q->posts as $p) {
+            $email = sanitize_email(get_post_meta($p->ID, 'kvt_email', true));
+            if (!$email) $email = sanitize_email(get_post_meta($p->ID, 'email', true));
+            if (!$email) continue;
+
+            $first = sanitize_text_field(get_post_meta($p->ID, 'kvt_first_name', true));
+            if ($first === '') $first = sanitize_text_field(get_post_meta($p->ID, 'first_name', true));
+
+            $last = sanitize_text_field(get_post_meta($p->ID, 'kvt_last_name', true));
+            if ($last === '') $last = sanitize_text_field(get_post_meta($p->ID, 'last_name', true));
+
+            $country = sanitize_text_field(get_post_meta($p->ID, 'kvt_country', true));
+            if ($country === '') $country = sanitize_text_field(get_post_meta($p->ID, 'country', true));
+
+            $city = sanitize_text_field(get_post_meta($p->ID, 'kvt_city', true));
+            if ($city === '') $city = sanitize_text_field(get_post_meta($p->ID, 'city', true));
+
+            $client = '';
+            $terms = get_the_terms($p->ID, 'kvt_client');
+            if ($terms && !is_wp_error($terms) && !empty($terms)) {
+                $client = sanitize_text_field($terms[0]->name);
+            }
+
+            $role = '';
+            $terms = get_the_terms($p->ID, 'kvt_process');
+            if ($terms && !is_wp_error($terms) && !empty($terms)) {
+                $role = sanitize_text_field($terms[0]->name);
+                if ($client === '') {
+                    $linked = (int) get_term_meta($terms[0]->term_id, 'kvt_process_client', true);
+                    if ($linked) {
+                        $client_term = get_term($linked, 'kvt_client');
+                        if ($client_term && !is_wp_error($client_term)) {
+                            $client = sanitize_text_field($client_term->name);
+                        }
+                    }
+                }
+            }
+
+            $status = sanitize_text_field(get_post_meta($p->ID, 'kvt_status', true));
+
+            $board = '';
+            if (isset($slug_map[$p->ID])) {
+                $board = esc_url( home_url('/view-board/' . $slug_map[$p->ID] . '/') );
+            }
+
+            $rows[] = [
+                'email'      => $email,
+                'first_name' => $first,
+                'surname'    => $last,
+                'country'    => $country,
+                'city'       => $city,
+                'client'     => $client,
+                'role'       => $role,
+                'status'     => $status,
+                'board'      => $board,
+            ];
+        }
+
+        wp_send_json_success($rows);
+    }
+
+    // ------- Helpers for EML build -------
+    private function build_eml($from, $to, $subject, $html){
+        $date = date('r'); // RFC 2822
+        $host = parse_url(home_url(), PHP_URL_HOST);
+        if (!$host) { $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : 'local'; }
+        $message_id = '<'.wp_generate_uuid4().'@'.$host.'>';
+
+        $encoded_subject = $this->encode_header_utf8($subject);
+
+        // Ensure full HTML doc and CRLF
+        $body_html = $this->normalize_eol($html);
+
+        // Base64-encode HTML body (simpler & safe)
+        $body_b64 = chunk_split(base64_encode($body_html));
+
+        $headers  = '';
+        $headers .= "X-Unsent: 1\r\n"; // Outlook draft
+        $headers .= "From: ".$this->fold_header_line($from)."\r\n";
+        $headers .= "To: ".$this->fold_header_line($to)."\r\n";
+        $headers .= "Subject: ".$encoded_subject."\r\n";
+        $headers .= "Date: ".$date."\r\n";
+        $headers .= "Message-ID: ".$message_id."\r\n";
+        $headers .= "MIME-Version: 1.0\r\n";
+        $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+        $headers .= "Content-Transfer-Encoding: base64\r\n";
+        $headers .= "\r\n";
+
+        return $headers.$body_b64;
+    }
+
+    private function encode_header_utf8($text){
+        if (!preg_match('/[^\x20-\x7E]/', $text)) return $text;
+        return '=?UTF-8?B?'.base64_encode($text).'?=';
+    }
+
+    private function normalize_eol($html){
+        $body = trim($html);
+        if (!preg_match('~</?(html|body)~i', $body)) {
+            $body = "<html><body>\n".$body."\n</body></html>";
+        }
+        // Convert any mix of newlines to CRLF
+        $body = preg_replace("/\r\n|\n|\r/", "\r\n", $body);
+        return $body;
+    }
+
+    private function fold_header_line($v){
+        $v = preg_replace('/\r|\n/', ' ', $v);
+        $out = '';
+        while (strlen($v) > 76) {
+            $out .= substr($v, 0, 76)."\r\n ";
+            $v = substr($v, 76);
+        }
+        return $out.$v;
+    }
+
+    private function safe_filename($name){
+        $name = preg_replace('/[^\w\-.@]+/u', '_', $name);
+        $name = trim($name, '_');
+        if ($name === '') $name = 'draft';
+        if (!preg_match('/\.eml$/i', $name)) $name .= '.eml';
+        return $name;
+    }
+
+    // Normalize HTML to <br>-only spacing (strip <p> wrappers, keep strong/ul/etc.)
+    private function normalize_br_html($html){
+        $out = (string)$html;
+
+        // Replace paragraph splits with double <br>
+        $out = preg_replace('~</p>\s*<p>~i', '<br><br>', $out);
+
+        // Remove opening/closing <p> tags
+        $out = preg_replace('~</?p[^>]*>~i', '', $out);
+
+        // Normalize newlines -> <br>
+        $out = preg_replace("/\r\n|\r/", "\n", $out);
+        $out = preg_replace("/\n{2,}/", "<br><br>", $out);
+        $out = str_replace("\n", "<br>", $out);
+
+        return $out;
+    }
+
+    // ------- Template placeholder renderer -------
+    private function render($tpl, $data) {
+        return preg_replace_callback('/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/', function($m) use ($data){
+            $k = $m[1];
+            return isset($data[$k]) ? esc_html($data[$k]) : $m[0];
+        }, $tpl);
+    }
+}
+
+new KVT_Pipeline_Mailer();

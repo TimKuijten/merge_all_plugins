@@ -8,6 +8,7 @@ Author: Tim Kuijten - Kovacic Executive Talent Research
 
 if (!defined('ABSPATH')) exit;
 
+require_once __DIR__ . '/pipeline-mailer.php';
 class Kovacic_Pipeline_Visualizer {
     const CPT           = 'kvt_candidate';
     const TAX_CLIENT    = 'kvt_client';
@@ -6843,3 +6844,4 @@ JS;
 
 register_activation_hook(__FILE__, ['Kovacic_Pipeline_Visualizer', 'activate']);
 new Kovacic_Pipeline_Visualizer();
+new KVT_Pipeline_Mailer();
