@@ -2899,7 +2899,9 @@ function kvtInit(){
       });
       const json = await resp.json();
       if(json && json.success && json.data){
-        if(json.data.suggestions){
+        if(json.data.suggestions_html){
+          mitContent.innerHTML = json.data.suggestions_html;
+        } else if(json.data.suggestions){
           mitContent.textContent = json.data.suggestions;
         } else {
           mitContent.textContent = 'No hay sugerencias disponibles.';
@@ -5973,7 +5975,7 @@ JS;
                     ['role' => 'user', 'content' => $prompt],
                 ],
             ]),
-            'timeout' => 30,
+            'timeout' => 0,
         ]);
         $text = '';
         if (!is_wp_error($resp)) {
@@ -5989,7 +5991,23 @@ JS;
             $err = $resp->get_error_message();
             $text = sprintf(__('No se pudo conectar con OpenAI: %s', 'kovacic'), $err);
         }
-        wp_send_json_success(['suggestions' => $text, 'news' => $news, 'history' => $hist['messages']]);
+        $html = '';
+        if ($text) {
+            $parts = array_filter(array_map('trim', preg_split('/\n+/', $text)));
+            if ($parts) {
+                $items = '';
+                foreach ($parts as $p) {
+                    $items .= '<li>' . esc_html($p) . '</li>';
+                }
+                $html = '<ul>' . $items . '</ul>';
+            }
+        }
+        wp_send_json_success([
+            'suggestions'       => $text,
+            'suggestions_html'  => wp_kses_post($html),
+            'news'              => $news,
+            'history'           => $hist['messages'],
+        ]);
     }
 
     public function ajax_mit_chat() {
@@ -6017,7 +6035,7 @@ JS;
                 'model' => $model,
                 'messages' => $api_messages,
             ]),
-            'timeout' => 30,
+            'timeout' => 0,
         ]);
         if (is_wp_error($resp)) {
             wp_send_json_error(['msg' => $resp->get_error_message()], 500);
@@ -6053,7 +6071,7 @@ JS;
             if(!bulb || !box || !chat || !input || !send) return;
             let history = [];
             try{ history = JSON.parse(sessionStorage.getItem('kvtMitHistory')||'[]'); history.forEach(m=>append(m.role,m.content)); }catch(e){ history=[]; }
-            function append(role,text){ const div=document.createElement('div'); div.className='k-mit-msg '+role; div.textContent=text; chat.appendChild(div); chat.scrollTop=chat.scrollHeight; }
+            function append(role,text,isHtml=false){ const div=document.createElement('div'); div.className='k-mit-msg '+role; if(isHtml){div.innerHTML=text;}else{div.textContent=text;} chat.appendChild(div); chat.scrollTop=chat.scrollHeight; }
             function save(){ sessionStorage.setItem('kvtMitHistory', JSON.stringify(history)); }
             bulb.addEventListener('click', ()=>{ box.style.display = box.style.display === 'none' ? 'block' : 'none'; });
             fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:KVT_MIT_NONCE})}).then(r=>r.json()).then(resp=>{
@@ -6061,10 +6079,13 @@ JS;
                     if(resp.data.history){
                         history = resp.data.history;
                         chat.innerHTML='';
-                        history.forEach(m=>append(m.role,m.content));
+                        history.forEach((m,i)=>{
+                            const useHtml = i===history.length-1 && m.role==='assistant' && resp.data.suggestions_html;
+                            append(m.role, useHtml ? resp.data.suggestions_html : m.content, useHtml);
+                        });
                         save();
                     }
-                    if(resp.data.suggestions){ bulb.style.color='#f1c40f'; }
+                    if(resp.data.suggestions_html){ bulb.style.color='#f1c40f'; box.style.display='block'; }
                 }
             });
             send.addEventListener('click', async ()=>{
@@ -6078,11 +6099,12 @@ JS;
                     const res=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_chat', nonce:KVT_MIT_NONCE, message:msg})});
                     const j=await res.json();
                     if(j.success && j.data && j.data.reply){
-                        append('assistant', j.data.reply);
+                        const html = j.data.reply.replace(/\n/g,'<br>');
+                        append('assistant', html, true);
                         history.push({role:'assistant',content:j.data.reply});
                         save();
                     }
-                }catch(e){}
+                }catch(e){ append('assistant','Error de conexión'); }
             });
         })();
         </script>
