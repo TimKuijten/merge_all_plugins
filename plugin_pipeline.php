@@ -122,6 +122,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_mit_suggestions',      [$this, 'ajax_mit_suggestions']);
         add_action('wp_ajax_kvt_send_email',           [$this, 'ajax_send_email']);
         add_action('wp_ajax_nopriv_kvt_send_email',    [$this, 'ajax_send_email']);
+        add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
@@ -1340,6 +1341,7 @@ JS;
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
                 <a href="#" data-view="boards" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
+                <a href="#" data-view="email" id="kvt_nav_email"><span class="dashicons dashicons-email"></span> E-mail</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
             </nav>
@@ -1530,6 +1532,36 @@ JS;
                     <?php endif; ?>
                     </tbody>
                   </table>
+                </div>
+                <div id="kvt_email_view" style="display:none;">
+                  <div class="kvt-filter-field">
+                    <label for="kvt_email_client">Cliente</label>
+                    <select id="kvt_email_client">
+                      <option value="">— Todos —</option>
+                      <?php foreach ($clients as $c): ?>
+                        <option value="<?php echo esc_attr($c->term_id); ?>"><?php echo esc_html($c->name); ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <div class="kvt-filter-field">
+                    <label for="kvt_email_process">Proceso</label>
+                    <select id="kvt_email_process">
+                      <option value="">— Todos —</option>
+                      <?php foreach ($processes as $t): ?>
+                        <option value="<?php echo esc_attr($t->term_id); ?>"><?php echo esc_html($t->name); ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <textarea id="kvt_email_prompt" rows="3" class="kvt-textarea" placeholder="Describe el correo para la IA"></textarea>
+                  <button type="button" class="kvt-btn" id="kvt_email_generate">Generar con IA</button>
+                  <input type="text" id="kvt_email_subject" class="kvt-input" placeholder="Asunto">
+                  <textarea id="kvt_email_body" class="kvt-textarea" rows="8" placeholder="Mensaje con {{placeholders}}"></textarea>
+                  <div class="kvt-filter-field">
+                    <input type="text" id="kvt_email_from_name" class="kvt-input" placeholder="Nombre remitente">
+                    <input type="email" id="kvt_email_from_email" class="kvt-input" placeholder="Email remitente">
+                  </div>
+                  <button type="button" class="kvt-btn" id="kvt_email_send">Enviar</button>
+                  <div id="kvt_email_status"></div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
                 <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
@@ -2316,6 +2348,17 @@ function kvtInit(){
   const keywordBoard = el('#kvt_keyword_view');
   const aiBoard = el('#kvt_ai_view');
   const boardsView = el('#kvt_boards_view');
+  const emailView = el('#kvt_email_view');
+  const emailClient = el('#kvt_email_client');
+  const emailProcess = el('#kvt_email_process');
+  const emailPrompt = el('#kvt_email_prompt');
+  const emailGenerate = el('#kvt_email_generate');
+  const emailSubject = el('#kvt_email_subject');
+  const emailBody = el('#kvt_email_body');
+  const emailFromName = el('#kvt_email_from_name');
+  const emailFromEmail = el('#kvt_email_from_email');
+  const emailSend = el('#kvt_email_send');
+  const emailStatus = el('#kvt_email_status');
   const mitContent = el('#kvt_mit_content');
   const mitNews = el('#kvt_mit_news');
   const activityWrap = el('#kvt_activity');
@@ -2402,6 +2445,7 @@ function kvtInit(){
     if(keywordBoard) keywordBoard.style.display='none';
     if(aiBoard) aiBoard.style.display='none';
     if(boardsView) boardsView.style.display='none';
+    if(emailView) emailView.style.display='none';
     if(widgetsWrap) widgetsWrap.style.display='flex';
     if(view==='ats'){
       filtersBar.style.display='flex';
@@ -2492,6 +2536,18 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(boardsView) boardsView.style.display='block';
+    } else if(view==='email'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(overview) overview.style.display='none';
+      if(atsBar) atsBar.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(boardBase) boardBase.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(emailView) emailView.style.display='block';
     } else {
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -4779,6 +4835,33 @@ function kvtInit(){
     boardProcInfo && boardProcInfo.addEventListener('click', handleInlineEdit);
     infoBody && infoBody.addEventListener('click', handleInlineEdit);
 
+    emailGenerate && emailGenerate.addEventListener('click', async ()=>{
+      const prompt=(emailPrompt.value||'').trim();
+      if(!prompt){ alert('Escribe un prompt.'); return; }
+      const res = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_generate_email', _ajax_nonce:KVT_NONCE, prompt})});
+      let json; try{ json = await res.json(); }catch(e){ alert('Error de servidor'); return; }
+      if(json.success){ emailSubject.value=json.data.subject_template||''; emailBody.value=json.data.body_template||''; } else { alert('No se pudo generar'); }
+    });
+
+    emailSend && emailSend.addEventListener('click', async ()=>{
+      const subject=(emailSubject.value||'').trim();
+      const body=(emailBody.value||'').trim();
+      if(!subject || !body){ alert('Completa asunto y cuerpo.'); return; }
+      const params=new URLSearchParams({action:'kvt_get_candidates', _ajax_nonce:KVT_NONCE, all:1});
+      if(emailClient && emailClient.value) params.set('client', emailClient.value);
+      if(emailProcess && emailProcess.value) params.set('process', emailProcess.value);
+      const res = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()});
+      let data; try{ data = await res.json(); }catch(e){ alert('Error obteniendo candidatos'); return; }
+      if(!data.success){ alert('Error obteniendo candidatos'); return; }
+      const recipients=(data.data.items||[]).map(it=>({email:it.meta.email||'', first_name:it.meta.first_name||'', surname:it.meta.last_name||'', country:it.meta.country||'', city:it.meta.city||'', role:it.meta.process||''})).filter(r=>r.email);
+      if(!recipients.length){ alert('No hay candidatos con email.'); return; }
+      if(!confirm(`¿Enviar a ${recipients.length} contactos?`)) return;
+      const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim()};
+      const res2 = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)})});
+      let out; try{ out=await res2.json(); }catch(e){ emailStatus.textContent='Error'; return; }
+      if(out.success){ emailStatus.textContent=`Enviados: ${out.data.sent}`; } else { emailStatus.textContent='Error enviando'; }
+    });
+
     // Easier drag & drop: allow drop anywhere in column and highlight
   els('.kvt-col').forEach(col=>{
     col.addEventListener('dragover', e=>{ e.preventDefault(); col.classList.add('dragover'); });
@@ -6760,6 +6843,68 @@ JS;
           }
 
             wp_send_json_success(['id'=>$id]);
+        }
+
+        public function ajax_generate_email() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['error' => 'Unauthorized'], 403);
+
+            $prompt = isset($_POST['prompt']) ? wp_unslash($_POST['prompt']) : '';
+            if (!$prompt) wp_send_json_error(['error' => 'Missing prompt'], 400);
+
+            $api_key = get_option(self::OPT_OPENAI_KEY, '');
+            $model   = 'gpt-4o-mini';
+
+            $fallback = [
+                'subject'   => '{{first_name}}, nota rápida para el proceso {{role}} en {{city}}',
+                'body_html' => 'Hola {{first_name}},<br><br>' . esc_html($prompt) . '<br><br>Saludos,<br>{{sender}}',
+            ];
+
+            if (!$api_key) {
+                wp_send_json_success(['subject_template' => $fallback['subject'], 'body_template' => $fallback['body_html']]);
+            }
+
+            $sys = "Eres un redactor de emails de Kovacic Executive Talent Research. Devuelve un JSON con las claves 'subject' y 'body_html'. "
+                 . "Debes usar SIEMPRE estos placeholders cuando corresponda y NO inventar otros: "
+                 . "Nombre = {{first_name}}, Apellido = {{surname}}, País = {{country}}, Ciudad = {{city}}, Cliente = {{client}}, Proceso = {{role}}, Estado = {{status}}, Tablero = {{board}}, El remitente = {{sender}}. "
+                 . "El cuerpo debe ser HTML y usar saltos de línea <br> (NO uses etiquetas <p>). Y Nunca uses '—'.";
+
+            $req = [
+                'model' => $model,
+                'temperature' => 0.7,
+                'response_format' => ['type' => 'json_object'],
+                'messages' => [
+                    ['role' => 'system', 'content' => $sys],
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+            ];
+
+            $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $api_key,
+                    'Content-Type'  => 'application/json',
+                ],
+                'body' => wp_json_encode($req),
+                'timeout' => 30,
+            ]);
+
+            if (is_wp_error($resp)) {
+                wp_send_json_success(['subject_template' => $fallback['subject'], 'body_template' => $fallback['body_html']]);
+            }
+
+            $code = wp_remote_retrieve_response_code($resp);
+            $body = wp_remote_retrieve_body($resp);
+            $json = json_decode($body, true);
+
+            if ($code !== 200 || empty($json['choices'][0]['message']['content'])) {
+                wp_send_json_success(['subject_template' => $fallback['subject'], 'body_template' => $fallback['body_html']]);
+            }
+
+            $content = json_decode($json['choices'][0]['message']['content'], true);
+            $subject = isset($content['subject']) ? (string) $content['subject'] : $fallback['subject'];
+            $html    = isset($content['body_html']) ? (string) $content['body_html'] : $fallback['body_html'];
+
+            wp_send_json_success(['subject_template' => $subject, 'body_template' => $html]);
         }
 
         public function ajax_send_email() {
