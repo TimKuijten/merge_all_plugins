@@ -301,7 +301,8 @@ function mergeContacts(newOnes){
         city: n.city || cur.city || '',
         client: n.client || cur.client || '',
         role: n.role || cur.role || '',
-        status: n.status || cur.status || ''
+        status: n.status || cur.status || '',
+        board: n.board || cur.board || ''
       };
       map.set(k, merged);
       skipped++;
@@ -704,6 +705,7 @@ function ktDownloadEMLZip(){
                     <strong>Cliente</strong> = <code>{{client}}</code>,
                     <strong>Proceso</strong> = <code>{{role}}</code>,
                     <strong>Estado</strong> = <code>{{status}}</code>,
+                    <strong>Tablero</strong> = <code>{{board}}</code>,
                     <strong>El remitente</strong> = <code>{{sender}}</code>.
                 </p>
                 <p class="kt-muted" style="margin-top:6px">
@@ -736,7 +738,7 @@ function ktDownloadEMLZip(){
                         <input id="ktFromName" class="kt-input" type="text" value="<?php echo esc_attr($from_name_default); ?>" />
                     </div>
                 </div>
-                <p class="kt-muted" style="margin-top:6px">Variables: <code>{{first_name}}</code>, <code>{{surname}}</code>, <code>{{country}}</code>, <code>{{city}}</code>, <code>{{role}}</code> (proceso), <code>{{sender}}</code></p>
+                <p class="kt-muted" style="margin-top:6px">Variables: <code>{{first_name}}</code>, <code>{{surname}}</code>, <code>{{country}}</code>, <code>{{city}}</code>, <code>{{role}}</code> (proceso), <code>{{board}}</code>, <code>{{sender}}</code></p>
             </div>
 
             <div class="kt-grid kt-cols-3">
@@ -902,7 +904,7 @@ function ktDownloadEMLZip(){
 
         $sys = "Eres un redactor de emails de Kovacic Executive Talent Research. Devuelve un JSON con las claves 'subject' y 'body_html'. ".
                "Debes usar SIEMPRE estos placeholders cuando corresponda y NO inventar otros: ".
-               "Nombre = {{first_name}}, Apellido = {{surname}}, País = {{country}}, Ciudad = {{city}}, Cliente = {{client}}, Proceso = {{role}}, Estado = {{status}}, El remitente = {{sender}}. ".
+               "Nombre = {{first_name}}, Apellido = {{surname}}, País = {{country}}, Ciudad = {{city}}, Cliente = {{client}}, Proceso = {{role}}, Estado = {{status}}, Tablero = {{board}}, El remitente = {{sender}}. ".
                "El cuerpo debe ser HTML y usar saltos de línea <br> (NO uses etiquetas <p>). Y Nunca uses '—'.";
 
         $req = [
@@ -1044,9 +1046,10 @@ function ktDownloadEMLZip(){
             $country    = isset($r['country']) ? sanitize_text_field($r['country']) : '';
             $city       = isset($r['city']) ? sanitize_text_field($r['city']) : '';
             $role       = isset($r['role']) ? sanitize_text_field($r['role']) : '';
+            $board      = isset($r['board']) ? esc_url_raw($r['board']) : '';
             if (!$email) continue;
 
-            $data = compact('first_name','surname','country','city','role');
+            $data = compact('first_name','surname','country','city','role','board');
             $subject = $this->render($subject_tpl, $data);
 
             $body_raw = $this->render($body_tpl, array_merge($data, [
@@ -1129,8 +1132,9 @@ function ktDownloadEMLZip(){
             $country    = isset($r['country']) ? sanitize_text_field($r['country']) : '';
             $city       = isset($r['city']) ? sanitize_text_field($r['city']) : '';
             $role       = isset($r['role']) ? sanitize_text_field($r['role']) : '';
+            $board      = isset($r['board']) ? esc_url_raw($r['board']) : '';
 
-            $data = compact('first_name','surname','country','city','role');
+            $data = compact('first_name','surname','country','city','role','board');
             $subject   = $this->render($subject_tpl, $data);
             $body_raw  = $this->render($body_tpl, array_merge($data, ['sender' => $from_name ?: $from_email ?: get_bloginfo('name')]));
 
@@ -1176,6 +1180,16 @@ function ktDownloadEMLZip(){
             'no_found_rows'  => true,
         ]);
 
+        $links = get_option('kvt_candidate_links', []);
+        $slug_map = [];
+        if (is_array($links)) {
+            foreach ($links as $slug => $cfg) {
+                if (!empty($cfg['candidate'])) {
+                    $slug_map[(int) $cfg['candidate']] = $slug;
+                }
+            }
+        }
+
         $rows = [];
         foreach ($q->posts as $p) {
             $email = sanitize_email(get_post_meta($p->ID, 'kvt_email', true));
@@ -1217,6 +1231,11 @@ function ktDownloadEMLZip(){
 
             $status = sanitize_text_field(get_post_meta($p->ID, 'kvt_status', true));
 
+            $board = '';
+            if (isset($slug_map[$p->ID])) {
+                $board = esc_url( home_url('/view-board/' . $slug_map[$p->ID] . '/') );
+            }
+
             $rows[] = [
                 'email'      => $email,
                 'first_name' => $first,
@@ -1226,6 +1245,7 @@ function ktDownloadEMLZip(){
                 'client'     => $client,
                 'role'       => $role,
                 'status'     => $status,
+                'board'      => $board,
             ];
         }
 
