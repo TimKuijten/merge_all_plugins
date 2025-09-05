@@ -6063,22 +6063,26 @@ JS;
             const input = document.getElementById('k-mit-input');
             const send = document.getElementById('k-mit-send');
             if(!bulb || !box || !chat || !input || !send) return;
+            const ajaxUrl = window.KVT_AJAX || window.ajaxurl || '/wp-admin/admin-ajax.php';
+            const nonce = typeof KVT_MIT_NONCE !== 'undefined' ? KVT_MIT_NONCE : '';
             let history = [];
             try{ history = JSON.parse(sessionStorage.getItem('kvtMitHistory')||'[]'); history.forEach(m=>append(m.role,m.html||m.content, !!m.html)); }catch(e){ history=[]; }
             function append(role,text,isHtml=false){ const div=document.createElement('div'); div.className='k-mit-msg '+role; if(isHtml){div.innerHTML=text;}else{div.textContent=text;} chat.appendChild(div); chat.scrollTop=chat.scrollHeight; }
             function save(){ sessionStorage.setItem('kvtMitHistory', JSON.stringify(history)); }
             bulb.addEventListener('click', ()=>{ box.style.display = box.style.display === 'none' ? 'block' : 'none'; });
-            fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:KVT_MIT_NONCE})}).then(r=>r.json()).then(resp=>{
-                if(resp && resp.success && resp.data){
-                    if(resp.data.history){
-                        history = resp.data.history;
-                        chat.innerHTML='';
-                        history.forEach(m=>{ append(m.role, m.html||m.content, !!m.html); });
-                        save();
+            if(ajaxUrl){
+                fetch(ajaxUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:nonce})}).then(r=>r.json()).then(resp=>{
+                    if(resp && resp.success && resp.data){
+                        if(resp.data.history){
+                            history = resp.data.history;
+                            chat.innerHTML='';
+                            history.forEach(m=>{ append(m.role, m.html||m.content, !!m.html); });
+                            save();
+                        }
+                        if(resp.data.suggestions_html){ bulb.style.color='#f1c40f'; box.style.display='block'; }
                     }
-                    if(resp.data.suggestions_html){ bulb.style.color='#f1c40f'; box.style.display='block'; }
-                }
-            });
+                });
+            }
             send.addEventListener('click', async ()=>{
                 const msg=(input.value||'').trim();
                 if(!msg) return;
@@ -6086,8 +6090,9 @@ JS;
                 history.push({role:'user',content:msg});
                 save();
                 input.value='';
+                if(!ajaxUrl){ append('assistant','Error de conexión'); return; }
                 try{
-                    const res=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_chat', nonce:KVT_MIT_NONCE, message:msg})});
+                    const res=await fetch(ajaxUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_chat', nonce:nonce, message:msg})});
                     const j=await res.json();
                     if(j.success && j.data && j.data.reply){
                         const html = j.data.reply_html || j.data.reply.replace(/\n/g,'<br>');
