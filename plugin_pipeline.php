@@ -2768,8 +2768,8 @@ function kvtInit(){
   let emailSelected = new Set();
   let emailPageNum = 1;
   let emailPageTotal = 1;
-  if(typeof KVT_TEMPLATES==='undefined' || !Array.isArray(KVT_TEMPLATES)) var KVT_TEMPLATES=[];
-  if(typeof KVT_SENT_EMAILS==='undefined' || !Array.isArray(KVT_SENT_EMAILS)) var KVT_SENT_EMAILS=[];
+  if (typeof KVT_TEMPLATES === 'undefined' || !Array.isArray(KVT_TEMPLATES)) KVT_TEMPLATES = [];
+  if (typeof KVT_SENT_EMAILS === 'undefined' || !Array.isArray(KVT_SENT_EMAILS)) KVT_SENT_EMAILS = [];
 
   function populateTemplateSelect(){
     if(!emailTplSelect) return;
