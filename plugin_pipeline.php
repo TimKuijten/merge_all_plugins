@@ -2549,7 +2549,7 @@ JS;
         .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:750px}
         .kvt-mit{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-top:16px}
         #kvt_mit_chat_log{display:flex;flex-direction:column;gap:4px}
-        #kvt_mit_chat_log p{margin:0;padding:6px 10px;border-radius:8px;max-width:80%}
+        #kvt_mit_chat_log p{margin:0;padding:6px 10px;border-radius:8px;max-width:80%;white-space:pre-wrap;word-break:break-word}
         #kvt_mit_chat_log p.user{align-self:flex-end;background:#e0f2fe;text-align:right}
         #kvt_mit_chat_log p.assistant{align-self:flex-start;background:#f1f5f9}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
@@ -3298,7 +3298,7 @@ function kvtInit(){
     if(!mitChatLog) return;
     const p=document.createElement('p');
     p.className=role;
-    if(role==='assistant') p.innerHTML='<strong>MIT:</strong> '+html;
+    if(role==='assistant') p.innerHTML='<strong>MIT:</strong> '+html.replace(/\n/g,'<br>');
     else p.textContent='Tú: '+html;
     mitChatLog.appendChild(p);
     mitChatLog.scrollTop=mitChatLog.scrollHeight;
