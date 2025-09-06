@@ -1830,10 +1830,6 @@ JS;
                             <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
                             <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                         </form>
-                        <button type="button" class="kvt-btn" id="kvt_assign_search">Asignar a proceso</button>
-                        <button type="button" class="kvt-btn" id="kvt_export_client_board_btn">Exportar Tablero Cliente</button>
-                        <button type="button" class="kvt-btn" id="kvt_export_candidate_board_btn">Exportar Tablero Candidato</button>
-                        <button type="button" class="kvt-btn" id="kvt_refresh_all">Actualizar todo</button>
                         <button type="button" class="kvt-btn kvt-add-candidate" id="kvt_add_candidate_table_btn">Añadir candidato</button>
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
@@ -2908,8 +2904,8 @@ function kvtInit(){
   const tBody = el('#kvt_table_body');
   const searchInput = el('#kvt_search');
   const stageSelect = el('#kvt_stage_filter');
-  const assignSearch = el('#kvt_assign_search');
   const addCandidate = el('#k-add-candidate');
+  const addCandidateTable = el('#kvt_add_candidate_table_btn');
   const boardBase   = el('#kvt_board_base');
   const boardList   = el('#kvt_board_list');
   const boardName   = el('#kvt_board_name');
@@ -3013,9 +3009,6 @@ function kvtInit(){
   const exportAllForm   = el('#kvt_export_all_form');
   const exportAllFormat = el('#kvt_export_all_format');
   const btnShare   = el('#kvt_share_board');
-  const btnExportClientBoard = el('#kvt_export_client_board_btn');
-  const btnExportCandidateBoard = el('#kvt_export_candidate_board_btn');
-  const btnRefreshAll = el('#kvt_refresh_all');
   const shareModal = el('#kvt_share_modal');
   const shareClose = el('#kvt_share_close');
   const shareFieldsWrap = el('#kvt_share_fields');
@@ -3498,6 +3491,7 @@ function kvtInit(){
   const fbText  = el('#kvt_fb_text');
   const fbSave  = el('#kvt_fb_save');
   let fbCandidate = null;
+  let modalSelectMode = false;
 
   const modal      = el('#kvt_modal');
   const modalClose = el('.kvt-modal-close', modal);
@@ -3626,14 +3620,15 @@ function kvtInit(){
   procStatusFilter && procStatusFilter.addEventListener('change', ()=>listProcesses());
   procClientFilter && procClientFilter.addEventListener('change', ()=>listProcesses());
 
-  function openModal(tab='candidates'){
+  function openModal(tab='candidates', select=false){
+    modalSelectMode = select;
     modal.style.display = 'flex';
     if(modalName) modalName.value = '';
     if(modalRole) modalRole.value = '';
     if(modalLoc) modalLoc.value = '';
     switchTab(tab);
   }
-  function closeModal(){ modal.style.display = 'none'; }
+  function closeModal(){ modal.style.display = 'none'; modalSelectMode = false; }
   modalClose && modalClose.addEventListener('click', closeModal);
   modal && modal.addEventListener('click', (e)=>{ if(e.target===modal) closeModal(); });
 
@@ -4402,7 +4397,6 @@ function kvtInit(){
       }
       if(forceSelect) els('.kvt-row-select', tBody).forEach(cb=>cb.checked = true);
     }
-    if(assignSearch) assignSearch.style.display = (showSelect && selProcess && selProcess.value) ? 'inline-block' : 'none';
   }
 
   function renderActivity(rows){
@@ -5116,46 +5110,6 @@ function kvtInit(){
     buildShareOptions();
     if(shareModal) shareModal.style.display='flex';
   });
-  btnExportClientBoard && btnExportClientBoard.addEventListener('click', ()=>{
-    if (!selClient || !selClient.value || !selProcess || !selProcess.value) {
-      alert('Selecciona un cliente y un proceso.');
-      return;
-    }
-    shareMode = 'client';
-    ALLOWED_FIELDS = ['first_name','last_name','email','phone','country','city','cv_url'];
-    ALLOWED_STEPS = ['Long list','Short list','Contactados','Entrevistados','En oferta','Incorporado','Descartados'];
-    ALLOW_COMMENTS = true;
-    buildShareOptions();
-    if(shareModal) shareModal.style.display='flex';
-  });
-  btnExportCandidateBoard && btnExportCandidateBoard.addEventListener('click', ()=>{
-    if (!selClient || !selClient.value || !selProcess || !selProcess.value) {
-      alert('Selecciona un cliente y un proceso.');
-      return;
-    }
-    const ids = Array.from(els('.kvt-row-select:checked', tBody)).map(cb=>cb.value);
-    if(!ids.length){
-      forceSelect = true;
-      refresh();
-      alert('Selecciona candidatos y vuelve a pulsar el botón (puedes usar la casilla superior para seleccionar todos).');
-      return;
-    }
-    selectedCandidateIds = ids.map(id=>parseInt(id,10));
-    selectedCandidateId = selectedCandidateIds[0] || 0;
-    shareMode = 'candidate';
-    ALLOWED_FIELDS = ['first_name','last_name','email','phone','country','city','cv_url'];
-    ALLOWED_STEPS = ['Long list','Short list','Contactados','Entrevistados','En oferta','Incorporado','Descartados'];
-    ALLOW_COMMENTS = true;
-    buildShareOptions();
-    if(shareModal) shareModal.style.display='flex';
-  });
-  btnRefreshAll && btnRefreshAll.addEventListener('click', async ()=>{
-    if(!confirm('¿Actualizar todos los candidatos? Puede tardar.')) return;
-    const res = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_refresh_all', _ajax_nonce:KVT_NONCE})});
-    let j; try{ j=await res.json(); }catch(e){ return; }
-    if(j.success){ alert('Actualización iniciada para '+j.data.count+' candidatos.'); }
-    else { alert(j.data && j.data.msg ? j.data.msg : 'No se pudo iniciar.'); }
-  });
   tablePrev && tablePrev.addEventListener('click', ()=>{ if(currentPage>1){ currentPage--; refresh(); } });
   tableNext && tableNext.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage++; refresh(); } });
   shareClose && shareClose.addEventListener('click', ()=>{ shareModal.style.display='none'; forceSelect=false; selectedCandidateIds=[]; selectedCandidateId=0; EDIT_SLUG=''; });
@@ -5303,6 +5257,7 @@ function kvtInit(){
         const cliSel  = selClient && selClient.value;
         const allowAdd = !!(procSel && (cliSel || getClientIdForProcess(procSel)));
         const filterActive = (ctx.name && ctx.name.value) || (ctx.role && ctx.role.value) || (ctx.loc && ctx.loc.value);
+        const showSelect = modalSelectMode || filterActive;
         let html = items.map(it=>{
           const m = it.meta||{};
           const name = esc((m.first_name||'')+' '+(m.last_name||''));
@@ -5318,11 +5273,11 @@ function kvtInit(){
           const infoLine = '<em>'+infoParts.join(' / ')+'</em>';
           const cv = m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'';
           const firstLineWithCv = firstLine.replace('</a>', '</a>'+cv);
-          const check = filterActive?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" aria-label="Seleccionar"></div>':'';
+          const check = showSelect?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" aria-label="Seleccionar"></div>':'';
           const addBtn = allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'';
           const editBtn = '<button type="button" class="kvt-edit kvt-mini-view kvt-mini-edit dashicons dashicons-edit" data-id="'+it.id+'" data-label="Editar perfil" aria-label="Editar perfil"></button>';
-          return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
-            '<div class="kvt-row'+(filterActive?' with-check':'')+'">'+
+            return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
+            '<div class="kvt-row'+(showSelect?' with-check':'')+'">'+
               check+
               '<div>'+firstLineWithCv+'<br>'+infoLine+'</div>'+
               '<div class="kvt-meta"><button type="button" class="kvt-delete kvt-mini-delete dashicons dashicons-trash" data-id="'+it.id+'" aria-label="Eliminar"></button>'+editBtn+addBtn+'</div>'+
@@ -5357,7 +5312,7 @@ function kvtInit(){
             });
           });
         }
-        if(ctx.assign) ctx.assign.style.display = (filterActive && allowAdd) ? 'inline-flex' : 'none';
+        if(ctx.assign) ctx.assign.style.display = (showSelect && allowAdd) ? 'inline-flex' : 'none';
         els('.kvt-mini-view', ctx.list).forEach(b=>{
           b.addEventListener('click', e=>{
             e.preventDefault();
@@ -5427,23 +5382,9 @@ function kvtInit(){
     Promise.all(ids.map(assignOne)).then(()=>{ alert('Candidatos asignados.'); refresh(); });
   });
   addCandidate && addCandidate.addEventListener('click', ()=>{ openModal('candidates'); });
-  assignSearch && assignSearch.addEventListener('click', ()=>{
-    const ids = Array.from(els('.kvt-row-select:checked', tBody)).map(cb=>cb.value);
-    if(!ids.length){ alert('Seleccione candidatos'); return; }
-    const proc = selProcess && selProcess.value;
-    let cli  = selClient && selClient.value;
-    if(!proc){ alert('Seleccione proceso en el tablero.'); return; }
-    if(!cli) cli = getClientIdForProcess(proc);
-    const assignOne = id => {
-      const p = new URLSearchParams();
-      p.set('action','kvt_assign_candidate');
-      p.set('_ajax_nonce', KVT_NONCE);
-      p.set('candidate_id', id);
-      p.set('process_id', proc);
-      p.set('client_id', cli);
-      return fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()}).then(r=>r.json());
-    };
-    Promise.all(ids.map(assignOne)).then(()=>{ alert('Candidatos asignados.'); refresh(); });
+  addCandidateTable && addCandidateTable.addEventListener('click', ()=>{
+    if(!selProcess || !selProcess.value){ alert('Seleccione proceso en el tablero.'); return; }
+    openModal('candidates', true);
   });
   let mto=null;
   [modalName, modalRole, modalLoc].forEach(inp=>{
