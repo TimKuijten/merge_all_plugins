@@ -140,6 +140,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_generate_roles',       [$this, 'ajax_generate_roles']);
         add_action('wp_ajax_nopriv_kvt_generate_roles',[$this, 'ajax_generate_roles']);
         add_action('wp_ajax_kvt_mit_suggestions',      [$this, 'ajax_mit_suggestions']);
+        add_action('wp_ajax_kvt_mit_chat',             [$this, 'ajax_mit_chat']);
         add_action('wp_ajax_kvt_send_email',           [$this, 'ajax_send_email']);
         add_action('wp_ajax_nopriv_kvt_send_email',    [$this, 'ajax_send_email']);
         add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
@@ -637,10 +638,23 @@ JS;
             $this->cron_mit_report();
             echo '<div class="notice notice-success"><p>Informe MIT enviado.</p></div>';
         }
+        if (isset($_POST['kvt_run_composer']) && check_admin_referer('kvt_run_composer')) {
+            if (function_exists('shell_exec')) {
+                $cmd = 'cd ' . escapeshellarg(__DIR__) . ' && composer install 2>&1';
+                $output = shell_exec($cmd);
+                if ($output !== null) {
+                    echo '<div class="notice notice-success"><pre>' . esc_html($output) . '</pre></div>';
+                } else {
+                    echo '<div class="notice notice-error"><p>No se pudo ejecutar composer.</p></div>';
+                }
+            } else {
+                echo '<div class="notice notice-error"><p>shell_exec deshabilitado; no se puede ejecutar composer.</p></div>';
+            }
+        }
         $statuses = get_option(self::OPT_STATUSES, "");
         $columns  = get_option(self::OPT_COLUMNS, "");
         $openai   = get_option(self::OPT_OPENAI_KEY, "");
-        $openai_model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $openai_model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
         $newskey  = get_option(self::OPT_NEWS_KEY, "");
         $smtp_host = get_option(self::OPT_SMTP_HOST, "");
         $smtp_port = get_option(self::OPT_SMTP_PORT, "");
@@ -680,11 +694,11 @@ JS;
                         <th scope="row"><label for="<?php echo self::OPT_OPENAI_MODEL; ?>">Modelo OpenAI</label></th>
                         <td>
                             <select name="<?php echo self::OPT_OPENAI_MODEL; ?>" id="<?php echo self::OPT_OPENAI_MODEL; ?>">
-                                <?php foreach (['gpt-4.1-mini', 'gpt-5'] as $m): ?>
+                                <?php foreach (['gpt-5', 'gpt-4.1-mini'] as $m): ?>
                                     <option value="<?php echo esc_attr($m); ?>" <?php selected($openai_model, $m); ?>><?php echo esc_html($m); ?></option>
                                 <?php endforeach; ?>
                             </select>
-                            <p class="description">Modelo utilizado por MIT. Por defecto gpt-4.1-mini.</p>
+                            <p class="description">Modelo utilizado por MIT. Por defecto gpt-5.</p>
                         </td>
                     </tr>
                     <tr>
@@ -800,6 +814,10 @@ JS;
             <form method="post">
                 <?php wp_nonce_field('kvt_mit_send_now'); ?>
                 <?php submit_button('Enviar informe ahora', 'secondary', 'kvt_mit_send_now'); ?>
+            </form>
+            <form method="post">
+                <?php wp_nonce_field('kvt_run_composer'); ?>
+                <?php submit_button('Run Composer', 'secondary', 'kvt_run_composer'); ?>
             </form>
         </div>
         <?php
@@ -1731,6 +1749,7 @@ JS;
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
+                <a href="#" data-view="chat"><span class="dashicons dashicons-format-chat"></span> Chat with MIT</a>
             </nav>
             <div class="kvt-content">
             <?php if ($is_client_board || $is_candidate_board): ?>
@@ -2044,6 +2063,14 @@ JS;
                     <h4>Assistente MIT</h4>
                     <p id="kvt_mit_content"></p>
                     <ul id="kvt_mit_news"></ul>
+                </div>
+                <div id="kvt_mit_chat_view" class="kvt-mit" style="display:none;">
+                    <h4>Chat with MIT</h4>
+                    <div id="kvt_mit_chat_log" style="max-height:300px;overflow:auto;"></div>
+                    <div class="kvt-row" style="margin-top:10px;gap:8px;">
+                        <input type="text" id="kvt_mit_chat_input" class="kvt-input" placeholder="Escribe un mensaje">
+                        <button type="button" class="kvt-btn" id="kvt_mit_chat_send">Enviar</button>
+                    </div>
                 </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
@@ -2521,6 +2548,10 @@ JS;
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
         .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:750px}
         .kvt-mit{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-top:16px}
+        #kvt_mit_chat_log{display:flex;flex-direction:column;gap:4px}
+        #kvt_mit_chat_log p{margin:0;padding:6px 10px;border-radius:8px;max-width:80%}
+        #kvt_mit_chat_log p.user{align-self:flex-end;background:#e0f2fe;text-align:right}
+        #kvt_mit_chat_log p.assistant{align-self:flex-start;background:#f1f5f9}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
         .kvt-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
@@ -2934,6 +2965,10 @@ function kvtInit(){
   const sentTbody = el('#kvt_email_sent_tbody');
   const mitContent = el('#kvt_mit_content');
   const mitNews = el('#kvt_mit_news');
+  const mitChatWrap = el('#kvt_mit_chat_view');
+  const mitChatLog = el('#kvt_mit_chat_log');
+  const mitChatInput = el('#kvt_mit_chat_input');
+  const mitChatSend = el('#kvt_mit_chat_send');
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
@@ -3259,11 +3294,40 @@ function kvtInit(){
     }
   }
 
+  function appendChat(role, html){
+    if(!mitChatLog) return;
+    const p=document.createElement('p');
+    p.className=role;
+    if(role==='assistant') p.innerHTML='<strong>MIT:</strong> '+html;
+    else p.textContent='Tú: '+html;
+    mitChatLog.appendChild(p);
+    mitChatLog.scrollTop=mitChatLog.scrollHeight;
+  }
+
+  async function sendMitChat(){
+    if(!mitChatInput) return;
+    const msg=mitChatInput.value.trim();
+    if(!msg) return;
+    appendChat('user', msg);
+    mitChatInput.value='';
+    try {
+      const resp = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_chat', nonce:KVT_MIT_NONCE, message:msg})});
+      const json = await resp.json();
+      if(json && json.success && json.data && json.data.reply){
+        appendChat('assistant', json.data.reply);
+      }
+    } catch(e){}
+  }
+
+  mitChatSend && mitChatSend.addEventListener('click', sendMitChat);
+  mitChatInput && mitChatInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); sendMitChat(); }});
+
   function showView(view){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
     if(activeWrap) activeWrap.style.display='none';
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
+    if(mitChatWrap) mitChatWrap.style.display='none';
     if(keywordBoard) keywordBoard.style.display='none';
     if(aiBoard) aiBoard.style.display='none';
     if(boardsView) boardsView.style.display='none';
@@ -3322,6 +3386,15 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(mitWrap) { mitWrap.style.display='block'; loadMit(); }
+    } else if(view==='chat'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(mitChatWrap) mitChatWrap.style.display='block';
     } else if(view==='ai'){
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -6330,6 +6403,7 @@ JS;
             'hide_empty' => false,
             'number'     => 0,
         ]);
+        $emails = array_reverse((array) get_option(self::OPT_EMAIL_LOG, []));
 
         $notes      = [];
         $cand_lines = [];
@@ -6382,6 +6456,15 @@ JS;
             if ($desc) $notes[] = $pr->name . ': ' . wp_strip_all_tags($desc);
         }
 
+        $email_lines = [];
+        foreach (array_slice($emails, 0, 5) as $em) {
+            $sub = sanitize_text_field($em['subject'] ?? '');
+            $to  = implode(', ', array_map('sanitize_text_field', $em['recipients'] ?? []));
+            $line = $sub;
+            if ($to) $line .= ' → ' . $to;
+            if ($line) $email_lines[] = $line;
+        }
+
         $news_key = get_option(self::OPT_NEWS_KEY, '');
         $news     = [];
         if ($news_key) {
@@ -6416,15 +6499,56 @@ JS;
         if ($news) {
             $summary .= ' Noticias del mercado: ' . implode(' | ', $news) . '.';
         }
+        if ($email_lines) {
+            $summary .= ' Correos recientes: ' . implode('; ', $email_lines) . '.';
+        }
 
         return ['summary' => $summary, 'news' => $news];
+    }
+
+    private function mit_create_excel() {
+        if (!class_exists('\\PhpOffice\\PhpSpreadsheet\\Spreadsheet')) {
+            error_log('mit_create_excel: PhpSpreadsheet not available');
+            return new \WP_Error('missing_phpspreadsheet', __('La librería PhpSpreadsheet no está instalada.', 'kovacic'));
+        }
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet       = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A1', 'Nombre');
+        $sheet->setCellValue('B1', 'Email');
+
+        $cands = get_posts([
+            'post_type'   => self::CPT,
+            'post_status' => 'any',
+            'numberposts' => -1,
+        ]);
+        $row = 2;
+        foreach ($cands as $c) {
+            $sheet->setCellValue('A' . $row, $c->post_title);
+            $email = $this->meta_get_compat($c->ID, 'kvt_email', ['email']);
+            $sheet->setCellValue('B' . $row, $email);
+            $row++;
+        }
+
+        $upload   = wp_upload_dir();
+        $filename = wp_unique_filename($upload['path'], 'mit_export.xlsx');
+        $filepath = trailingslashit($upload['path']) . $filename;
+        $writer   = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        try {
+            $writer->save($filepath);
+        } catch (\Throwable $e) {
+            error_log('mit_create_excel: ' . $e->getMessage());
+            return new \WP_Error('excel_write_failed', __('Error al guardar el Excel: ', 'kovacic') . $e->getMessage());
+        }
+
+        return trailingslashit($upload['url']) . $filename;
     }
 
     public function ajax_mit_suggestions() {
         check_ajax_referer('kvt_mit', 'nonce');
         if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
         $key = get_option(self::OPT_OPENAI_KEY, '');
-        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
         $uid  = get_current_user_id();
         $hist = $this->mit_load_history($uid);
         if (!$key) {
@@ -6436,7 +6560,7 @@ JS;
         $news    = $ctx['news'];
 
         $hist['summary'] = $summary;
-        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente)";
+        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente)";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -6473,7 +6597,100 @@ JS;
     }
 
     public function ajax_mit_chat() {
-        return;
+        check_ajax_referer('kvt_mit', 'nonce');
+        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $msg = isset($_POST['message']) ? sanitize_text_field(wp_unslash($_POST['message'])) : '';
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
+        $uid  = get_current_user_id();
+        if (!$key || !$msg) {
+            wp_send_json_error(['msg' => __('Falta la clave de OpenAI', 'kovacic')]);
+        }
+
+        $hist    = $this->mit_load_history($uid);
+        $ctx     = $this->mit_gather_context();
+        $summary = $ctx['summary'];
+
+        $identity = 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto.';
+
+        // Ensure system identity and summary are always the first entries
+        if (empty($hist['messages']) || ($hist['messages'][0]['role'] ?? '') !== 'system') {
+            array_unshift($hist['messages'], ['role' => 'system', 'content' => $identity]);
+        } else {
+            $hist['messages'][0]['content'] = $identity;
+        }
+        if (!isset($hist['messages'][1]) || ($hist['messages'][1]['role'] ?? '') !== 'system') {
+            array_splice($hist['messages'], 1, 0, [[
+                'role'    => 'system',
+                'content' => $summary,
+            ]]);
+        } else {
+            $hist['messages'][1]['content'] = $summary;
+        }
+
+        $hist['messages'][] = ['role' => 'user', 'content' => $msg];
+
+        $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => wp_json_encode([
+                'model'    => $model,
+                'messages' => $hist['messages'],
+            ]),
+            'timeout' => self::MIT_TIMEOUT,
+        ]);
+
+        $reply    = '';
+        if (!is_wp_error($resp)) {
+            $data  = json_decode(wp_remote_retrieve_body($resp), true);
+            $reply = trim($data['choices'][0]['message']['content'] ?? '');
+        }
+        if ($reply) {
+            // Detect request for Excel generation based on user message
+            if (stripos($msg, 'excel') !== false) {
+                $autoload = __DIR__ . '/vendor/autoload.php';
+                if (file_exists($autoload)) {
+                    require_once $autoload;
+                }
+                $file_result = $this->mit_create_excel();
+                if (is_wp_error($file_result)) {
+                    $reply .= "\n\n" . $file_result->get_error_message();
+                } elseif ($file_result) {
+                    $reply .= "\n\n<a href='" . esc_url($file_result) . "' target='_blank'>" . __('Descargar Excel generado', 'kovacic') . "</a>";
+                } else {
+                    $reply .= "\n\n" . __('No se pudo generar el archivo Excel.', 'kovacic');
+                }
+            }
+
+            $hist['messages'][] = ['role' => 'assistant', 'content' => wp_strip_all_tags($reply), 'html' => $reply];
+            $this->mit_summarize_history($hist, $key, $model);
+
+            // Preserve system identity and context after summarizing
+            if (($hist['messages'][0]['role'] ?? '') !== 'system' || $hist['messages'][0]['content'] !== $identity) {
+                array_unshift($hist['messages'], ['role' => 'system', 'content' => $identity]);
+            } else {
+                $hist['messages'][0]['content'] = $identity;
+            }
+            if (!isset($hist['messages'][1]) || ($hist['messages'][1]['role'] ?? '') !== 'system') {
+                array_splice($hist['messages'], 1, 0, [[
+                    'role'    => 'system',
+                    'content' => $summary,
+                ]]);
+            } else {
+                $hist['messages'][1]['content'] = $summary;
+            }
+
+            $this->mit_save_history($uid, $hist);
+            wp_send_json_success([
+                'reply'   => wp_kses_post($reply),
+                'history' => $hist['messages'],
+                'file'    => $file_url,
+            ]);
+        }
+
+        wp_send_json_error(['msg' => __('Sin respuesta', 'kovacic')]);
     }
 
     public function mit_chat_widget() {
