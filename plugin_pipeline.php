@@ -641,7 +641,7 @@ JS;
         $statuses = get_option(self::OPT_STATUSES, "");
         $columns  = get_option(self::OPT_COLUMNS, "");
         $openai   = get_option(self::OPT_OPENAI_KEY, "");
-        $openai_model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $openai_model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
         $newskey  = get_option(self::OPT_NEWS_KEY, "");
         $smtp_host = get_option(self::OPT_SMTP_HOST, "");
         $smtp_port = get_option(self::OPT_SMTP_PORT, "");
@@ -681,11 +681,11 @@ JS;
                         <th scope="row"><label for="<?php echo self::OPT_OPENAI_MODEL; ?>">Modelo OpenAI</label></th>
                         <td>
                             <select name="<?php echo self::OPT_OPENAI_MODEL; ?>" id="<?php echo self::OPT_OPENAI_MODEL; ?>">
-                                <?php foreach (['gpt-4.1-mini', 'gpt-5'] as $m): ?>
+                                <?php foreach (['gpt-5', 'gpt-4.1-mini'] as $m): ?>
                                     <option value="<?php echo esc_attr($m); ?>" <?php selected($openai_model, $m); ?>><?php echo esc_html($m); ?></option>
                                 <?php endforeach; ?>
                             </select>
-                            <p class="description">Modelo utilizado por MIT. Por defecto gpt-4.1-mini.</p>
+                            <p class="description">Modelo utilizado por MIT. Por defecto gpt-5.</p>
                         </td>
                     </tr>
                     <tr>
@@ -2531,6 +2531,10 @@ JS;
         .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
         .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:750px}
         .kvt-mit{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-top:16px}
+        #kvt_mit_chat_log{display:flex;flex-direction:column;gap:4px}
+        #kvt_mit_chat_log p{margin:0;padding:6px 10px;border-radius:8px;max-width:80%}
+        #kvt_mit_chat_log p.user{align-self:flex-end;background:#e0f2fe;text-align:right}
+        #kvt_mit_chat_log p.assistant{align-self:flex-start;background:#f1f5f9}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
         .kvt-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
@@ -3277,7 +3281,8 @@ function kvtInit(){
     if(!mitChatLog) return;
     const p=document.createElement('p');
     p.className=role;
-    if(role==='assistant') p.innerHTML=html; else p.textContent=html;
+    if(role==='assistant') p.innerHTML='<strong>MIT:</strong> '+html;
+    else p.textContent='Tú: '+html;
     mitChatLog.appendChild(p);
     mitChatLog.scrollTop=mitChatLog.scrollHeight;
   }
@@ -6381,6 +6386,7 @@ JS;
             'hide_empty' => false,
             'number'     => 0,
         ]);
+        $emails = array_reverse((array) get_option(self::OPT_EMAIL_LOG, []));
 
         $notes      = [];
         $cand_lines = [];
@@ -6433,6 +6439,15 @@ JS;
             if ($desc) $notes[] = $pr->name . ': ' . wp_strip_all_tags($desc);
         }
 
+        $email_lines = [];
+        foreach (array_slice($emails, 0, 5) as $em) {
+            $sub = sanitize_text_field($em['subject'] ?? '');
+            $to  = implode(', ', array_map('sanitize_text_field', $em['recipients'] ?? []));
+            $line = $sub;
+            if ($to) $line .= ' → ' . $to;
+            if ($line) $email_lines[] = $line;
+        }
+
         $news_key = get_option(self::OPT_NEWS_KEY, '');
         $news     = [];
         if ($news_key) {
@@ -6467,6 +6482,9 @@ JS;
         if ($news) {
             $summary .= ' Noticias del mercado: ' . implode(' | ', $news) . '.';
         }
+        if ($email_lines) {
+            $summary .= ' Correos recientes: ' . implode('; ', $email_lines) . '.';
+        }
 
         return ['summary' => $summary, 'news' => $news];
     }
@@ -6475,7 +6493,7 @@ JS;
         check_ajax_referer('kvt_mit', 'nonce');
         if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
         $key = get_option(self::OPT_OPENAI_KEY, '');
-        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
         $uid  = get_current_user_id();
         $hist = $this->mit_load_history($uid);
         if (!$key) {
@@ -6487,7 +6505,7 @@ JS;
         $news    = $ctx['news'];
 
         $hist['summary'] = $summary;
-        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente)";
+        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente)";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -6528,7 +6546,7 @@ JS;
         if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
         $msg = isset($_POST['message']) ? sanitize_text_field(wp_unslash($_POST['message'])) : '';
         $key = get_option(self::OPT_OPENAI_KEY, '');
-        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
         $uid  = get_current_user_id();
         if (!$key || !$msg) {
             wp_send_json_error(['msg' => __('Falta la clave de OpenAI', 'kovacic')]);
@@ -6536,6 +6554,7 @@ JS;
 
         $hist = $this->mit_load_history($uid);
         if (empty($hist['messages'])) {
+            $hist['messages'][] = ['role' => 'system', 'content' => 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto.'];
             $ctx = $this->mit_gather_context();
             $summary = $ctx['summary'];
             if ($summary) {
