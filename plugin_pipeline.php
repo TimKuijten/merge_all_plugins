@@ -6489,6 +6489,41 @@ JS;
         return ['summary' => $summary, 'news' => $news];
     }
 
+    private function mit_create_excel() {
+        if (!class_exists('\\PhpOffice\\PhpSpreadsheet\\Spreadsheet')) {
+            if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+                require_once __DIR__ . '/vendor/autoload.php';
+            }
+        }
+        if (!class_exists('\\PhpOffice\\PhpSpreadsheet\\Spreadsheet')) return '';
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet       = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A1', 'Nombre');
+        $sheet->setCellValue('B1', 'Email');
+
+        $cands = get_posts([
+            'post_type'   => self::CPT,
+            'post_status' => 'any',
+            'numberposts' => -1,
+        ]);
+        $row = 2;
+        foreach ($cands as $c) {
+            $sheet->setCellValue('A' . $row, $c->post_title);
+            $email = $this->meta_get_compat($c->ID, 'kvt_email', ['email']);
+            $sheet->setCellValue('B' . $row, $email);
+            $row++;
+        }
+
+        $upload   = wp_upload_dir();
+        $filename = wp_unique_filename($upload['path'], 'mit_export.xlsx');
+        $filepath = trailingslashit($upload['path']) . $filename;
+        $writer   = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save($filepath);
+
+        return trailingslashit($upload['url']) . $filename;
+    }
+
     public function ajax_mit_suggestions() {
         check_ajax_referer('kvt_mit', 'nonce');
         if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
@@ -6552,15 +6587,27 @@ JS;
             wp_send_json_error(['msg' => __('Falta la clave de OpenAI', 'kovacic')]);
         }
 
-        $hist = $this->mit_load_history($uid);
-        if (empty($hist['messages'])) {
-            $hist['messages'][] = ['role' => 'system', 'content' => 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto.'];
-            $ctx = $this->mit_gather_context();
-            $summary = $ctx['summary'];
-            if ($summary) {
-                $hist['messages'][] = ['role' => 'system', 'content' => $summary];
-            }
+        $hist    = $this->mit_load_history($uid);
+        $ctx     = $this->mit_gather_context();
+        $summary = $ctx['summary'];
+
+        $identity = 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto.';
+
+        // Ensure system identity and summary are always the first entries
+        if (empty($hist['messages']) || ($hist['messages'][0]['role'] ?? '') !== 'system') {
+            array_unshift($hist['messages'], ['role' => 'system', 'content' => $identity]);
+        } else {
+            $hist['messages'][0]['content'] = $identity;
         }
+        if (!isset($hist['messages'][1]) || ($hist['messages'][1]['role'] ?? '') !== 'system') {
+            array_splice($hist['messages'], 1, 0, [[
+                'role'    => 'system',
+                'content' => $summary,
+            ]]);
+        } else {
+            $hist['messages'][1]['content'] = $summary;
+        }
+
         $hist['messages'][] = ['role' => 'user', 'content' => $msg];
 
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
@@ -6575,16 +6622,47 @@ JS;
             'timeout' => self::MIT_TIMEOUT,
         ]);
 
-        $reply = '';
+        $reply    = '';
+        $file_url = '';
         if (!is_wp_error($resp)) {
             $data  = json_decode(wp_remote_retrieve_body($resp), true);
             $reply = trim($data['choices'][0]['message']['content'] ?? '');
         }
         if ($reply) {
+            // Detect request for Excel generation based on user message
+            if (stripos($msg, 'excel') !== false) {
+                $file_url = $this->mit_create_excel();
+                if ($file_url) {
+                    $reply .= "\n\n<a href='" . esc_url($file_url) . "' target='_blank'>" . __('Descargar Excel generado', 'kovacic') . "</a>";
+                } else {
+                    $reply .= "\n\n" . __('No se pudo generar el archivo Excel.', 'kovacic');
+                }
+            }
+
             $hist['messages'][] = ['role' => 'assistant', 'content' => wp_strip_all_tags($reply), 'html' => $reply];
             $this->mit_summarize_history($hist, $key, $model);
+
+            // Preserve system identity and context after summarizing
+            if (($hist['messages'][0]['role'] ?? '') !== 'system' || $hist['messages'][0]['content'] !== $identity) {
+                array_unshift($hist['messages'], ['role' => 'system', 'content' => $identity]);
+            } else {
+                $hist['messages'][0]['content'] = $identity;
+            }
+            if (!isset($hist['messages'][1]) || ($hist['messages'][1]['role'] ?? '') !== 'system') {
+                array_splice($hist['messages'], 1, 0, [[
+                    'role'    => 'system',
+                    'content' => $summary,
+                ]]);
+            } else {
+                $hist['messages'][1]['content'] = $summary;
+            }
+
             $this->mit_save_history($uid, $hist);
-            wp_send_json_success(['reply' => wp_kses_post($reply), 'history' => $hist['messages']]);
+            wp_send_json_success([
+                'reply'   => wp_kses_post($reply),
+                'history' => $hist['messages'],
+                'file'    => $file_url,
+            ]);
         }
 
         wp_send_json_error(['msg' => __('Sin respuesta', 'kovacic')]);
