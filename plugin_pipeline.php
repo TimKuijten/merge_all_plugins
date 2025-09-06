@@ -140,6 +140,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_generate_roles',       [$this, 'ajax_generate_roles']);
         add_action('wp_ajax_nopriv_kvt_generate_roles',[$this, 'ajax_generate_roles']);
         add_action('wp_ajax_kvt_mit_suggestions',      [$this, 'ajax_mit_suggestions']);
+        add_action('wp_ajax_kvt_mit_chat',             [$this, 'ajax_mit_chat']);
         add_action('wp_ajax_kvt_send_email',           [$this, 'ajax_send_email']);
         add_action('wp_ajax_nopriv_kvt_send_email',    [$this, 'ajax_send_email']);
         add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
@@ -1731,6 +1732,7 @@ JS;
                 <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
                 <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
                 <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
+                <a href="#" data-view="chat"><span class="dashicons dashicons-format-chat"></span> Chat with MIT</a>
             </nav>
             <div class="kvt-content">
             <?php if ($is_client_board || $is_candidate_board): ?>
@@ -2044,6 +2046,14 @@ JS;
                     <h4>Assistente MIT</h4>
                     <p id="kvt_mit_content"></p>
                     <ul id="kvt_mit_news"></ul>
+                </div>
+                <div id="kvt_mit_chat_view" class="kvt-mit" style="display:none;">
+                    <h4>Chat with MIT</h4>
+                    <div id="kvt_mit_chat_log" style="max-height:300px;overflow:auto;"></div>
+                    <div class="kvt-row" style="margin-top:10px;gap:8px;">
+                        <input type="text" id="kvt_mit_chat_input" class="kvt-input" placeholder="Escribe un mensaje">
+                        <button type="button" class="kvt-btn" id="kvt_mit_chat_send">Enviar</button>
+                    </div>
                 </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
@@ -2934,6 +2944,10 @@ function kvtInit(){
   const sentTbody = el('#kvt_email_sent_tbody');
   const mitContent = el('#kvt_mit_content');
   const mitNews = el('#kvt_mit_news');
+  const mitChatWrap = el('#kvt_mit_chat_view');
+  const mitChatLog = el('#kvt_mit_chat_log');
+  const mitChatInput = el('#kvt_mit_chat_input');
+  const mitChatSend = el('#kvt_mit_chat_send');
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
@@ -3259,11 +3273,39 @@ function kvtInit(){
     }
   }
 
+  function appendChat(role, html){
+    if(!mitChatLog) return;
+    const p=document.createElement('p');
+    p.className=role;
+    if(role==='assistant') p.innerHTML=html; else p.textContent=html;
+    mitChatLog.appendChild(p);
+    mitChatLog.scrollTop=mitChatLog.scrollHeight;
+  }
+
+  async function sendMitChat(){
+    if(!mitChatInput) return;
+    const msg=mitChatInput.value.trim();
+    if(!msg) return;
+    appendChat('user', msg);
+    mitChatInput.value='';
+    try {
+      const resp = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_chat', nonce:KVT_MIT_NONCE, message:msg})});
+      const json = await resp.json();
+      if(json && json.success && json.data && json.data.reply){
+        appendChat('assistant', json.data.reply);
+      }
+    } catch(e){}
+  }
+
+  mitChatSend && mitChatSend.addEventListener('click', sendMitChat);
+  mitChatInput && mitChatInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); sendMitChat(); }});
+
   function showView(view){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
     if(activeWrap) activeWrap.style.display='none';
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
+    if(mitChatWrap) mitChatWrap.style.display='none';
     if(keywordBoard) keywordBoard.style.display='none';
     if(aiBoard) aiBoard.style.display='none';
     if(boardsView) boardsView.style.display='none';
@@ -3322,6 +3364,15 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(mitWrap) { mitWrap.style.display='block'; loadMit(); }
+    } else if(view==='chat'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(mitChatWrap) mitChatWrap.style.display='block';
     } else if(view==='ai'){
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -6473,7 +6524,51 @@ JS;
     }
 
     public function ajax_mit_chat() {
-        return;
+        check_ajax_referer('kvt_mit', 'nonce');
+        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $msg = isset($_POST['message']) ? sanitize_text_field(wp_unslash($_POST['message'])) : '';
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $uid  = get_current_user_id();
+        if (!$key || !$msg) {
+            wp_send_json_error(['msg' => __('Falta la clave de OpenAI', 'kovacic')]);
+        }
+
+        $hist = $this->mit_load_history($uid);
+        if (empty($hist['messages'])) {
+            $ctx = $this->mit_gather_context();
+            $summary = $ctx['summary'];
+            if ($summary) {
+                $hist['messages'][] = ['role' => 'system', 'content' => $summary];
+            }
+        }
+        $hist['messages'][] = ['role' => 'user', 'content' => $msg];
+
+        $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => wp_json_encode([
+                'model'    => $model,
+                'messages' => $hist['messages'],
+            ]),
+            'timeout' => self::MIT_TIMEOUT,
+        ]);
+
+        $reply = '';
+        if (!is_wp_error($resp)) {
+            $data  = json_decode(wp_remote_retrieve_body($resp), true);
+            $reply = trim($data['choices'][0]['message']['content'] ?? '');
+        }
+        if ($reply) {
+            $hist['messages'][] = ['role' => 'assistant', 'content' => wp_strip_all_tags($reply), 'html' => $reply];
+            $this->mit_summarize_history($hist, $key, $model);
+            $this->mit_save_history($uid, $hist);
+            wp_send_json_success(['reply' => wp_kses_post($reply), 'history' => $hist['messages']]);
+        }
+
+        wp_send_json_error(['msg' => __('Sin respuesta', 'kovacic')]);
     }
 
     public function mit_chat_widget() {
