@@ -1,0 +1,7 @@
+{
+    "name": "kovacic/pipeline",
+    "description": "Kovacic pipeline",
+    "require": {
+        "phpoffice/phpspreadsheet": "^1.29"
+    }
+}

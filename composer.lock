@@ -1,0 +1,36 @@
+{
+    "content-hash": "placeholder",
+    "packages": [
+        {
+            "name": "phpoffice/phpspreadsheet",
+            "version": "1.29.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/PHPOffice/PhpSpreadsheet.git",
+                "reference": "1.29.0"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/PHPOffice/PhpSpreadsheet/zipball/1.29.0",
+                "reference": "1.29.0",
+                "shasum": ""
+            },
+            "require": {},
+            "type": "library",
+            "autoload": {
+                "psr-4": {"PhpOffice\\\\PhpSpreadsheet\\\\": "src/PhpSpreadsheet/"}
+            },
+            "license": ["MIT"],
+            "description": "PHPSpreadsheet"
+        }
+    ],
+    "packages-dev": [],
+    "aliases": [],
+    "minimum-stability": "stable",
+    "stability-flags": [],
+    "prefer-stable": false,
+    "prefer-lowest": false,
+    "platform": [],
+    "platform-dev": [],
+    "plugin-api-version": "2.6.0"
+}
