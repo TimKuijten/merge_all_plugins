@@ -30,6 +30,8 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
     const OPT_MIT_TIME = 'kvt_mit_time';
     const OPT_MIT_RECIPIENTS = 'kvt_mit_recipients';
+    const OPT_O365_TENANT = 'kvt_o365_tenant';
+    const OPT_O365_CLIENT = 'kvt_o365_client';
     const CPT_EMAIL_TEMPLATE = 'kvt_email_tpl';
     const MIT_HISTORY_LIMIT = 20;
     const MIT_TIMEOUT      = 60;
@@ -143,6 +145,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_delete_template',      [$this, 'ajax_delete_template']);
         add_action('wp_ajax_kvt_delete_board',        [$this, 'ajax_delete_board']);
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
+        add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
+        add_action('wp_ajax_nopriv_kvt_get_outlook_events', [$this, 'ajax_get_outlook_events']);
 
         add_action('kvt_refresh_worker',               [$this, 'cron_refresh_worker']);
 
@@ -243,6 +247,8 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_SMTP_SIGNATURE);
         register_setting(self::OPT_GROUP, self::OPT_FROM_NAME);
         register_setting(self::OPT_GROUP, self::OPT_FROM_EMAIL);
+        register_setting(self::OPT_GROUP, self::OPT_O365_TENANT);
+        register_setting(self::OPT_GROUP, self::OPT_O365_CLIENT);
         register_setting(self::OPT_GROUP, self::OPT_EMAIL_LOG, [
             'type'    => 'array',
             'default' => [],
@@ -634,6 +640,8 @@ JS;
         $smtp_pass = get_option(self::OPT_SMTP_PASS, "");
         $smtp_secure = get_option(self::OPT_SMTP_SECURE, "");
         $smtp_sig  = get_option(self::OPT_SMTP_SIGNATURE, "");
+        $o365_tenant = get_option(self::OPT_O365_TENANT, "");
+        $o365_client = get_option(self::OPT_O365_CLIENT, "");
         $from_name_def = get_option(self::OPT_FROM_NAME, "");
         $from_email_def = get_option(self::OPT_FROM_EMAIL, "");
         $mit_time = get_option(self::OPT_MIT_TIME, '09:00');
@@ -717,6 +725,14 @@ JS;
                             <textarea name="<?php echo self::OPT_SMTP_SIGNATURE; ?>" id="<?php echo self::OPT_SMTP_SIGNATURE; ?>" rows="4" class="large-text"><?php echo esc_textarea($smtp_sig); ?></textarea>
                             <p class="description">Se añadirá al final de cada e-mail.</p>
                         </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_O365_TENANT; ?>">Outlook Tenant ID</label></th>
+                        <td><input type="text" name="<?php echo self::OPT_O365_TENANT; ?>" id="<?php echo self::OPT_O365_TENANT; ?>" class="regular-text" value="<?php echo esc_attr($o365_tenant); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_O365_CLIENT; ?>">Outlook Client ID</label></th>
+                        <td><input type="text" name="<?php echo self::OPT_O365_CLIENT; ?>" id="<?php echo self::OPT_O365_CLIENT; ?>" class="regular-text" value="<?php echo esc_attr($o365_client); ?>"></td>
                     </tr>
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_FROM_NAME; ?>">Nombre remitente por defecto</label></th>
@@ -821,11 +837,32 @@ JS;
             </select>
             <p class="description">(Opcional) Vincula este proceso a un cliente.</p>
         </div>
+        <div class="form-field">
+            <label for="kvt_process_meetings">Reuniones</label>
+            <textarea name="kvt_process_meetings" id="kvt_process_meetings" rows="5"></textarea>
+            <button type="button" class="button" id="kvt_add_process_meeting">Añadir reunión</button>
+        </div>
+        <script>
+        document.addEventListener('DOMContentLoaded',function(){
+            const btn=document.getElementById('kvt_add_process_meeting');
+            if(btn){
+                btn.addEventListener('click',function(){
+                    const ta=document.getElementById('kvt_process_meetings');
+                    const info=prompt('Detalles de la reunión:');
+                    if(info){
+                        const date=new Date().toISOString().slice(0,10);
+                        ta.value += (ta.value?"\n":"") + date + ' - ' + info;
+                    }
+                });
+            }
+        });
+        </script>
         <?php
     }
     public function process_edit_fields($term) {
         $clients = get_terms(['taxonomy'=>self::TAX_CLIENT,'hide_empty'=>false]);
         $current = get_term_meta($term->term_id, 'kvt_process_client', true);
+        $meetings = get_term_meta($term->term_id, 'kvt_process_meetings', true);
         ?>
         <tr class="form-field">
             <th scope="row"><label for="kvt_process_client">Cliente asociado</label></th>
@@ -840,6 +877,28 @@ JS;
                 </select>
             </td>
         </tr>
+        <tr class="form-field">
+            <th scope="row"><label for="kvt_process_meetings">Reuniones</label></th>
+            <td>
+                <textarea name="kvt_process_meetings" id="kvt_process_meetings" rows="5"><?php echo esc_textarea($meetings); ?></textarea><br>
+                <button type="button" class="button" id="kvt_add_process_meeting">Añadir reunión</button>
+            </td>
+        </tr>
+        <script>
+        document.addEventListener('DOMContentLoaded',function(){
+            const btn=document.getElementById('kvt_add_process_meeting');
+            if(btn){
+                btn.addEventListener('click',function(){
+                    const ta=document.getElementById('kvt_process_meetings');
+                    const info=prompt('Detalles de la reunión:');
+                    if(info){
+                        const date=new Date().toISOString().slice(0,10);
+                        ta.value += (ta.value?"\n":"") + date + ' - ' + info;
+                    }
+                });
+            }
+        });
+        </script>
         <?php
     }
     public function save_process_term($term_id, $tt_id) {
@@ -857,6 +916,9 @@ JS;
         if (!get_term_meta($term_id, 'kvt_process_created', true)) {
             update_term_meta($term_id, 'kvt_process_created', current_time('Y-m-d'));
         }
+        if (isset($_POST['kvt_process_meetings'])) {
+            update_term_meta($term_id, 'kvt_process_meetings', sanitize_textarea_field($_POST['kvt_process_meetings']));
+        }
     }
 
     /* Cliente contact meta */
@@ -869,11 +931,34 @@ JS;
             <label for="kvt_client_contact_email">Email de contacto</label>
             <input type="email" name="kvt_client_contact_email" id="kvt_client_contact_email">
         </div>
+        <div class="form-field">
+            <label for="kvt_client_meetings">Reuniones</label>
+            <textarea name="kvt_client_meetings" id="kvt_client_meetings" rows="5"></textarea>
+            <button type="button" class="button" id="kvt_add_client_meeting">Añadir reunión</button>
+        </div>
+        <script>
+        document.addEventListener('DOMContentLoaded',function(){
+            const btn=document.getElementById('kvt_add_client_meeting');
+            if(btn){
+                btn.addEventListener('click',function(){
+                    const ta=document.getElementById('kvt_client_meetings');
+                    const person=prompt('Persona de la reunión:');
+                    if(!person) return;
+                    const date=prompt('Fecha (YYYY-MM-DD):', new Date().toISOString().slice(0,10)) || new Date().toISOString().slice(0,10);
+                    const info=prompt('Detalles de la reunión:');
+                    if(info){
+                        ta.value += (ta.value?"\n":"") + date + ' | ' + person + ' | ' + info;
+                    }
+                });
+            }
+        });
+        </script>
         <?php
     }
     public function client_edit_fields($term) {
         $cname  = get_term_meta($term->term_id, 'contact_name', true);
         $cemail = get_term_meta($term->term_id, 'contact_email', true);
+        $meetings = get_term_meta($term->term_id, 'kvt_client_meetings', true);
         ?>
         <tr class="form-field">
             <th scope="row"><label for="kvt_client_contact_name">Persona de contacto</label></th>
@@ -883,6 +968,30 @@ JS;
             <th scope="row"><label for="kvt_client_contact_email">Email de contacto</label></th>
             <td><input type="email" name="kvt_client_contact_email" id="kvt_client_contact_email" value="<?php echo esc_attr($cemail); ?>"></td>
         </tr>
+        <tr class="form-field">
+            <th scope="row"><label for="kvt_client_meetings">Reuniones</label></th>
+            <td>
+                <textarea name="kvt_client_meetings" id="kvt_client_meetings" rows="5"><?php echo esc_textarea($meetings); ?></textarea><br>
+                <button type="button" class="button" id="kvt_add_client_meeting">Añadir reunión</button>
+            </td>
+        </tr>
+        <script>
+        document.addEventListener('DOMContentLoaded',function(){
+            const btn=document.getElementById('kvt_add_client_meeting');
+            if(btn){
+                btn.addEventListener('click',function(){
+                    const ta=document.getElementById('kvt_client_meetings');
+                    const person=prompt('Persona de la reunión:');
+                    if(!person) return;
+                    const date=prompt('Fecha (YYYY-MM-DD):', new Date().toISOString().slice(0,10)) || new Date().toISOString().slice(0,10);
+                    const info=prompt('Detalles de la reunión:');
+                    if(info){
+                        ta.value += (ta.value?"\n":"") + date + ' | ' + person + ' | ' + info;
+                    }
+                });
+            }
+        });
+        </script>
         <?php
     }
     public function save_client_term($term_id, $tt_id) {
@@ -891,6 +1000,9 @@ JS;
         }
         if (isset($_POST['kvt_client_contact_email'])) {
             update_term_meta($term_id, 'contact_email', sanitize_email($_POST['kvt_client_contact_email']));
+        }
+        if (isset($_POST['kvt_client_meetings'])) {
+            update_term_meta($term_id, 'kvt_client_meetings', sanitize_textarea_field($_POST['kvt_client_meetings']));
         }
     }
 
@@ -1520,6 +1632,7 @@ JS;
                 'contact_email' => get_term_meta($t->term_id, 'contact_email', true),
                 'contact_phone' => get_term_meta($t->term_id, 'contact_phone', true),
                 'description'   => wp_strip_all_tags($t->description),
+                'meetings'      => get_term_meta($t->term_id, 'kvt_client_meetings', true),
             ];
         }, $clients);
         $from_name_def  = get_option(self::OPT_FROM_NAME, '');
@@ -2186,16 +2299,47 @@ JS;
               <button type="button" class="kvt-modal-close" id="kvt_new_client_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
             </div>
             <div class="kvt-modal-body">
+              <div class="kvt-tabs">
+                <button type="button" class="kvt-tab active" data-target="info">Info</button>
+                <button type="button" class="kvt-tab" data-target="meetings">Reuniones</button>
+              </div>
+              <div id="kvt_client_tab_info" class="kvt-tab-panel active">
+                <div class="kvt-modal-controls">
+                  <input type="text" id="kvt_client_name" placeholder="Empresa">
+                  <input type="text" id="kvt_client_contact" placeholder="Persona de contacto">
+                  <input type="email" id="kvt_client_email" placeholder="Email">
+                  <input type="text" id="kvt_client_phone" placeholder="Teléfono">
+                  <textarea id="kvt_client_desc" placeholder="Descripción"></textarea>
+                  <textarea id="kvt_client_sig_text" placeholder="Email o firma (texto)"></textarea>
+                  <input type="file" id="kvt_client_sig_file" accept="image/*">
+                  <button type="button" class="kvt-btn" id="kvt_client_sig_parse">Extraer datos</button>
+                  <button type="button" class="kvt-btn" id="kvt_client_submit">Crear</button>
+                </div>
+              </div>
+              <div id="kvt_client_tab_meetings" class="kvt-tab-panel">
+                <div class="kvt-modal-controls">
+                  <ul id="kvt_client_meetings_list"></ul>
+                  <textarea id="kvt_client_meetings_modal" style="display:none"></textarea>
+                  <button type="button" class="kvt-btn" id="kvt_client_add_meeting">Añadir reunión</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Add Client Meeting Modal -->
+        <div class="kvt-modal" id="kvt_client_meeting_modal" style="display:none">
+          <div class="kvt-modal-content">
+            <div class="kvt-modal-header">
+              <h3>Añadir reunión</h3>
+              <button type="button" class="kvt-modal-close" id="kvt_client_meeting_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
+            </div>
+            <div class="kvt-modal-body">
               <div class="kvt-modal-controls">
-                <input type="text" id="kvt_client_name" placeholder="Empresa">
-                <input type="text" id="kvt_client_contact" placeholder="Persona de contacto">
-                <input type="email" id="kvt_client_email" placeholder="Email">
-                <input type="text" id="kvt_client_phone" placeholder="Teléfono">
-                <textarea id="kvt_client_desc" placeholder="Descripción"></textarea>
-                <textarea id="kvt_client_sig_text" placeholder="Email o firma (texto)"></textarea>
-                <input type="file" id="kvt_client_sig_file" accept="image/*">
-                <button type="button" class="kvt-btn" id="kvt_client_sig_parse">Extraer datos</button>
-                <button type="button" class="kvt-btn" id="kvt_client_submit">Crear</button>
+                <input type="text" id="kvt_meeting_person" placeholder="Persona">
+                <input type="date" id="kvt_meeting_date">
+                <textarea id="kvt_meeting_details" placeholder="Detalles"></textarea>
+                <button type="button" class="kvt-btn" id="kvt_meeting_save">Guardar</button>
               </div>
             </div>
           </div>
@@ -2786,6 +2930,10 @@ function kvtInit(){
     KVT_TEMPLATES.forEach(t=>{
       const li=document.createElement('li');
       li.textContent=t.title+' ';
+      const edit=document.createElement('button');
+      edit.textContent='Editar';
+      edit.addEventListener('click',()=>editTemplate(t.id));
+      li.appendChild(edit);
       const del=document.createElement('button');
       del.textContent='Eliminar';
       del.dataset.id=t.id;
@@ -2816,17 +2964,30 @@ function kvtInit(){
     }
   }
 
+  let tplEditId=null;
+  function editTemplate(id){
+    const t=KVT_TEMPLATES.find(x=>String(x.id)===String(id));
+    if(!t) return;
+    tplTitle.value=t.title||'';
+    tplSubject.value=t.subject||'';
+    tplBody.value=t.body||'';
+    tplEditId=id;
+    if(tplSave) tplSave.textContent='Actualizar';
+  }
+
   tplSave && tplSave.addEventListener('click', async()=>{
     const title=(tplTitle.value||'').trim();
     const subject=(tplSubject.value||'').trim();
     const body=(tplBody.value||'').trim();
     if(!title) { alert('Título requerido'); return; }
     try {
+      const params=new URLSearchParams({action:'kvt_save_template', _ajax_nonce:KVT_NONCE, title, subject, body});
+      if(tplEditId) params.set('id', tplEditId);
       const res=await fetch(KVT_AJAX,{
         method:'POST',
         headers:{'Content-Type':'application/x-www-form-urlencoded'},
         credentials:'same-origin',
-        body:new URLSearchParams({action:'kvt_save_template', _ajax_nonce:KVT_NONCE, title, subject, body})
+        body:params
       });
       const j = await res.json();
       if(j.success){
@@ -2834,6 +2995,8 @@ function kvtInit(){
         populateTemplateSelect();
         renderTplList();
         tplTitle.value=''; tplSubject.value=''; tplBody.value='';
+        tplEditId=null;
+        tplSave.textContent='Guardar';
         alert('Plantilla guardada');
       }else{
         alert(j.data && j.data.msg ? j.data.msg : 'Error guardando');
@@ -3844,6 +4007,23 @@ function kvtInit(){
     return fetch(KVT_AJAX, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params.toString() }).then(r=>r.json());
   }
 
+  function fetchOutlookEvents(){
+    const params = new URLSearchParams();
+    params.set('action','kvt_get_outlook_events');
+    params.set('_ajax_nonce', KVT_NONCE);
+    return fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()}).then(r=>r.json());
+  }
+
+  function loadOutlookEvents(){
+    fetchOutlookEvents().then(j=>{
+      if(j.success && Array.isArray(j.data)){
+        j.data.forEach(e=>{ calendarEvents.push(e); });
+        renderCalendarSmall();
+        renderCalendar();
+      }
+    });
+  }
+
   function fetchProcessesList(){
     const params = new URLSearchParams();
     params.set('action','kvt_list_processes');
@@ -4110,6 +4290,8 @@ function kvtInit(){
       logs.sort((a,b)=>a.time<b.time?1:-1);
       activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+l.time+' - '+l.text+'</li>').join('') : '<li>No hay actividad</li>';
     }
+    renderCalendarSmall();
+    loadOutlookEvents();
   }
 
   function renderActivityDashboard(data){
@@ -4138,6 +4320,7 @@ function kvtInit(){
     if(activeList) activeList.innerHTML = active.join('') || '<li>No hay procesos activos</li>';
     if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(l.time)+' - '+esc(l.text)+'</li>').join('') : '<li>No hay actividad</li>';
     renderCalendarSmall();
+    loadOutlookEvents();
   }
 
   function renderCalendar(){
@@ -5111,6 +5294,7 @@ function kvtInit(){
               window.KVT_CLIENT_MAP[idx].contact_email = c.contact_email;
               window.KVT_CLIENT_MAP[idx].contact_phone = c.contact_phone;
               window.KVT_CLIENT_MAP[idx].description = c.description;
+              window.KVT_CLIENT_MAP[idx].meetings = c.meetings;
             } else {
               window.KVT_CLIENT_MAP.push(c);
             }
@@ -5124,12 +5308,23 @@ function kvtInit(){
           if(c.description) subs.push(esc(c.description));
           if(c.processes && c.processes.length) subs.push(esc(c.processes.join(', ')));
           const subHtml = subs.length?'<br><span class="kvt-sub">'+subs.join(' / ')+'</span>':'';
-          return '<div class="kvt-row">'+
+          return '<div class="kvt-row kvt-client-row" ' +
+            'data-id="'+escAttr(c.id)+'" ' +
+            'data-name="'+escAttr(c.name)+'" ' +
+            'data-contact-name="'+escAttr(c.contact_name||'')+'" ' +
+            'data-contact-email="'+escAttr(c.contact_email||'')+'" ' +
+            'data-contact-phone="'+escAttr(c.contact_phone||'')+'" ' +
+            'data-desc="'+escAttr(c.description||'')+'" ' +
+            'data-meetings="'+escAttr(c.meetings||'')+'">'+
             '<div><span class="kvt-name">'+esc(c.name)+'</span>'+subHtml+'</div>'+
-            '<div class="kvt-meta"><button type="button" class="kvt-btn kvt-edit-client" data-id="'+escAttr(c.id)+'" data-name="'+escAttr(c.name||'')+'" data-contact-name="'+escAttr(c.contact_name||'')+'" data-contact-email="'+escAttr(c.contact_email||'')+'" data-contact-phone="'+escAttr(c.contact_phone||'')+'" data-desc="'+escAttr(c.description||'')+'">Editar</button></div>'+
+            '<div class="kvt-meta"><button type="button" class="kvt-edit-profile dashicons dashicons-edit"></button></div>'+
           '</div>';
         }).join('');
-        targets.forEach(t=>t.innerHTML = html);
+        targets.forEach(t=>{
+          t.innerHTML = html;
+          els('.kvt-client-row', t).forEach(r=>r.addEventListener('click', handleClientClick));
+          els('.kvt-edit-profile', t).forEach(b=>b.addEventListener('click', e=>{ e.stopPropagation(); handleClientClick(e); }));
+        });
       });
   }
 
@@ -5329,13 +5524,50 @@ function kvtInit(){
     const clsigfile= el('#kvt_client_sig_file');
     const clsigparse = el('#kvt_client_sig_parse');
     const clsubmit= el('#kvt_client_submit');
-    function openClModal(){ clmodal.dataset.edit=''; clname.value=''; clcont.value=''; clemail.value=''; clphone.value=''; cldesc.value=''; if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Crear'; clmodal.style.display='flex'; }
-    function openEditClModal(c){ clmodal.dataset.edit=c.id; clname.value=c.name||''; clcont.value=c.contact_name||''; clemail.value=c.contact_email||''; clphone.value=c.contact_phone||''; cldesc.value=c.description||''; if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Guardar'; clmodal.style.display='flex'; }
-    function closeClModal(){ clmodal.style.display='none'; clmodal.dataset.edit=''; clsubmit.textContent='Crear'; if(cldesc) cldesc.value=''; if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; }
+    const clmeet  = el('#kvt_client_meetings_modal');
+    const clmeetList = el('#kvt_client_meetings_list');
+    const claddmeet = el('#kvt_client_add_meeting');
+    const clTabs = clmodal ? els('.kvt-tab', clmodal) : [];
+    const clPanels = clmodal ? els('.kvt-tab-panel', clmodal) : [];
+    const mtmodal = el('#kvt_client_meeting_modal');
+    const mtclose = el('#kvt_client_meeting_close');
+    const mtperson = el('#kvt_meeting_person');
+    const mtdate = el('#kvt_meeting_date');
+    const mtdetails = el('#kvt_meeting_details');
+    const mtsave = el('#kvt_meeting_save');
+    function activateClTab(target){ clTabs.forEach(b=>b.classList.toggle('active', b.dataset.target===target)); clPanels.forEach(p=>p.classList.toggle('active', p.id==='kvt_client_tab_'+target)); }
+    function renderMeetingList(){
+      if(!clmeetList) return;
+      const lines = clmeet && clmeet.value ? clmeet.value.split('\n').filter(Boolean) : [];
+      clmeetList.innerHTML='';
+      lines.forEach((line,idx)=>{
+        const parts = line.split(' | ');
+        const date = parts[0]||'';
+        const person = parts[1]||'';
+        const details = parts.slice(2).join(' | ');
+        const li=document.createElement('li');
+        li.dataset.idx=idx;
+        li.innerHTML='<strong>'+esc(date)+'</strong> - '+esc(person)+': '+esc(details)+' ';
+        const edit=document.createElement('button'); edit.textContent='Editar'; edit.className='kvt-meeting-edit';
+        const del=document.createElement('button'); del.textContent='Eliminar'; del.className='kvt-meeting-del';
+        li.appendChild(edit); li.appendChild(del);
+        clmeetList.appendChild(li);
+      });
+    }
+    function openClModal(){ clmodal.dataset.edit=''; clname.value=''; clcont.value=''; clemail.value=''; clphone.value=''; cldesc.value=''; if(clmeet) clmeet.value=''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Crear'; activateClTab('info'); clmodal.style.display='flex'; }
+    function openEditClModal(c){ clmodal.dataset.edit=c.id; clname.value=c.name||''; clcont.value=c.contact_name||''; clemail.value=c.contact_email||''; clphone.value=c.contact_phone||''; cldesc.value=c.description||''; if(clmeet) clmeet.value=c.meetings||''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Guardar'; activateClTab('info'); clmodal.style.display='flex'; }
+    function closeClModal(){ clmodal.style.display='none'; clmodal.dataset.edit=''; clsubmit.textContent='Crear'; if(cldesc) cldesc.value=''; if(clmeet) clmeet.value=''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; activateClTab('info'); }
     clclose && clclose.addEventListener('click', closeClModal);
     clmodal && clmodal.addEventListener('click', e=>{ if(e.target===clmodal) closeClModal(); });
+    clTabs.forEach(btn=>btn.addEventListener('click', ()=>activateClTab(btn.dataset.target)));
     const btnAddClient = el('#kvt_add_client_btn');
     btnAddClient && btnAddClient.addEventListener('click', openClModal);
+    claddmeet && claddmeet.addEventListener('click', ()=>{ if(mtperson) mtperson.value=''; if(mtdate) mtdate.value=new Date().toISOString().slice(0,10); if(mtdetails) mtdetails.value=''; mtmodal.dataset.edit=''; mtmodal.style.display='flex'; });
+    function closeMeetingModal(){ mtmodal.style.display='none'; mtmodal.dataset.edit=''; }
+    mtclose && mtclose.addEventListener('click', closeMeetingModal);
+    mtmodal && mtmodal.addEventListener('click', e=>{ if(e.target===mtmodal) closeMeetingModal(); });
+    mtsave && mtsave.addEventListener('click', ()=>{ const person = mtperson.value.trim(); const date = mtdate.value || new Date().toISOString().slice(0,10); const details = mtdetails.value.trim(); if(person && details){ const line = [date, person, details.replace(/\n/g,' ')].join(' | '); const lines = clmeet && clmeet.value ? clmeet.value.split('\n').filter(Boolean) : []; const idx = mtmodal.dataset.edit; if(idx!==undefined && idx!==''){ lines[idx] = line; } else { lines.push(line); } clmeet.value = lines.join('\n'); renderMeetingList(); closeMeetingModal(); } else { alert('Complete persona y detalles.'); } });
+    clmeetList && clmeetList.addEventListener('click', e=>{ const li=e.target.closest('li'); if(!li) return; const idx = li.dataset.idx; const lines = clmeet && clmeet.value ? clmeet.value.split('\n').filter(Boolean) : []; if(e.target.classList.contains('kvt-meeting-del')){ lines.splice(idx,1); clmeet.value = lines.join('\n'); renderMeetingList(); } else if(e.target.classList.contains('kvt-meeting-edit')){ const parts = lines[idx].split(' | '); if(mtperson) mtperson.value = parts[1]||''; if(mtdate) mtdate.value = parts[0]||new Date().toISOString().slice(0,10); if(mtdetails) mtdetails.value = parts.slice(2).join(' | '); mtmodal.dataset.edit=idx; mtmodal.style.display='flex'; } });
     clsigparse && clsigparse.addEventListener('click', ()=>{
       const fd = new FormData();
       fd.append('action','kvt_parse_signature');
@@ -5362,12 +5594,13 @@ function kvtInit(){
       params.set('contact_email', clemail.value||'');
       params.set('contact_phone', clphone.value||'');
       params.set('description', cldesc.value||'');
+      params.set('meetings', clmeet && clmeet.value ? clmeet.value : '');
       fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
         .then(r=>r.json()).then(j=>{
           if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo guardar.');
           if(editing){
             alert('Cliente actualizado (#'+editing+').');
-            const cid=parseInt(editing,10); const obj=getClientById(cid); if(obj){ obj.name=clname.value||''; obj.contact_name=clcont.value||''; obj.contact_email=clemail.value||''; obj.contact_phone=clphone.value||''; obj.description=cldesc.value||''; }
+            const cid=parseInt(editing,10); const obj=getClientById(cid); if(obj){ obj.name=clname.value||''; obj.contact_name=clcont.value||''; obj.contact_email=clemail.value||''; obj.contact_phone=clphone.value||''; obj.description=cldesc.value||''; obj.meetings=clmeet && clmeet.value?clmeet.value:''; }
             const opt = selClient ? selClient.querySelector('option[value="'+cid+'"]') : null; if(opt) opt.textContent = clname.value||'';
             closeClModal(); listClients(); updateSelectedInfo();
           } else {
@@ -5438,17 +5671,18 @@ function kvtInit(){
     });
 
     const handleClientClick = e=>{
-      const btn = e.target.closest('.kvt-edit-client');
-      if(!btn) return;
-      let data = getClientById(btn.dataset.id);
+      const row = e.target.closest('.kvt-client-row');
+      if(!row) return;
+      let data = getClientById ? getClientById(row.dataset.id) : null;
       if(!data){
         data = {
-          id: parseInt(btn.dataset.id,10),
-          name: btn.dataset.name || '',
-          contact_name: btn.dataset.contactName || '',
-          contact_email: btn.dataset.contactEmail || '',
-          contact_phone: btn.dataset.contactPhone || '',
-          description: btn.dataset.desc || ''
+          id: parseInt(row.dataset.id,10),
+          name: row.dataset.name || '',
+          contact_name: row.dataset.contactName || '',
+          contact_email: row.dataset.contactEmail || '',
+          contact_phone: row.dataset.contactPhone || '',
+          description: row.dataset.desc || '',
+          meetings: row.dataset.meetings || ''
         };
       }
       openEditClModal(data);
@@ -5480,8 +5714,6 @@ function kvtInit(){
       refresh();
       updateSelectedInfo();
     };
-    clientsList && clientsList.addEventListener('click', handleClientClick);
-    boardClientsList && boardClientsList.addEventListener('click', handleClientClick);
     processesList && processesList.addEventListener('click', handleProcessClick);
     boardProcessesList && boardProcessesList.addEventListener('click', handleProcessClick);
     processesList && processesList.addEventListener('click', handleProcessSelect);
@@ -5886,6 +6118,59 @@ JS;
             'logs'     => $logs,
             'active'   => $active,
         ]);
+    }
+
+    public function ajax_get_outlook_events() {
+        check_ajax_referer('kvt_nonce');
+
+        $tenant = get_option(self::OPT_O365_TENANT, '');
+        $client = get_option(self::OPT_O365_CLIENT, '');
+        $user   = get_option(self::OPT_SMTP_USER, '');
+        $pass   = get_option(self::OPT_SMTP_PASS, '');
+        if (!$tenant || !$client || !$user || !$pass) {
+            wp_send_json_success([]);
+        }
+
+        $token_resp = wp_remote_post("https://login.microsoftonline.com/{$tenant}/oauth2/v2.0/token", [
+            'headers' => ['Content-Type' => 'application/x-www-form-urlencoded'],
+            'body'    => [
+                'client_id' => $client,
+                'scope'     => 'https://graph.microsoft.com/.default',
+                'grant_type'=> 'password',
+                'username'  => $user,
+                'password'  => $pass,
+            ],
+        ]);
+        if (is_wp_error($token_resp)) {
+            wp_send_json_error(['msg' => 'token'], 500);
+        }
+        $token_data = json_decode(wp_remote_retrieve_body($token_resp), true);
+        if (empty($token_data['access_token'])) {
+            wp_send_json_error(['msg' => 'token'], 500);
+        }
+        $access = $token_data['access_token'];
+
+        $events_resp = wp_remote_get('https://graph.microsoft.com/v1.0/me/events?$select=subject,start,end&$top=50', [
+            'headers' => ['Authorization' => 'Bearer ' . $access],
+        ]);
+        if (is_wp_error($events_resp)) {
+            wp_send_json_error(['msg' => 'events'], 500);
+        }
+        $body = json_decode(wp_remote_retrieve_body($events_resp), true);
+        $events = [];
+        if (!empty($body['value'])) {
+            foreach ($body['value'] as $ev) {
+                $start = isset($ev['start']['dateTime']) ? strtotime($ev['start']['dateTime']) : 0;
+                if ($start) {
+                    $events[] = [
+                        'date' => date('d/m/Y', $start),
+                        'time' => date('H:i', $start),
+                        'text' => $ev['subject'] ?? '',
+                    ];
+                }
+            }
+        }
+        wp_send_json_success($events);
     }
 
     public function ajax_dismiss_comment() {
@@ -6560,6 +6845,7 @@ JS;
                 'contact_email' => get_term_meta($t->term_id,'contact_email',true),
                 'contact_phone' => get_term_meta($t->term_id,'contact_phone',true),
                 'description'   => wp_strip_all_tags($t->description),
+                'meetings'      => get_term_meta($t->term_id,'kvt_client_meetings',true),
                 'processes'     => wp_list_pluck($procs,'name'),
                 'edit_url'      => admin_url('term.php?taxonomy=' . self::TAX_CLIENT . '&tag_ID=' . $t->term_id),
             ];
@@ -6868,20 +7154,22 @@ JS;
       public function ajax_create_client() {
           check_ajax_referer('kvt_nonce');
 
-          $name  = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
-          $cname = isset($_POST['contact_name'])  ? sanitize_text_field($_POST['contact_name'])  : '';
-          $cemail= isset($_POST['contact_email']) ? sanitize_email($_POST['contact_email'])      : '';
-          $cphone= isset($_POST['contact_phone']) ? sanitize_text_field($_POST['contact_phone']) : '';
-          $desc  = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+         $name  = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
+         $cname = isset($_POST['contact_name'])  ? sanitize_text_field($_POST['contact_name'])  : '';
+         $cemail= isset($_POST['contact_email']) ? sanitize_email($_POST['contact_email'])      : '';
+         $cphone= isset($_POST['contact_phone']) ? sanitize_text_field($_POST['contact_phone']) : '';
+         $desc  = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+         $meet  = isset($_POST['meetings']) ? sanitize_textarea_field($_POST['meetings']) : '';
 
           if ($name === '') wp_send_json_error(['msg'=>'Nombre requerido'],400);
 
           $term = wp_insert_term($name, self::TAX_CLIENT, ['description'=>$desc]);
           if (is_wp_error($term)) wp_send_json_error(['msg'=>$term->get_error_message()],500);
           $tid = (int) $term['term_id'];
-          update_term_meta($tid, 'contact_name', $cname);
-          update_term_meta($tid, 'contact_email', $cemail);
-          update_term_meta($tid, 'contact_phone', $cphone);
+         update_term_meta($tid, 'contact_name', $cname);
+         update_term_meta($tid, 'contact_email', $cemail);
+         update_term_meta($tid, 'contact_phone', $cphone);
+         if ($meet !== '') update_term_meta($tid, 'kvt_client_meetings', $meet);
 
           wp_send_json_success(['id'=>$tid]);
       }
@@ -7001,6 +7289,7 @@ JS;
         $cemail= isset($_POST['contact_email']) ? sanitize_email($_POST['contact_email'])      : '';
         $cphone= isset($_POST['contact_phone']) ? sanitize_text_field($_POST['contact_phone']) : '';
         $desc  = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+        $meet  = isset($_POST['meetings']) ? sanitize_textarea_field($_POST['meetings']) : '';
 
         if (!$id) wp_send_json_error(['msg'=>'ID inválido'],400);
 
@@ -7010,6 +7299,7 @@ JS;
         update_term_meta($id, 'contact_name', $cname);
         update_term_meta($id, 'contact_email', $cemail);
         update_term_meta($id, 'contact_phone', $cphone);
+        update_term_meta($id, 'kvt_client_meetings', $meet);
 
         wp_send_json_success(['id'=>$id]);
     }
@@ -7792,12 +8082,20 @@ JS;
             $subject = wp_kses_post($_POST['subject'] ?? '');
             $body    = wp_kses_post($_POST['body'] ?? '');
             if (!$title) wp_send_json_error(['msg' => 'Missing title'], 400);
-            $id = wp_insert_post([
-                'post_type'   => self::CPT_EMAIL_TEMPLATE,
-                'post_title'  => $title,
-                'post_status' => 'publish',
-            ], true);
-            if (is_wp_error($id)) wp_send_json_error(['msg' => 'Error saving'], 500);
+            $id = intval($_POST['id'] ?? 0);
+            if ($id) {
+                wp_update_post([
+                    'ID'         => $id,
+                    'post_title' => $title,
+                ]);
+            } else {
+                $id = wp_insert_post([
+                    'post_type'   => self::CPT_EMAIL_TEMPLATE,
+                    'post_title'  => $title,
+                    'post_status' => 'publish',
+                ], true);
+                if (is_wp_error($id)) wp_send_json_error(['msg' => 'Error saving'], 500);
+            }
             update_post_meta($id, '_kvt_subject', $subject);
             update_post_meta($id, '_kvt_body', $body);
             $templates = $this->get_email_templates();
