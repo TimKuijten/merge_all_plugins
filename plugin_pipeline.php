@@ -2914,6 +2914,10 @@ function kvtInit(){
     KVT_TEMPLATES.forEach(t=>{
       const li=document.createElement('li');
       li.textContent=t.title+' ';
+      const edit=document.createElement('button');
+      edit.textContent='Editar';
+      edit.addEventListener('click',()=>editTemplate(t.id));
+      li.appendChild(edit);
       const del=document.createElement('button');
       del.textContent='Eliminar';
       del.dataset.id=t.id;
@@ -2944,17 +2948,30 @@ function kvtInit(){
     }
   }
 
+  let tplEditId=null;
+  function editTemplate(id){
+    const t=KVT_TEMPLATES.find(x=>String(x.id)===String(id));
+    if(!t) return;
+    tplTitle.value=t.title||'';
+    tplSubject.value=t.subject||'';
+    tplBody.value=t.body||'';
+    tplEditId=id;
+    if(tplSave) tplSave.textContent='Actualizar';
+  }
+
   tplSave && tplSave.addEventListener('click', async()=>{
     const title=(tplTitle.value||'').trim();
     const subject=(tplSubject.value||'').trim();
     const body=(tplBody.value||'').trim();
     if(!title) { alert('Título requerido'); return; }
     try {
+      const params=new URLSearchParams({action:'kvt_save_template', _ajax_nonce:KVT_NONCE, title, subject, body});
+      if(tplEditId) params.set('id', tplEditId);
       const res=await fetch(KVT_AJAX,{
         method:'POST',
         headers:{'Content-Type':'application/x-www-form-urlencoded'},
         credentials:'same-origin',
-        body:new URLSearchParams({action:'kvt_save_template', _ajax_nonce:KVT_NONCE, title, subject, body})
+        body:params
       });
       const j = await res.json();
       if(j.success){
@@ -2962,6 +2979,8 @@ function kvtInit(){
         populateTemplateSelect();
         renderTplList();
         tplTitle.value=''; tplSubject.value=''; tplBody.value='';
+        tplEditId=null;
+        tplSave.textContent='Guardar';
         alert('Plantilla guardada');
       }else{
         alert(j.data && j.data.msg ? j.data.msg : 'Error guardando');
@@ -5253,9 +5272,9 @@ function kvtInit(){
           if(c.description) subs.push(esc(c.description));
           if(c.processes && c.processes.length) subs.push(esc(c.processes.join(', ')));
           const subHtml = subs.length?'<br><span class="kvt-sub">'+subs.join(' / ')+'</span>':'';
-          return '<div class="kvt-row">'+
+          return '<div class="kvt-row kvt-client-row" data-id="'+escAttr(c.id)+'">'+
             '<div><span class="kvt-name">'+esc(c.name)+'</span>'+subHtml+'</div>'+
-            '<div class="kvt-meta"><button type="button" class="kvt-btn kvt-edit-client" data-id="'+escAttr(c.id)+'" data-name="'+escAttr(c.name||'')+'" data-contact-name="'+escAttr(c.contact_name||'')+'" data-contact-email="'+escAttr(c.contact_email||'')+'" data-contact-phone="'+escAttr(c.contact_phone||'')+'" data-desc="'+escAttr(c.description||'')+'" data-meetings="'+escAttr(c.meetings||'')+'">Editar</button></div>'+
+            '<div class="kvt-meta"><span class="dashicons dashicons-arrow-right-alt2"></span></div>'+
           '</div>';
         }).join('');
         targets.forEach(t=>t.innerHTML = html);
@@ -5470,7 +5489,24 @@ function kvtInit(){
     const mtdetails = el('#kvt_meeting_details');
     const mtsave = el('#kvt_meeting_save');
     function activateClTab(target){ clTabs.forEach(b=>b.classList.toggle('active', b.dataset.target===target)); clPanels.forEach(p=>p.classList.toggle('active', p.id==='kvt_client_tab_'+target)); }
-    function renderMeetingList(){ if(!clmeetList) return; const lines = clmeet && clmeet.value ? clmeet.value.split('\n').filter(Boolean) : []; clmeetList.innerHTML = lines.map(line=>{ const parts = line.split(' | '); const date = parts[0]||''; const person = parts[1]||''; const details = parts.slice(2).join(' | '); return '<li><strong>'+esc(date)+'</strong> - '+esc(person)+': '+esc(details)+'</li>'; }).join(''); }
+    function renderMeetingList(){
+      if(!clmeetList) return;
+      const lines = clmeet && clmeet.value ? clmeet.value.split('\n').filter(Boolean) : [];
+      clmeetList.innerHTML='';
+      lines.forEach((line,idx)=>{
+        const parts = line.split(' | ');
+        const date = parts[0]||'';
+        const person = parts[1]||'';
+        const details = parts.slice(2).join(' | ');
+        const li=document.createElement('li');
+        li.dataset.idx=idx;
+        li.innerHTML='<strong>'+esc(date)+'</strong> - '+esc(person)+': '+esc(details)+' ';
+        const edit=document.createElement('button'); edit.textContent='Editar'; edit.className='kvt-meeting-edit';
+        const del=document.createElement('button'); del.textContent='Eliminar'; del.className='kvt-meeting-del';
+        li.appendChild(edit); li.appendChild(del);
+        clmeetList.appendChild(li);
+      });
+    }
     function openClModal(){ clmodal.dataset.edit=''; clname.value=''; clcont.value=''; clemail.value=''; clphone.value=''; cldesc.value=''; if(clmeet) clmeet.value=''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Crear'; activateClTab('info'); clmodal.style.display='flex'; }
     function openEditClModal(c){ clmodal.dataset.edit=c.id; clname.value=c.name||''; clcont.value=c.contact_name||''; clemail.value=c.contact_email||''; clphone.value=c.contact_phone||''; cldesc.value=c.description||''; if(clmeet) clmeet.value=c.meetings||''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Guardar'; activateClTab('info'); clmodal.style.display='flex'; }
     function closeClModal(){ clmodal.style.display='none'; clmodal.dataset.edit=''; clsubmit.textContent='Crear'; if(cldesc) cldesc.value=''; if(clmeet) clmeet.value=''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; activateClTab('info'); }
@@ -5479,11 +5515,12 @@ function kvtInit(){
     clTabs.forEach(btn=>btn.addEventListener('click', ()=>activateClTab(btn.dataset.target)));
     const btnAddClient = el('#kvt_add_client_btn');
     btnAddClient && btnAddClient.addEventListener('click', openClModal);
-    claddmeet && claddmeet.addEventListener('click', ()=>{ if(mtperson) mtperson.value=''; if(mtdate) mtdate.value=new Date().toISOString().slice(0,10); if(mtdetails) mtdetails.value=''; mtmodal.style.display='flex'; });
-    function closeMeetingModal(){ mtmodal.style.display='none'; }
+    claddmeet && claddmeet.addEventListener('click', ()=>{ if(mtperson) mtperson.value=''; if(mtdate) mtdate.value=new Date().toISOString().slice(0,10); if(mtdetails) mtdetails.value=''; mtmodal.dataset.edit=''; mtmodal.style.display='flex'; });
+    function closeMeetingModal(){ mtmodal.style.display='none'; mtmodal.dataset.edit=''; }
     mtclose && mtclose.addEventListener('click', closeMeetingModal);
     mtmodal && mtmodal.addEventListener('click', e=>{ if(e.target===mtmodal) closeMeetingModal(); });
-    mtsave && mtsave.addEventListener('click', ()=>{ const person = mtperson.value.trim(); const date = mtdate.value || new Date().toISOString().slice(0,10); const details = mtdetails.value.trim(); if(person && details){ const line = [date, person, details.replace(/\n/g,' ')].join(' | '); clmeet.value += (clmeet.value?'\n':'') + line; renderMeetingList(); closeMeetingModal(); } else { alert('Complete persona y detalles.'); } });
+    mtsave && mtsave.addEventListener('click', ()=>{ const person = mtperson.value.trim(); const date = mtdate.value || new Date().toISOString().slice(0,10); const details = mtdetails.value.trim(); if(person && details){ const line = [date, person, details.replace(/\n/g,' ')].join(' | '); const lines = clmeet && clmeet.value ? clmeet.value.split('\n').filter(Boolean) : []; const idx = mtmodal.dataset.edit; if(idx!==undefined && idx!==''){ lines[idx] = line; } else { lines.push(line); } clmeet.value = lines.join('\n'); renderMeetingList(); closeMeetingModal(); } else { alert('Complete persona y detalles.'); } });
+    clmeetList && clmeetList.addEventListener('click', e=>{ const li=e.target.closest('li'); if(!li) return; const idx = li.dataset.idx; const lines = clmeet && clmeet.value ? clmeet.value.split('\n').filter(Boolean) : []; if(e.target.classList.contains('kvt-meeting-del')){ lines.splice(idx,1); clmeet.value = lines.join('\n'); renderMeetingList(); } else if(e.target.classList.contains('kvt-meeting-edit')){ const parts = lines[idx].split(' | '); if(mtperson) mtperson.value = parts[1]||''; if(mtdate) mtdate.value = parts[0]||new Date().toISOString().slice(0,10); if(mtdetails) mtdetails.value = parts.slice(2).join(' | '); mtmodal.dataset.edit=idx; mtmodal.style.display='flex'; } });
     clsigparse && clsigparse.addEventListener('click', ()=>{
       const fd = new FormData();
       fd.append('action','kvt_parse_signature');
@@ -5587,21 +5624,10 @@ function kvtInit(){
     });
 
     const handleClientClick = e=>{
-      const btn = e.target.closest('.kvt-edit-client');
-      if(!btn) return;
-      let data = getClientById(btn.dataset.id);
-      if(!data){
-        data = {
-          id: parseInt(btn.dataset.id,10),
-          name: btn.dataset.name || '',
-          contact_name: btn.dataset.contactName || '',
-          contact_email: btn.dataset.contactEmail || '',
-          contact_phone: btn.dataset.contactPhone || '',
-          description: btn.dataset.desc || '',
-          meetings: btn.dataset.meetings || ''
-        };
-      }
-      openEditClModal(data);
+      const row = e.target.closest('.kvt-client-row');
+      if(!row) return;
+      const data = getClientById(row.dataset.id);
+      if(data) openEditClModal(data);
     };
     const handleProcessClick = e=>{
       const btn = e.target.closest('.kvt-edit-process');
@@ -7947,12 +7973,20 @@ JS;
             $subject = wp_kses_post($_POST['subject'] ?? '');
             $body    = wp_kses_post($_POST['body'] ?? '');
             if (!$title) wp_send_json_error(['msg' => 'Missing title'], 400);
-            $id = wp_insert_post([
-                'post_type'   => self::CPT_EMAIL_TEMPLATE,
-                'post_title'  => $title,
-                'post_status' => 'publish',
-            ], true);
-            if (is_wp_error($id)) wp_send_json_error(['msg' => 'Error saving'], 500);
+            $id = intval($_POST['id'] ?? 0);
+            if ($id) {
+                wp_update_post([
+                    'ID'         => $id,
+                    'post_title' => $title,
+                ]);
+            } else {
+                $id = wp_insert_post([
+                    'post_type'   => self::CPT_EMAIL_TEMPLATE,
+                    'post_title'  => $title,
+                    'post_status' => 'publish',
+                ], true);
+                if (is_wp_error($id)) wp_send_json_error(['msg' => 'Error saving'], 500);
+            }
             update_post_meta($id, '_kvt_subject', $subject);
             update_post_meta($id, '_kvt_body', $body);
             $templates = $this->get_email_templates();
