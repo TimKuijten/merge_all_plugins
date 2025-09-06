@@ -1834,6 +1834,7 @@ JS;
                         <button type="button" class="kvt-btn" id="kvt_export_client_board_btn">Exportar Tablero Cliente</button>
                         <button type="button" class="kvt-btn" id="kvt_export_candidate_board_btn">Exportar Tablero Candidato</button>
                         <button type="button" class="kvt-btn" id="kvt_refresh_all">Actualizar todo</button>
+                        <button type="button" class="kvt-btn kvt-add-candidate" id="kvt_add_candidate_table_btn">Añadir candidato</button>
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
                       <div class="kvt-tabs" id="kvt_board_tabs">
@@ -1866,7 +1867,7 @@ JS;
                             <input type="hidden" name="format" id="kvt_board_export_all_format" value="xls">
                               <button type="button" class="kvt-btn" id="kvt_board_export_all_xls">Exportar Excel</button>
                             </form>
-                            <button type="button" class="kvt-btn" id="kvt_add_candidate_btn">Nuevo</button>
+                            <button type="button" class="kvt-btn kvt-add-candidate" id="kvt_add_candidate_btn">Nuevo</button>
                           </div>
                         </div>
                         <div id="kvt_board_list" class="kvt-list"></div>
@@ -2570,13 +2571,13 @@ JS;
         .kvt-edit{background:none !important;border:none !important;color:#0A212E;font-size:18px;line-height:1;cursor:pointer;padding:0}
         .kvt-edit:hover{color:#334155}
         .kvt-edit.dashicons{vertical-align:middle}
-        .kvt-main{display:flex;gap:16px;align-items:flex-start}
-        .kvt-widgets{display:flex;flex-wrap:wrap;gap:16px;flex:1;align-items:flex-start;align-content:flex-start}
+        .kvt-main{display:grid;grid-template-columns:1fr;gap:16px;align-items:start}
+        .kvt-widgets{display:flex;flex-wrap:wrap;gap:16px;width:100%;align-items:flex-start;align-content:flex-start}
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
-        #kvt_table_wrap{flex:0 0 70%}
-        .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
+        #kvt_table_wrap{width:100%}
+        .kvt-calendar{width:100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
         .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:750px}
-        .kvt-mit{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-top:16px}
+        .kvt-mit{width:100%;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-top:16px}
         #kvt_mit_chat_log{display:flex;flex-direction:column;gap:4px}
         #kvt_mit_chat_log p{margin:0;padding:6px 10px;border-radius:8px;max-width:80%;white-space:pre-wrap;word-break:break-word}
         #kvt_mit_chat_log p.user{align-self:flex-end;background:#e0f2fe;text-align:right}
@@ -5615,8 +5616,9 @@ function kvtInit(){
   function closeCModal(){ cmodal.style.display='none'; }
   cclose && cclose.addEventListener('click', closeCModal);
   cmodal && cmodal.addEventListener('click', (e)=>{ if(e.target===cmodal) closeCModal(); });
-  const btnAddCandidate = el('#kvt_add_candidate_btn');
-  btnAddCandidate && btnAddCandidate.addEventListener('click', openCModal);
+  document.querySelectorAll('.kvt-add-candidate').forEach(btn => {
+    btn.addEventListener('click', openCModal);
+  });
   ccli && ccli.addEventListener('change', ()=>{
     if (!window.KVT_PROCESS_MAP || !Array.isArray(window.KVT_PROCESS_MAP)) return;
     const cid = parseInt(ccli.value||'0',10);
