@@ -30,6 +30,8 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
     const OPT_MIT_TIME = 'kvt_mit_time';
     const OPT_MIT_RECIPIENTS = 'kvt_mit_recipients';
+    const OPT_MIT_FREQUENCY = 'kvt_mit_frequency';
+    const OPT_MIT_DAY = 'kvt_mit_day';
     const OPT_O365_TENANT = 'kvt_o365_tenant';
     const OPT_O365_CLIENT = 'kvt_o365_client';
     const CPT_EMAIL_TEMPLATE = 'kvt_email_tpl';
@@ -157,8 +159,8 @@ class Kovacic_Pipeline_Visualizer {
         // Follow-up reminders
         add_action('wp',                            [$this, 'schedule_followup_cron']);
         add_action('kvt_daily_followup',            [$this, 'cron_check_followups']);
-        add_action('wp',                            [$this, 'schedule_mit_weekly_report']);
-        add_action('kvt_mit_weekly_report',         [$this, 'cron_mit_weekly_report']);
+        add_action('wp',                            [$this, 'schedule_mit_report']);
+        add_action('kvt_mit_report',                [$this, 'cron_mit_report']);
         add_action('admin_notices',                 [$this, 'followup_admin_notice']);
         add_action('template_redirect',             [$this, 'maybe_redirect_share_link']);
 
@@ -255,6 +257,8 @@ cv_uploaded|Fecha de subida");
         ]);
         register_setting(self::OPT_GROUP, self::OPT_MIT_TIME);
         register_setting(self::OPT_GROUP, self::OPT_MIT_RECIPIENTS);
+        register_setting(self::OPT_GROUP, self::OPT_MIT_FREQUENCY);
+        register_setting(self::OPT_GROUP, self::OPT_MIT_DAY);
     }
     public function admin_menu() {
         global $admin_page_hooks;
@@ -629,6 +633,10 @@ JS;
         wp_add_inline_script('kvt-tracker', $js);
     }
     public function settings_page() {
+        if (isset($_POST['kvt_mit_send_now']) && check_admin_referer('kvt_mit_send_now')) {
+            $this->cron_mit_report();
+            echo '<div class="notice notice-success"><p>Informe MIT enviado.</p></div>';
+        }
         $statuses = get_option(self::OPT_STATUSES, "");
         $columns  = get_option(self::OPT_COLUMNS, "");
         $openai   = get_option(self::OPT_OPENAI_KEY, "");
@@ -646,6 +654,8 @@ JS;
         $from_email_def = get_option(self::OPT_FROM_EMAIL, "");
         $mit_time = get_option(self::OPT_MIT_TIME, '09:00');
         $mit_recipients = get_option(self::OPT_MIT_RECIPIENTS, get_option('admin_email'));
+        $mit_freq = get_option(self::OPT_MIT_FREQUENCY, 'weekly');
+        $mit_day = get_option(self::OPT_MIT_DAY, 'monday');
         ?>
         <div class="wrap">
             <h1>Kovacic Pipeline — Ajustes</h1>
@@ -743,10 +753,38 @@ JS;
                         <td><input type="email" name="<?php echo self::OPT_FROM_EMAIL; ?>" id="<?php echo self::OPT_FROM_EMAIL; ?>" class="regular-text" value="<?php echo esc_attr($from_email_def); ?>"></td>
                     </tr>
                     <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_MIT_FREQUENCY; ?>">Frecuencia informe MIT</label></th>
+                        <td>
+                            <select name="<?php echo self::OPT_MIT_FREQUENCY; ?>" id="<?php echo self::OPT_MIT_FREQUENCY; ?>">
+                                <option value="daily" <?php selected($mit_freq, 'daily'); ?>>Diaria</option>
+                                <option value="weekly" <?php selected($mit_freq, 'weekly'); ?>>Semanal</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_MIT_DAY; ?>">Día informe MIT</label></th>
+                        <td>
+                            <select name="<?php echo self::OPT_MIT_DAY; ?>" id="<?php echo self::OPT_MIT_DAY; ?>">
+                                <?php foreach ([
+                                    'monday' => 'Lunes',
+                                    'tuesday' => 'Martes',
+                                    'wednesday' => 'Miércoles',
+                                    'thursday' => 'Jueves',
+                                    'friday' => 'Viernes',
+                                    'saturday' => 'Sábado',
+                                    'sunday' => 'Domingo',
+                                ] as $k => $v): ?>
+                                    <option value="<?php echo esc_attr($k); ?>" <?php selected($mit_day, $k); ?>><?php echo esc_html($v); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description">Día de envío para informes semanales.</p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row"><label for="<?php echo self::OPT_MIT_TIME; ?>">Hora informe MIT</label></th>
                         <td>
                             <input type="time" name="<?php echo self::OPT_MIT_TIME; ?>" id="<?php echo self::OPT_MIT_TIME; ?>" value="<?php echo esc_attr($mit_time); ?>">
-                            <p class="description">Hora de envío semanal (lunes, zona Madrid).</p>
+                            <p class="description">Hora de envío (zona Madrid).</p>
                         </td>
                     </tr>
                     <tr>
@@ -758,6 +796,10 @@ JS;
                     </tr>
                 </table>
                 <?php submit_button('Guardar ajustes'); ?>
+            </form>
+            <form method="post">
+                <?php wp_nonce_field('kvt_mit_send_now'); ?>
+                <?php submit_button('Enviar informe ahora', 'secondary', 'kvt_mit_send_now'); ?>
             </form>
         </div>
         <?php
@@ -1524,35 +1566,59 @@ JS;
         update_option('kvt_followup_due', $due);
     }
 
-    public function schedule_mit_weekly_report() {
+    public function schedule_mit_report() {
         $tz   = new DateTimeZone('Europe/Madrid');
         $time = get_option(self::OPT_MIT_TIME, '09:00');
         if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $time)) {
             $time = '09:00';
         }
         list($hour, $min) = array_map('intval', explode(':', $time));
+        $freq = get_option(self::OPT_MIT_FREQUENCY, 'weekly');
+        $day  = strtolower(get_option(self::OPT_MIT_DAY, 'monday'));
         $now  = new DateTime('now', $tz);
         $next = clone $now;
         $next->setTime($hour, $min);
-        if ($now->format('N') != 1 || $now->getTimestamp() >= $next->getTimestamp()) {
-            $next = new DateTime('next monday', $tz);
+        $recurrence = 'weekly';
+        if ($freq === 'daily') {
+            if ($now->getTimestamp() >= $next->getTimestamp()) {
+                $next->modify('+1 day');
+            }
+            $recurrence = 'daily';
+        } else {
+            $days = [
+                'monday'    => 1,
+                'tuesday'   => 2,
+                'wednesday' => 3,
+                'thursday'  => 4,
+                'friday'    => 5,
+                'saturday'  => 6,
+                'sunday'    => 7,
+            ];
+            $target = $days[$day] ?? 1;
+            $current = (int)$now->format('N');
+            if ($current > $target || ($current === $target && $now->getTimestamp() >= $next->getTimestamp())) {
+                $next = new DateTime('next ' . $day, $tz);
+            } else {
+                $next = new DateTime('this ' . $day, $tz);
+            }
             $next->setTime($hour, $min);
+            $recurrence = 'weekly';
         }
         $timestamp = $next->getTimestamp();
-        $scheduled = wp_next_scheduled('kvt_mit_weekly_report');
+        $scheduled = wp_next_scheduled('kvt_mit_report');
         if (!$scheduled || abs($scheduled - $timestamp) > 60) {
-            if ($scheduled) wp_unschedule_event($scheduled, 'kvt_mit_weekly_report');
-            wp_schedule_event($timestamp, 'weekly', 'kvt_mit_weekly_report');
+            if ($scheduled) wp_unschedule_event($scheduled, 'kvt_mit_report');
+            wp_schedule_event($timestamp, $recurrence, 'kvt_mit_report');
         }
     }
 
-    public function cron_mit_weekly_report() {
+    public function cron_mit_report() {
         $key = get_option(self::OPT_OPENAI_KEY, '');
         if (!$key) return;
-        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-4.1-mini');
+        $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
         $ctx = $this->mit_gather_context();
         $summary = $ctx['summary'];
-        $prompt = "Eres MIT, un asistente de reclutamiento para energía renovable. Con los siguientes datos: $summary Genera un informe semanal con recomendaciones y sugerencias para la semana. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>.";
+        $prompt = "Eres MIT, un asistente de reclutamiento especializado en energía renovable. Nunca uses '—'. Inicio del mensaje: Siempre comienza con un tono juguetón y cercano, presentándote como MIT, su asistente de IA. Incluye un consejo positivo para iniciar el día, relacionado con la vida o con los retos de emprender una nueva empresa (varía entre ambos). Dirígete siempre a Alan (usa su nombre). No empieces hablando directamente de energía renovable; primero da el consejo positivo. De forma aleatoria, aproximadamente 1 de cada 20 veces, haz una referencia divertida a tu creador Tim (por ejemplo, que nunca lo reemplazarás, que tu nombre es el suyo al revés, o alguna broma en esa línea). Contenido principal: Ofrece recomendaciones sobre cómo progresar en los procesos, cómo dar seguimiento a candidatos y clientes, y cualquier otro consejo útil para que la empresa sea más exitosa. Recuerda que tienes acceso a todos los datos, clientes, candidatos y procesos, así que puedes usarlos libremente para dar recomendaciones concretas. Plantillas de correo: Cuando generes plantillas, no menciones a MIT. Deja el cierre del correo abierto para que lo firme el remitente. Usa las siguientes variables disponibles: {{first_name}} {{surname}} {{country}} {{city}} {{client}} {{role}} {{status}} {{board}} (enlace al tablero) {{sender}} (remitente) Importante: si recomiendas un nuevo rol para un candidato, no uses {{role}} en el texto, ya que este campo hace referencia al rol actual del candidato en su perfil. Formato de salida: Devuelve la respuesta siempre en HTML. Usa la etiqueta h3 para los títulos de sección, ul/li para listas, blockquote para plantillas de correo y strong para resaltar nombres o roles importantes. Separa las secciones con hr. Datos de entrad: Dispones del campo $summary, que resume información clave de procesos, clientes o candidatos. Con esos datos, genera un informe con recomendaciones y sugerencias accionables.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -1594,7 +1660,7 @@ JS;
             $from_name_cb = function() use ($from_name){ return $from_name; };
             add_filter('wp_mail_from_name', $from_name_cb, 99);
         }
-        wp_mail($emails, 'Informe semanal MIT', wp_kses_post($text), ['Content-Type: text/html; charset=UTF-8']);
+        wp_mail($emails, 'Informe MIT', wp_kses_post($text), ['Content-Type: text/html; charset=UTF-8']);
         if ($from_cb) remove_filter('wp_mail_from', $from_cb, 99);
         if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
     }
