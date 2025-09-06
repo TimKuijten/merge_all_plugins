@@ -6488,7 +6488,11 @@ JS;
             $desc = term_description($cl, self::TAX_CLIENT);
             if ($desc) $notes[] = $cl->name . ': ' . wp_strip_all_tags($desc);
             $meet = get_term_meta($cl->term_id, 'kvt_client_meetings', true);
-            if ($meet) $meeting_lines[] = $cl->name . ': ' . preg_replace('/\r\n|\r|\n/', '; ', $meet);
+            if ($meet) {
+                $clean = preg_replace('/\r\n|\r|\n/', '; ', $meet);
+                $meeting_lines[] = $cl->name . ': ' . $clean;
+                $notes[] = $cl->name . ' reuniones: ' . $clean;
+            }
         }
 
         $process_lines = [];
@@ -6503,7 +6507,11 @@ JS;
             $desc = term_description($pr, self::TAX_PROCESS);
             if ($desc) $notes[] = $pr->name . ': ' . wp_strip_all_tags($desc);
             $meet = get_term_meta($pr->term_id, 'kvt_process_meetings', true);
-            if ($meet) $meeting_lines[] = $pr->name . ': ' . preg_replace('/\r\n|\r|\n/', '; ', $meet);
+            if ($meet) {
+                $clean = preg_replace('/\r\n|\r|\n/', '; ', $meet);
+                $meeting_lines[] = $pr->name . ': ' . $clean;
+                $notes[] = $pr->name . ' reuniones: ' . $clean;
+            }
         }
 
         $email_lines = [];
