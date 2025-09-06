@@ -638,6 +638,19 @@ JS;
             $this->cron_mit_report();
             echo '<div class="notice notice-success"><p>Informe MIT enviado.</p></div>';
         }
+        if (isset($_POST['kvt_run_composer']) && check_admin_referer('kvt_run_composer')) {
+            if (function_exists('shell_exec')) {
+                $cmd = 'cd ' . escapeshellarg(__DIR__) . ' && composer install 2>&1';
+                $output = shell_exec($cmd);
+                if ($output !== null) {
+                    echo '<div class="notice notice-success"><pre>' . esc_html($output) . '</pre></div>';
+                } else {
+                    echo '<div class="notice notice-error"><p>No se pudo ejecutar composer.</p></div>';
+                }
+            } else {
+                echo '<div class="notice notice-error"><p>shell_exec deshabilitado; no se puede ejecutar composer.</p></div>';
+            }
+        }
         $statuses = get_option(self::OPT_STATUSES, "");
         $columns  = get_option(self::OPT_COLUMNS, "");
         $openai   = get_option(self::OPT_OPENAI_KEY, "");
@@ -801,6 +814,10 @@ JS;
             <form method="post">
                 <?php wp_nonce_field('kvt_mit_send_now'); ?>
                 <?php submit_button('Enviar informe ahora', 'secondary', 'kvt_mit_send_now'); ?>
+            </form>
+            <form method="post">
+                <?php wp_nonce_field('kvt_run_composer'); ?>
+                <?php submit_button('Run Composer', 'secondary', 'kvt_run_composer'); ?>
             </form>
         </div>
         <?php
