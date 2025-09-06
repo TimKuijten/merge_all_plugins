@@ -8093,7 +8093,7 @@ JS;
         $req = [
             'model' => 'gpt-4o-mini',
             'messages' => [
-                ['role' => 'system', 'content' => 'Eres un asistente que extrae del CV nombre, apellidos, email, teléfono, país actual, ciudad actual, puesto y empresa actuales. Devuelve JSON con las claves "first_name","last_name","email","phone","country","city","role" y "company". Si falta algún dato devuelve campo vacío.'],
+                ['role' => 'system', 'content' => 'Eres un asistente que extrae del CV nombre, apellidos, email, teléfono, país actual, ciudad actual, puesto y empresa actuales. Devuelve JSON con las claves "first_name","last_name","email","phone","country","city","role","company" y "current_role" (puesto + empresa). Si falta algún dato devuelve campo vacío.'],
                 ['role' => 'user', 'content' => "CV:\n$cv_text"],
             ],
             'max_tokens' => 300,
@@ -8137,29 +8137,32 @@ JS;
             if (in_array($field, ['first_name','last_name'], true)) {
                 $val = $this->normalize_name($val);
             }
-            if ($this->meta_get_compat($post_id, $meta, [substr($meta,4)]) === '') {
+            if (trim($this->meta_get_compat($post_id, $meta, [substr($meta,4)])) === '') {
                 update_post_meta($post_id, $meta, $val);
                 update_post_meta($post_id, substr($meta,4), $val);
                 $updated[$field] = $val;
             }
         }
-        $role = isset($data['role']) ? trim($data['role']) : '';
-        $company = isset($data['company']) ? trim($data['company']) : '';
-        $role_combined = '';
-        if ($role && $company) $role_combined = $role . ' at ' . $company;
-        elseif ($role) $role_combined = $role;
-        elseif ($company) $role_combined = $company;
-        if ($role && $this->meta_get_compat($post_id, 'kvt_role', ['role']) === '') {
+        $role     = isset($data['role']) ? trim($data['role']) : '';
+        $company  = isset($data['company']) ? trim($data['company']) : '';
+        $current  = isset($data['current_role']) ? trim($data['current_role']) : '';
+        $role_combined = $current;
+        if ($role_combined === '') {
+            if ($role && $company) $role_combined = $role . ' at ' . $company;
+            elseif ($role) $role_combined = $role;
+            elseif ($company) $role_combined = $company;
+        }
+        if ($role && trim($this->meta_get_compat($post_id, 'kvt_role', ['role'])) === '') {
             update_post_meta($post_id, 'kvt_role', $role);
             update_post_meta($post_id, 'role', $role);
             $updated['role'] = $role;
         }
-        if ($company && $this->meta_get_compat($post_id, 'kvt_company', ['company']) === '') {
+        if ($company && trim($this->meta_get_compat($post_id, 'kvt_company', ['company'])) === '') {
             update_post_meta($post_id, 'kvt_company', $company);
             update_post_meta($post_id, 'company', $company);
             $updated['company'] = $company;
         }
-        if ($role_combined && $this->meta_get_compat($post_id, 'kvt_current_role', ['current_role']) === '') {
+        if ($role_combined && trim($this->meta_get_compat($post_id, 'kvt_current_role', ['current_role'])) === '') {
             update_post_meta($post_id, 'kvt_current_role', $role_combined);
             update_post_meta($post_id, 'current_role', $role_combined);
             $updated['current_role'] = $role_combined;
