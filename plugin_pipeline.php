@@ -926,10 +926,12 @@ JS;
             if(btn){
                 btn.addEventListener('click',function(){
                     const ta=document.getElementById('kvt_client_meetings');
+                    const person=prompt('Persona de la reunión:');
+                    if(!person) return;
+                    const date=prompt('Fecha (YYYY-MM-DD):', new Date().toISOString().slice(0,10)) || new Date().toISOString().slice(0,10);
                     const info=prompt('Detalles de la reunión:');
                     if(info){
-                        const date=new Date().toISOString().slice(0,10);
-                        ta.value += (ta.value?"\n":"") + date + ' - ' + info;
+                        ta.value += (ta.value?"\n":"") + date + ' | ' + person + ' | ' + info;
                     }
                 });
             }
@@ -963,10 +965,12 @@ JS;
             if(btn){
                 btn.addEventListener('click',function(){
                     const ta=document.getElementById('kvt_client_meetings');
+                    const person=prompt('Persona de la reunión:');
+                    if(!person) return;
+                    const date=prompt('Fecha (YYYY-MM-DD):', new Date().toISOString().slice(0,10)) || new Date().toISOString().slice(0,10);
                     const info=prompt('Detalles de la reunión:');
                     if(info){
-                        const date=new Date().toISOString().slice(0,10);
-                        ta.value += (ta.value?"\n":"") + date + ' - ' + info;
+                        ta.value += (ta.value?"\n":"") + date + ' | ' + person + ' | ' + info;
                     }
                 });
             }
@@ -2279,18 +2283,47 @@ JS;
               <button type="button" class="kvt-modal-close" id="kvt_new_client_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
             </div>
             <div class="kvt-modal-body">
+              <div class="kvt-tabs">
+                <button type="button" class="kvt-tab active" data-target="info">Info</button>
+                <button type="button" class="kvt-tab" data-target="meetings">Reuniones</button>
+              </div>
+              <div id="kvt_client_tab_info" class="kvt-tab-panel active">
+                <div class="kvt-modal-controls">
+                  <input type="text" id="kvt_client_name" placeholder="Empresa">
+                  <input type="text" id="kvt_client_contact" placeholder="Persona de contacto">
+                  <input type="email" id="kvt_client_email" placeholder="Email">
+                  <input type="text" id="kvt_client_phone" placeholder="Teléfono">
+                  <textarea id="kvt_client_desc" placeholder="Descripción"></textarea>
+                  <textarea id="kvt_client_sig_text" placeholder="Email o firma (texto)"></textarea>
+                  <input type="file" id="kvt_client_sig_file" accept="image/*">
+                  <button type="button" class="kvt-btn" id="kvt_client_sig_parse">Extraer datos</button>
+                  <button type="button" class="kvt-btn" id="kvt_client_submit">Crear</button>
+                </div>
+              </div>
+              <div id="kvt_client_tab_meetings" class="kvt-tab-panel">
+                <div class="kvt-modal-controls">
+                  <ul id="kvt_client_meetings_list"></ul>
+                  <textarea id="kvt_client_meetings_modal" style="display:none"></textarea>
+                  <button type="button" class="kvt-btn" id="kvt_client_add_meeting">Añadir reunión</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Add Client Meeting Modal -->
+        <div class="kvt-modal" id="kvt_client_meeting_modal" style="display:none">
+          <div class="kvt-modal-content">
+            <div class="kvt-modal-header">
+              <h3>Añadir reunión</h3>
+              <button type="button" class="kvt-modal-close" id="kvt_client_meeting_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
+            </div>
+            <div class="kvt-modal-body">
               <div class="kvt-modal-controls">
-                <input type="text" id="kvt_client_name" placeholder="Empresa">
-                <input type="text" id="kvt_client_contact" placeholder="Persona de contacto">
-                <input type="email" id="kvt_client_email" placeholder="Email">
-                <input type="text" id="kvt_client_phone" placeholder="Teléfono">
-                <textarea id="kvt_client_desc" placeholder="Descripción"></textarea>
-                <textarea id="kvt_client_meetings_modal" placeholder="Reuniones"></textarea>
-                <button type="button" class="kvt-btn" id="kvt_client_add_meeting">Añadir reunión</button>
-                <textarea id="kvt_client_sig_text" placeholder="Email o firma (texto)"></textarea>
-                <input type="file" id="kvt_client_sig_file" accept="image/*">
-                <button type="button" class="kvt-btn" id="kvt_client_sig_parse">Extraer datos</button>
-                <button type="button" class="kvt-btn" id="kvt_client_submit">Crear</button>
+                <input type="text" id="kvt_meeting_person" placeholder="Persona">
+                <input type="date" id="kvt_meeting_date">
+                <textarea id="kvt_meeting_details" placeholder="Detalles"></textarea>
+                <button type="button" class="kvt-btn" id="kvt_meeting_save">Guardar</button>
               </div>
             </div>
           </div>
@@ -5421,26 +5454,36 @@ function kvtInit(){
     const clemail = el('#kvt_client_email');
     const clphone = el('#kvt_client_phone');
     const cldesc  = el('#kvt_client_desc');
-    const clmeet  = el('#kvt_client_meetings_modal');
-    const claddmeet = el('#kvt_client_add_meeting');
     const clsigtxt = el('#kvt_client_sig_text');
     const clsigfile= el('#kvt_client_sig_file');
     const clsigparse = el('#kvt_client_sig_parse');
     const clsubmit= el('#kvt_client_submit');
-    function openClModal(){ clmodal.dataset.edit=''; clname.value=''; clcont.value=''; clemail.value=''; clphone.value=''; cldesc.value=''; if(clmeet) clmeet.value=''; if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Crear'; clmodal.style.display='flex'; }
-    function openEditClModal(c){ clmodal.dataset.edit=c.id; clname.value=c.name||''; clcont.value=c.contact_name||''; clemail.value=c.contact_email||''; clphone.value=c.contact_phone||''; cldesc.value=c.description||''; if(clmeet) clmeet.value=c.meetings||''; if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Guardar'; clmodal.style.display='flex'; }
-    function closeClModal(){ clmodal.style.display='none'; clmodal.dataset.edit=''; clsubmit.textContent='Crear'; if(cldesc) cldesc.value=''; if(clmeet) clmeet.value=''; if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; }
+    const clmeet  = el('#kvt_client_meetings_modal');
+    const clmeetList = el('#kvt_client_meetings_list');
+    const claddmeet = el('#kvt_client_add_meeting');
+    const clTabs = clmodal ? els('.kvt-tab', clmodal) : [];
+    const clPanels = clmodal ? els('.kvt-tab-panel', clmodal) : [];
+    const mtmodal = el('#kvt_client_meeting_modal');
+    const mtclose = el('#kvt_client_meeting_close');
+    const mtperson = el('#kvt_meeting_person');
+    const mtdate = el('#kvt_meeting_date');
+    const mtdetails = el('#kvt_meeting_details');
+    const mtsave = el('#kvt_meeting_save');
+    function activateClTab(target){ clTabs.forEach(b=>b.classList.toggle('active', b.dataset.target===target)); clPanels.forEach(p=>p.classList.toggle('active', p.id==='kvt_client_tab_'+target)); }
+    function renderMeetingList(){ if(!clmeetList) return; const lines = clmeet && clmeet.value ? clmeet.value.split('\n').filter(Boolean) : []; clmeetList.innerHTML = lines.map(line=>{ const parts = line.split(' | '); const date = parts[0]||''; const person = parts[1]||''; const details = parts.slice(2).join(' | '); return '<li><strong>'+esc(date)+'</strong> - '+esc(person)+': '+esc(details)+'</li>'; }).join(''); }
+    function openClModal(){ clmodal.dataset.edit=''; clname.value=''; clcont.value=''; clemail.value=''; clphone.value=''; cldesc.value=''; if(clmeet) clmeet.value=''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Crear'; activateClTab('info'); clmodal.style.display='flex'; }
+    function openEditClModal(c){ clmodal.dataset.edit=c.id; clname.value=c.name||''; clcont.value=c.contact_name||''; clemail.value=c.contact_email||''; clphone.value=c.contact_phone||''; cldesc.value=c.description||''; if(clmeet) clmeet.value=c.meetings||''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Guardar'; activateClTab('info'); clmodal.style.display='flex'; }
+    function closeClModal(){ clmodal.style.display='none'; clmodal.dataset.edit=''; clsubmit.textContent='Crear'; if(cldesc) cldesc.value=''; if(clmeet) clmeet.value=''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; activateClTab('info'); }
     clclose && clclose.addEventListener('click', closeClModal);
     clmodal && clmodal.addEventListener('click', e=>{ if(e.target===clmodal) closeClModal(); });
+    clTabs.forEach(btn=>btn.addEventListener('click', ()=>activateClTab(btn.dataset.target)));
     const btnAddClient = el('#kvt_add_client_btn');
     btnAddClient && btnAddClient.addEventListener('click', openClModal);
-    claddmeet && claddmeet.addEventListener('click', ()=>{
-      const info = prompt('Detalles de la reunión:');
-      if(info){
-        const date = new Date().toISOString().slice(0,10);
-        clmeet.value += (clmeet.value?'\n':'') + date + ' - ' + info;
-      }
-    });
+    claddmeet && claddmeet.addEventListener('click', ()=>{ if(mtperson) mtperson.value=''; if(mtdate) mtdate.value=new Date().toISOString().slice(0,10); if(mtdetails) mtdetails.value=''; mtmodal.style.display='flex'; });
+    function closeMeetingModal(){ mtmodal.style.display='none'; }
+    mtclose && mtclose.addEventListener('click', closeMeetingModal);
+    mtmodal && mtmodal.addEventListener('click', e=>{ if(e.target===mtmodal) closeMeetingModal(); });
+    mtsave && mtsave.addEventListener('click', ()=>{ const person = mtperson.value.trim(); const date = mtdate.value || new Date().toISOString().slice(0,10); const details = mtdetails.value.trim(); if(person && details){ const line = [date, person, details.replace(/\n/g,' ')].join(' | '); clmeet.value += (clmeet.value?'\n':'') + line; renderMeetingList(); closeMeetingModal(); } else { alert('Complete persona y detalles.'); } });
     clsigparse && clsigparse.addEventListener('click', ()=>{
       const fd = new FormData();
       fd.append('action','kvt_parse_signature');
