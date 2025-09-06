@@ -6491,11 +6491,9 @@ JS;
 
     private function mit_create_excel() {
         if (!class_exists('\\PhpOffice\\PhpSpreadsheet\\Spreadsheet')) {
-            if (file_exists(__DIR__ . '/vendor/autoload.php')) {
-                require_once __DIR__ . '/vendor/autoload.php';
-            }
+            error_log('mit_create_excel: PhpSpreadsheet not available');
+            return new \WP_Error('missing_phpspreadsheet', __('La librería PhpSpreadsheet no está instalada.', 'kovacic'));
         }
-        if (!class_exists('\\PhpOffice\\PhpSpreadsheet\\Spreadsheet')) return '';
 
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet       = $spreadsheet->getActiveSheet();
@@ -6519,7 +6517,12 @@ JS;
         $filename = wp_unique_filename($upload['path'], 'mit_export.xlsx');
         $filepath = trailingslashit($upload['path']) . $filename;
         $writer   = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        $writer->save($filepath);
+        try {
+            $writer->save($filepath);
+        } catch (\Throwable $e) {
+            error_log('mit_create_excel: ' . $e->getMessage());
+            return new \WP_Error('excel_write_failed', __('Error al guardar el Excel: ', 'kovacic') . $e->getMessage());
+        }
 
         return trailingslashit($upload['url']) . $filename;
     }
@@ -6623,7 +6626,6 @@ JS;
         ]);
 
         $reply    = '';
-        $file_url = '';
         if (!is_wp_error($resp)) {
             $data  = json_decode(wp_remote_retrieve_body($resp), true);
             $reply = trim($data['choices'][0]['message']['content'] ?? '');
@@ -6631,9 +6633,15 @@ JS;
         if ($reply) {
             // Detect request for Excel generation based on user message
             if (stripos($msg, 'excel') !== false) {
-                $file_url = $this->mit_create_excel();
-                if ($file_url) {
-                    $reply .= "\n\n<a href='" . esc_url($file_url) . "' target='_blank'>" . __('Descargar Excel generado', 'kovacic') . "</a>";
+                $autoload = __DIR__ . '/vendor/autoload.php';
+                if (file_exists($autoload)) {
+                    require_once $autoload;
+                }
+                $file_result = $this->mit_create_excel();
+                if (is_wp_error($file_result)) {
+                    $reply .= "\n\n" . $file_result->get_error_message();
+                } elseif ($file_result) {
+                    $reply .= "\n\n<a href='" . esc_url($file_result) . "' target='_blank'>" . __('Descargar Excel generado', 'kovacic') . "</a>";
                 } else {
                     $reply .= "\n\n" . __('No se pudo generar el archivo Excel.', 'kovacic');
                 }
