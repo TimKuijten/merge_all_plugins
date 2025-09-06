@@ -303,6 +303,7 @@ cv_uploaded|Fecha de subida");
               <select id="k-filter-process" class="k-select"><option value=""><?php esc_html_e('Proceso', 'kovacic'); ?></option></select>
               <select id="k-filter-stage" class="k-select"><option value=""><?php esc_html_e('Etapa', 'kovacic'); ?></option></select>
               <button class="btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
+              <button class="btn" id="k-add-candidate" style="display:none;"><?php esc_html_e('Añadir candidato', 'kovacic'); ?></button>
             </div>
             <div class="k-bulkbar" id="k-bulkbar" hidden>
               <div class="k-bulkactions">
@@ -469,6 +470,7 @@ cv_uploaded|Fecha de subida");
 
 /* Sidebar */
 .kcvf .k-layout{display:grid;grid-template-columns:1fr 300px;gap:calc(var(--gap)*2)}
+.kcvf.process-open .k-layout{grid-template-columns:1fr}
 .kcvf .k-sidebar{
   background:var(--surface);border:1px solid var(--divider);border-radius:var(--radius);box-shadow:var(--shadow);
   padding:calc(var(--gap)*2)
@@ -511,6 +513,10 @@ CSS;
   const state = {page:1, search:'', client:'', process:'', stage:''};
   const tbody = document.getElementById('k-rows');
   const pager = document.getElementById('k-page');
+  const wrap  = document.querySelector('.kcvf');
+  const addBtn = document.getElementById('k-add-candidate');
+  const procFilter = document.getElementById('k-filter-process');
+  if(procFilter) state.process = procFilter.value;
 
   function statusStep(status){
     if(!status) return 1;
@@ -600,12 +606,20 @@ CSS;
     state.page++;fetchData();
   });
 
+  function updateLayout(){
+    const hasProc = !!state.process;
+    if(wrap) wrap.classList.toggle('process-open', hasProc);
+    if(addBtn) addBtn.style.display = hasProc ? 'inline-block' : 'none';
+  }
+
   ['k-filter-client','k-filter-process','k-filter-stage'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){
       el.addEventListener('change',e=>{
         state[id.replace('k-filter-','')] = e.target.value;
-        state.page=1;fetchData();
+        state.page=1;
+        updateLayout();
+        fetchData();
       });
     }
   });
@@ -616,7 +630,7 @@ CSS;
       document.getElementById('k-sidebar').classList.toggle('is-open');
     });
   }
-
+  updateLayout();
   fetchData();
 })();
 JS;
@@ -2877,8 +2891,8 @@ function kvtInit(){
   const mainWrap     = el('.kvt-main');
   const toggleKanban = el('#kvt_toggle_kanban');
 
-  const selClient  = el('#kvt_client');
-  const selProcess = el('#kvt_process');
+  const selClient  = el('#kvt_client') || el('#k-filter-client');
+  const selProcess = el('#kvt_process') || el('#k-filter-process');
   const btnXLS     = el('#kvt_export_xls');
   const btnAllXLS  = el('#kvt_export_all_xls');
   const exportAllForm   = el('#kvt_export_all_form');
@@ -5458,6 +5472,7 @@ function kvtInit(){
   const btnAddCandidate = el('#kvt_add_candidate_btn');
   btnAddCandidate && btnAddCandidate.addEventListener('click', openCModal);
   btnAddCandidateProcess && btnAddCandidateProcess.addEventListener('click', openCModal);
+  addBtn && addBtn.addEventListener('click', openCModal);
   ccli && ccli.addEventListener('change', ()=>{
     if (!window.KVT_PROCESS_MAP || !Array.isArray(window.KVT_PROCESS_MAP)) return;
     const cid = parseInt(ccli.value||'0',10);
