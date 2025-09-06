@@ -2444,6 +2444,7 @@ JS;
                   <ul id="kvt_client_meetings_list"></ul>
                   <textarea id="kvt_client_meetings_modal" style="display:none"></textarea>
                   <button type="button" class="kvt-btn" id="kvt_client_add_meeting">Añadir reunión</button>
+                  <button type="button" class="kvt-btn" id="kvt_client_save_meetings">Guardar</button>
                 </div>
               </div>
             </div>
@@ -5702,6 +5703,7 @@ function kvtInit(){
     const clmeet  = el('#kvt_client_meetings_modal');
     const clmeetList = el('#kvt_client_meetings_list');
     const claddmeet = el('#kvt_client_add_meeting');
+    const clsaveMeet = el('#kvt_client_save_meetings');
     const clTabs = clmodal ? els('.kvt-tab', clmodal) : [];
     const clPanels = clmodal ? els('.kvt-tab-panel', clmodal) : [];
     const mtmodal = el('#kvt_client_meeting_modal');
@@ -5738,6 +5740,7 @@ function kvtInit(){
     const btnAddClient = el('#kvt_add_client_btn');
     btnAddClient && btnAddClient.addEventListener('click', openClModal);
     claddmeet && claddmeet.addEventListener('click', ()=>{ if(mtperson) mtperson.value=''; if(mtdate) mtdate.value=new Date().toISOString().slice(0,10); if(mtdetails) mtdetails.value=''; mtmodal.dataset.edit=''; mtmodal.style.display='flex'; });
+    clsaveMeet && clsaveMeet.addEventListener('click', ()=>{ clsubmit && clsubmit.click(); });
     function closeMeetingModal(){ mtmodal.style.display='none'; mtmodal.dataset.edit=''; }
     mtclose && mtclose.addEventListener('click', closeMeetingModal);
     mtmodal && mtmodal.addEventListener('click', e=>{ if(e.target===mtmodal) closeMeetingModal(); });
@@ -6469,14 +6472,23 @@ JS;
             }
         }
 
-        $client_lines = [];
+        $client_lines   = [];
+        $meeting_lines  = [];
         foreach ($clients as $cl) {
             $contact = get_term_meta($cl->term_id, 'contact_name', true);
-            $line    = $cl->name;
-            if ($contact) $line .= " ($contact)";
+            $email   = get_term_meta($cl->term_id, 'contact_email', true);
+            $phone   = get_term_meta($cl->term_id, 'contact_phone', true);
+            $parts   = [];
+            if ($contact) $parts[] = $contact;
+            if ($email)   $parts[] = $email;
+            if ($phone)   $parts[] = $phone;
+            $line = $cl->name;
+            if ($parts) $line .= ' (' . implode(' - ', $parts) . ')';
             $client_lines[] = $line;
             $desc = term_description($cl, self::TAX_CLIENT);
             if ($desc) $notes[] = $cl->name . ': ' . wp_strip_all_tags($desc);
+            $meet = get_term_meta($cl->term_id, 'kvt_client_meetings', true);
+            if ($meet) $meeting_lines[] = $cl->name . ': ' . preg_replace('/\r\n|\r|\n/', '; ', $meet);
         }
 
         $process_lines = [];
@@ -6485,11 +6497,13 @@ JS;
             $line = $pr->name;
             if ($cid) {
                 $cl_obj = get_term_by('id', $cid, self::TAX_CLIENT);
-                if ($cl_obj) $line .= " (" . $cl_obj->name . ")";
+                if ($cl_obj) $line .= ' (' . $cl_obj->name . ')';
             }
             $process_lines[] = $line;
             $desc = term_description($pr, self::TAX_PROCESS);
             if ($desc) $notes[] = $pr->name . ': ' . wp_strip_all_tags($desc);
+            $meet = get_term_meta($pr->term_id, 'kvt_process_meetings', true);
+            if ($meet) $meeting_lines[] = $pr->name . ': ' . preg_replace('/\r\n|\r|\n/', '; ', $meet);
         }
 
         $email_lines = [];
@@ -6537,6 +6551,9 @@ JS;
         }
         if ($email_lines) {
             $summary .= ' Correos recientes: ' . implode('; ', $email_lines) . '.';
+        }
+        if ($meeting_lines) {
+            $summary .= ' Reuniones: ' . implode(' | ', $meeting_lines) . '.';
         }
 
         return ['summary' => $summary, 'news' => $news];
