@@ -30,6 +30,8 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
     const OPT_MIT_TIME = 'kvt_mit_time';
     const OPT_MIT_RECIPIENTS = 'kvt_mit_recipients';
+    const OPT_O365_TENANT = 'kvt_o365_tenant';
+    const OPT_O365_CLIENT = 'kvt_o365_client';
     const CPT_EMAIL_TEMPLATE = 'kvt_email_tpl';
     const MIT_HISTORY_LIMIT = 20;
     const MIT_TIMEOUT      = 60;
@@ -143,6 +145,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_delete_template',      [$this, 'ajax_delete_template']);
         add_action('wp_ajax_kvt_delete_board',        [$this, 'ajax_delete_board']);
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
+        add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
+        add_action('wp_ajax_nopriv_kvt_get_outlook_events', [$this, 'ajax_get_outlook_events']);
 
         add_action('kvt_refresh_worker',               [$this, 'cron_refresh_worker']);
 
@@ -243,6 +247,8 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_SMTP_SIGNATURE);
         register_setting(self::OPT_GROUP, self::OPT_FROM_NAME);
         register_setting(self::OPT_GROUP, self::OPT_FROM_EMAIL);
+        register_setting(self::OPT_GROUP, self::OPT_O365_TENANT);
+        register_setting(self::OPT_GROUP, self::OPT_O365_CLIENT);
         register_setting(self::OPT_GROUP, self::OPT_EMAIL_LOG, [
             'type'    => 'array',
             'default' => [],
@@ -634,6 +640,8 @@ JS;
         $smtp_pass = get_option(self::OPT_SMTP_PASS, "");
         $smtp_secure = get_option(self::OPT_SMTP_SECURE, "");
         $smtp_sig  = get_option(self::OPT_SMTP_SIGNATURE, "");
+        $o365_tenant = get_option(self::OPT_O365_TENANT, "");
+        $o365_client = get_option(self::OPT_O365_CLIENT, "");
         $from_name_def = get_option(self::OPT_FROM_NAME, "");
         $from_email_def = get_option(self::OPT_FROM_EMAIL, "");
         $mit_time = get_option(self::OPT_MIT_TIME, '09:00');
@@ -717,6 +725,14 @@ JS;
                             <textarea name="<?php echo self::OPT_SMTP_SIGNATURE; ?>" id="<?php echo self::OPT_SMTP_SIGNATURE; ?>" rows="4" class="large-text"><?php echo esc_textarea($smtp_sig); ?></textarea>
                             <p class="description">Se añadirá al final de cada e-mail.</p>
                         </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_O365_TENANT; ?>">Outlook Tenant ID</label></th>
+                        <td><input type="text" name="<?php echo self::OPT_O365_TENANT; ?>" id="<?php echo self::OPT_O365_TENANT; ?>" class="regular-text" value="<?php echo esc_attr($o365_tenant); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_O365_CLIENT; ?>">Outlook Client ID</label></th>
+                        <td><input type="text" name="<?php echo self::OPT_O365_CLIENT; ?>" id="<?php echo self::OPT_O365_CLIENT; ?>" class="regular-text" value="<?php echo esc_attr($o365_client); ?>"></td>
                     </tr>
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_FROM_NAME; ?>">Nombre remitente por defecto</label></th>
@@ -3991,6 +4007,23 @@ function kvtInit(){
     return fetch(KVT_AJAX, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params.toString() }).then(r=>r.json());
   }
 
+  function fetchOutlookEvents(){
+    const params = new URLSearchParams();
+    params.set('action','kvt_get_outlook_events');
+    params.set('_ajax_nonce', KVT_NONCE);
+    return fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()}).then(r=>r.json());
+  }
+
+  function loadOutlookEvents(){
+    fetchOutlookEvents().then(j=>{
+      if(j.success && Array.isArray(j.data)){
+        j.data.forEach(e=>{ calendarEvents.push(e); });
+        renderCalendarSmall();
+        renderCalendar();
+      }
+    });
+  }
+
   function fetchProcessesList(){
     const params = new URLSearchParams();
     params.set('action','kvt_list_processes');
@@ -4257,6 +4290,8 @@ function kvtInit(){
       logs.sort((a,b)=>a.time<b.time?1:-1);
       activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+l.time+' - '+l.text+'</li>').join('') : '<li>No hay actividad</li>';
     }
+    renderCalendarSmall();
+    loadOutlookEvents();
   }
 
   function renderActivityDashboard(data){
@@ -4285,6 +4320,7 @@ function kvtInit(){
     if(activeList) activeList.innerHTML = active.join('') || '<li>No hay procesos activos</li>';
     if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(l.time)+' - '+esc(l.text)+'</li>').join('') : '<li>No hay actividad</li>';
     renderCalendarSmall();
+    loadOutlookEvents();
   }
 
   function renderCalendar(){
@@ -6082,6 +6118,59 @@ JS;
             'logs'     => $logs,
             'active'   => $active,
         ]);
+    }
+
+    public function ajax_get_outlook_events() {
+        check_ajax_referer('kvt_nonce');
+
+        $tenant = get_option(self::OPT_O365_TENANT, '');
+        $client = get_option(self::OPT_O365_CLIENT, '');
+        $user   = get_option(self::OPT_SMTP_USER, '');
+        $pass   = get_option(self::OPT_SMTP_PASS, '');
+        if (!$tenant || !$client || !$user || !$pass) {
+            wp_send_json_success([]);
+        }
+
+        $token_resp = wp_remote_post("https://login.microsoftonline.com/{$tenant}/oauth2/v2.0/token", [
+            'headers' => ['Content-Type' => 'application/x-www-form-urlencoded'],
+            'body'    => [
+                'client_id' => $client,
+                'scope'     => 'https://graph.microsoft.com/.default',
+                'grant_type'=> 'password',
+                'username'  => $user,
+                'password'  => $pass,
+            ],
+        ]);
+        if (is_wp_error($token_resp)) {
+            wp_send_json_error(['msg' => 'token'], 500);
+        }
+        $token_data = json_decode(wp_remote_retrieve_body($token_resp), true);
+        if (empty($token_data['access_token'])) {
+            wp_send_json_error(['msg' => 'token'], 500);
+        }
+        $access = $token_data['access_token'];
+
+        $events_resp = wp_remote_get('https://graph.microsoft.com/v1.0/me/events?$select=subject,start,end&$top=50', [
+            'headers' => ['Authorization' => 'Bearer ' . $access],
+        ]);
+        if (is_wp_error($events_resp)) {
+            wp_send_json_error(['msg' => 'events'], 500);
+        }
+        $body = json_decode(wp_remote_retrieve_body($events_resp), true);
+        $events = [];
+        if (!empty($body['value'])) {
+            foreach ($body['value'] as $ev) {
+                $start = isset($ev['start']['dateTime']) ? strtotime($ev['start']['dateTime']) : 0;
+                if ($start) {
+                    $events[] = [
+                        'date' => date('d/m/Y', $start),
+                        'time' => date('H:i', $start),
+                        'text' => $ev['subject'] ?? '',
+                    ];
+                }
+            }
+        }
+        wp_send_json_success($events);
     }
 
     public function ajax_dismiss_comment() {
