@@ -180,7 +180,7 @@ email|Email
 phone|Teléfono
 country|País
 city|Ciudad
-current_role|Current role
+current_role|Puesto actual
 cv_url|CV (URL)
 cv_uploaded|Fecha de subida");
         }
@@ -269,6 +269,7 @@ cv_uploaded|Fecha de subida");
         add_submenu_page('kovacic', __('ATS', 'kovacic'), __('ATS', 'kovacic'), 'manage_options', 'kvt-tracker', [$this, 'tracker_page']);
         add_submenu_page('kovacic', __('Ajustes', 'kovacic'), __('Ajustes', 'kovacic'), 'manage_options', 'kvt-settings', [$this, 'settings_page']);
         add_submenu_page('kovacic', __('Tableros de candidatos/clientes', 'kovacic'), __('Tableros de candidatos/clientes', 'kovacic'), 'manage_options', 'kvt-boards', [$this, 'boards_page']);
+        add_submenu_page('kovacic', __('Actualizar perfiles', 'kovacic'), __('Actualizar perfiles', 'kovacic'), 'manage_options', 'kvt-load-cv', [$this, 'load_cv_page']);
     }
 
     public function tracker_page() {
@@ -318,9 +319,9 @@ cv_uploaded|Fecha de subida");
               </div>
             </div>
             <div class="k-layout">
-              <div>
-                <div id="k-client-process" class="k-client-process"></div>
-                <div class="k-tablewrap">
+              <div id="k-client-process" class="k-client-process"></div>
+              <button class="btn" id="k-add-candidate" style="display:none;"><?php esc_html_e('Añadir candidato', 'kovacic'); ?></button>
+              <div class="k-tablewrap">
                   <table class="k-table" aria-describedby="k-page">
                     <thead>
                       <tr>
@@ -334,13 +335,12 @@ cv_uploaded|Fecha de subida");
                     <tbody id="k-rows"></tbody>
                   </table>
                 </div>
-                <div class="k-pager">
-                  <button class="btn" id="k-prev"><?php esc_html_e('Anterior', 'kovacic'); ?></button>
-                  <span id="k-page"></span>
-                  <button class="btn" id="k-next"><?php esc_html_e('Siguiente', 'kovacic'); ?></button>
-                </div>
+              <div class="k-pager">
+                <button class="btn" id="k-prev"><?php esc_html_e('Anterior', 'kovacic'); ?></button>
+                <span id="k-page"></span>
+                <button class="btn" id="k-next"><?php esc_html_e('Siguiente', 'kovacic'); ?></button>
               </div>
-              <aside class="k-sidebar" id="k-sidebar">
+              <div class="k-sidebar" id="k-sidebar">
                 <div class="k-sidehead"><?php esc_html_e('Actividad', 'kovacic'); ?></div>
                 <div class="k-activity" id="k-activity-feed"></div>
                 <div class="k-sideactions">
@@ -348,7 +348,7 @@ cv_uploaded|Fecha de subida");
                   <button class="btn" id="k-new-event"><?php esc_html_e('Nuevo evento', 'kovacic'); ?></button>
                   <button class="btn" id="k-new-task"><?php esc_html_e('Nueva tarea', 'kovacic'); ?></button>
                 </div>
-              </aside>
+              </div>
             </div>
           </section>
         </div>
@@ -473,7 +473,7 @@ cv_uploaded|Fecha de subida");
 .kcvf .btn:focus{outline:2px solid rgba(1,118,211,.35);outline-offset:2px}
 
 /* Sidebar */
-.kcvf .k-layout{display:grid;grid-template-columns:1fr 300px;gap:calc(var(--gap)*2)}
+.kcvf .k-layout{display:grid;grid-template-columns:1fr;gap:calc(var(--gap)*2)}
 .kcvf .k-sidebar{
   background:var(--surface);border:1px solid var(--divider);border-radius:var(--radius);box-shadow:var(--shadow);
   padding:calc(var(--gap)*2)
@@ -497,9 +497,8 @@ cv_uploaded|Fecha de subida");
 /* Responsive */
 @media (max-width: 960px){
   .kcvf .k-layout{grid-template-columns:1fr}
-  .kcvf .k-activity-toggle{display:block;margin-bottom:calc(var(--gap)*2)}
-  .kcvf .k-sidebar{order:-1;display:none}
-  .kcvf .k-sidebar.is-open{display:block}
+  .kcvf .k-activity-toggle{display:none}
+  .kcvf .k-sidebar{order:0}
   .kcvf thead{display:none}
   .kcvf table,.kcvf tbody,.kcvf tr,.kcvf td{display:block;width:100%}
   .kcvf tbody tr{border-top:1px solid var(--divider);padding:8px 12px}
@@ -869,6 +868,40 @@ JS;
         <?php
     }
 
+    public function load_cv_page() {
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Actualizar perfiles desde CVs', 'kovacic'); ?></h1>
+            <p><?php esc_html_e('Lee todos los CVs en texto y completa los campos vacíos del perfil.', 'kovacic'); ?></p>
+            <button id="kvt_load_cv_btn" class="button button-primary"><?php esc_html_e('Cargar CVs', 'kovacic'); ?></button>
+        </div>
+        <script>
+        document.addEventListener('DOMContentLoaded',function(){
+            var btn=document.getElementById('kvt_load_cv_btn');
+            if(!btn) return;
+            btn.addEventListener('click',function(){
+                btn.disabled=true;
+                fetch(ajaxurl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_generate_roles',_ajax_nonce:'<?php echo wp_create_nonce('kvt_nonce'); ?>'}).toString()})
+                    .then(r=>r.json())
+                    .then(function(res){
+                        btn.disabled=false;
+                        if(res && res.success){
+                            alert('<?php echo esc_js(__('Perfiles actualizados.', 'kovacic')); ?>');
+                        } else {
+                            var msg=res && res.data && res.data.msg ? res.data.msg : '<?php echo esc_js(__('No se pudieron actualizar los perfiles.', 'kovacic')); ?>';
+                            alert(msg);
+                        }
+                    })
+                    .catch(function(){
+                        btn.disabled=false;
+                        alert('<?php echo esc_js(__('Error de red al procesar los CVs.', 'kovacic')); ?>');
+                    });
+            });
+        });
+        </script>
+        <?php
+    }
+
     public function handle_delete_board() {
         if (!current_user_can('manage_options')) wp_die('Unauthorized');
         check_admin_referer('kvt_delete_board');
@@ -1173,7 +1206,7 @@ JS;
             <tr><th><label>Teléfono</label></th><td><input type="text" name="kvt_phone" value="<?php echo esc_attr($phone); ?>" class="regular-text"></td></tr>
             <tr><th><label>País</label></th><td><input type="text" name="kvt_country" value="<?php echo esc_attr($country); ?>" class="regular-text"></td></tr>
             <tr><th><label>Ciudad</label></th><td><input type="text" name="kvt_city" value="<?php echo esc_attr($city); ?>" class="regular-text"></td></tr>
-            <tr><th><label>Current role</label></th><td><input type="text" name="kvt_current_role" value="<?php echo esc_attr($current_role); ?>" class="regular-text"></td></tr>
+            <tr><th><label>Puesto actual</label></th><td><input type="text" name="kvt_current_role" value="<?php echo esc_attr($current_role); ?>" class="regular-text"></td></tr>
 
             <tr><th><label>CV (URL)</label></th>
                 <td>
@@ -1457,7 +1490,7 @@ JS;
                 ['key'=>'phone','label'=>'Teléfono'],
                 ['key'=>'country','label'=>'País'],
                 ['key'=>'city','label'=>'Ciudad'],
-                ['key'=>'current_role','label'=>'Current role'],
+                ['key'=>'current_role','label'=>'Puesto actual'],
                 ['key'=>'cv_url','label'=>'CV (URL)'],
                 ['key'=>'cv_uploaded','label'=>'Fecha de subida'],
             ];
@@ -1742,20 +1775,16 @@ JS;
                 <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidatos</a>
                 <a href="#" data-view="base" id="kvt_open_clients"><span class="dashicons dashicons-businessman"></span> Clientes</a>
                 <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
-                <a href="#" data-view="email" id="kvt_nav_email"><span class="dashicons dashicons-email"></span> E-mail</a>
+                <a href="#" data-view="email" id="kvt_nav_email"><span class="dashicons dashicons-email"></span> Correo</a>
                 <a href="#" data-view="keyword"><span class="dashicons dashicons-search"></span> <?php esc_html_e('Búsqueda de palabras', 'kovacic'); ?></a>
                 <a href="#" data-view="ai"><span class="dashicons dashicons-search"></span> Buscador IA</a>
                 <a href="#" data-view="boards" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
-                <a href="#" id="kvt_share_board"><span class="dashicons dashicons-share"></span> Tablero Cliente</a>
-                <a href="#" id="kvt_nav_load_roles"><span class="dashicons dashicons-update"></span> Cargar roles y empresas</a>
-                <a href="#" data-view="mit"><span class="dashicons dashicons-lightbulb"></span> Assistente MIT</a>
-                <a href="#" data-view="chat"><span class="dashicons dashicons-format-chat"></span> Chat with MIT</a>
+                <a href="#" data-view="chat"><span class="dashicons dashicons-format-chat"></span> Chat con MIT</a>
             </nav>
             <div class="kvt-content">
             <?php if ($is_client_board || $is_candidate_board): ?>
             <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
             <?php endif; ?>
-            <span class="dashicons dashicons-editor-help kvt-help" title="Haz clic para ver cómo funciona el tablero"></span>
             <div class="kvt-header"></div>
             <div id="kvt_filters_bar" class="kvt-filters" style="display:none;">
                 <div class="kvt-filter-field">
@@ -2060,12 +2089,12 @@ JS;
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
                 <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
-                    <h4>Assistente MIT</h4>
+                    <h4>Asistente MIT</h4>
                     <p id="kvt_mit_content"></p>
                     <ul id="kvt_mit_news"></ul>
                 </div>
                 <div id="kvt_mit_chat_view" class="kvt-mit" style="display:none;">
-                    <h4>Chat with MIT</h4>
+                    <h4>Chat con MIT</h4>
                     <div id="kvt_mit_chat_log" style="max-height:300px;overflow:auto;"></div>
                     <div class="kvt-row" style="margin-top:10px;gap:8px;">
                         <input type="text" id="kvt_mit_chat_input" class="kvt-input" placeholder="Escribe un mensaje">
@@ -2138,11 +2167,11 @@ JS;
           </div>
         </div>
 
-        <!-- Feedback Modal -->
+        <!-- Modal de comentarios -->
         <div class="kvt-modal" id="kvt_feedback_modal" style="display:none;">
           <div class="kvt-modal-content">
             <div class="kvt-modal-header">
-              <h3>Feedback</h3>
+              <h3>Comentarios</h3>
               <button type="button" class="kvt-modal-close" id="kvt_feedback_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
             </div>
             <div class="kvt-modal-body">
@@ -2363,7 +2392,7 @@ JS;
                 <input type="text" id="kvt_new_city" placeholder="Ciudad">
                 <input type="text" id="kvt_new_role" placeholder="Puesto actual">
                 <input type="text" id="kvt_new_company" placeholder="Empresa actual">
-                <input type="text" id="kvt_new_tags" placeholder="Tags">
+                <input type="text" id="kvt_new_tags" placeholder="Etiquetas">
                 <input type="url" id="kvt_new_cv_url" placeholder="CV (URL)">
                 <input type="file" id="kvt_new_cv_file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
                 <button type="button" class="kvt-btn" id="kvt_new_cv_upload">Subir y guardar</button>
@@ -2549,7 +2578,7 @@ JS;
         .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:750px}
         .kvt-mit{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-top:16px}
         #kvt_mit_chat_log{display:flex;flex-direction:column;gap:4px}
-        #kvt_mit_chat_log p{margin:0;padding:6px 10px;border-radius:8px;max-width:80%}
+        #kvt_mit_chat_log p{margin:0;padding:6px 10px;border-radius:8px;max-width:80%;white-space:pre-wrap;word-break:break-word}
         #kvt_mit_chat_log p.user{align-self:flex-end;background:#e0f2fe;text-align:right}
         #kvt_mit_chat_log p.assistant{align-self:flex-start;background:#f1f5f9}
         .kvt-cal-head{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-weight:600}
@@ -2799,7 +2828,7 @@ function kvtInit(){
     const actToggle = el('#k-toggle-activity');
     if (actToggle) actToggle.style.display = 'none';
     const sideHead = el('#k-sidebar .k-sidehead');
-    if (sideHead) sideHead.textContent = 'History';
+    if (sideHead) sideHead.textContent = 'Historial';
     const sideActions = el('#k-sidebar .k-sideactions');
     if (sideActions) sideActions.style.display = 'none';
     const sidebar = el('#k-sidebar');
@@ -2878,6 +2907,7 @@ function kvtInit(){
   const searchInput = el('#kvt_search');
   const stageSelect = el('#kvt_stage_filter');
   const assignSearch = el('#kvt_assign_search');
+  const addCandidate = el('#k-add-candidate');
   const boardBase   = el('#kvt_board_base');
   const boardList   = el('#kvt_board_list');
   const boardName   = el('#kvt_board_name');
@@ -3298,7 +3328,7 @@ function kvtInit(){
     if(!mitChatLog) return;
     const p=document.createElement('p');
     p.className=role;
-    if(role==='assistant') p.innerHTML='<strong>MIT:</strong> '+html;
+    if(role==='assistant') p.innerHTML='<strong>MIT:</strong> '+html.replace(/\n/g,'<br>');
     else p.textContent='Tú: '+html;
     mitChatLog.appendChild(p);
     mitChatLog.scrollTop=mitChatLog.scrollHeight;
@@ -3789,7 +3819,7 @@ function kvtInit(){
       const comments = Array.isArray(m.client_comments) ? m.client_comments : [];
       if(comments.length && ALLOW_COMMENTS){
         const items = comments.map(cc=>'<li><strong>'+esc(cc.name)+':</strong> '+esc(cc.comment)+'</li>').join('');
-        html += '<div class="kvt-feedback-section"><h4>Feedback</h4><ul class="kvt-feedback-list">'+items+'</ul></div>';
+        html += '<div class="kvt-feedback-section"><h4>Comentarios</h4><ul class="kvt-feedback-list">'+items+'</ul></div>';
       }
       return html;
     }
@@ -3808,13 +3838,13 @@ function kvtInit(){
 
     const right =
       kvInp('Proceso', '<select class="kvt-assign-process"></select><button type="button" class="kvt-assign-btn">Asignar</button>') +
-      kvInp('Current role', input('current_role', m.current_role||'')) +
-      kvInp('Tags',         input('tags', m.tags||'')) +
+      kvInp('Puesto actual', input('current_role', m.current_role||'')) +
+      kvInp('Etiquetas',         input('tags', m.tags||'')) +
       kvInp('CV (URL)',     input('cv_url', m.cv_url||'', 'url', 'https://...')) +
       kvInp('Fecha subida', input('cv_uploaded', m.cv_uploaded||'', 'text', 'DD/MM/YYYY', 'kvt-date'));
 
     const log = Array.isArray(m.activity_log) ? m.activity_log : [];
-    const fieldLabels = {first_name:'Nombre',last_name:'Apellidos',email:'Email',phone:'Teléfono',country:'País',city:'Ciudad',current_role:'Current role',tags:'Tags',cv_url:'CV (URL)',cv_uploaded:'Fecha subida',next_action:'Próxima acción',next_action_note:'Comentario acción'};
+    const fieldLabels = {first_name:'Nombre',last_name:'Apellidos',email:'Email',phone:'Teléfono',country:'País',city:'Ciudad',current_role:'Puesto actual',tags:'Etiquetas',cv_url:'CV (URL)',cv_uploaded:'Fecha subida',next_action:'Próxima acción',next_action_note:'Comentario acción'};
     const logItems = log.map(it=>{
       const when = esc(it.time||'');
       const who  = esc(it.author||'');
@@ -3868,7 +3898,7 @@ function kvtInit(){
     const comments = Array.isArray(m.client_comments) ? m.client_comments : [];
     if(comments.length){
       const items = comments.map(cc=>'<li><strong>'+esc(cc.name)+':</strong> '+esc(cc.comment)+'</li>').join('');
-      fbHTML = '<div class="kvt-feedback-section"><h4>Feedback</h4><ul class="kvt-feedback-list">'+items+'</ul></div>';
+      fbHTML = '<div class="kvt-feedback-section"><h4>Comentarios</h4><ul class="kvt-feedback-list">'+items+'</ul></div>';
     }
     const infoTab = '<div id="kvt_profile_tab_info" class="kvt-tab-panel active">'+
       '<div class="kvt-profile-cols"><dl class="kvt-profile-col">'+left+'</dl><dl class="kvt-profile-col">'+right+'</dl></div>'+ fbHTML +
@@ -3943,6 +3973,8 @@ function kvtInit(){
             if(head) head.after(rl);
           }
           alert('Perfil guardado.');
+          if(boardCtx && boardCtx.list) listProfiles(currentPage, boardCtx);
+          if(modalCtx && modalCtx.list) listProfiles(currentPage, modalCtx);
           refresh();
         });
     });
@@ -4345,7 +4377,7 @@ function kvtInit(){
         const snip = lastNoteSnippet(noteSrc);
         if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
         const del = (!CLIENT_VIEW && !CANDIDATE_VIEW) ? '<span class="dashicons dashicons-trash kvt-row-remove" data-id="'+escAttr(r.id)+'"></span>' : '';
-        const feedbackBtn = (CLIENT_VIEW && ALLOW_COMMENTS) ? '<button type="button" class="kvt-feedback-btn" data-id="'+escAttr(r.id)+'">Give Feedback</button>' : '';
+        const feedbackBtn = (CLIENT_VIEW && ALLOW_COMMENTS) ? '<button type="button" class="kvt-feedback-btn" data-id="'+escAttr(r.id)+'">Enviar comentarios</button>' : '';
         const name = del+'<a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a>'+icons.join('')+feedbackBtn;
         const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
         let cidx = stepStatuses.indexOf(r.status||'');
@@ -4662,6 +4694,7 @@ function kvtInit(){
 
   function updateSelectedInfo(){
     const pid = selProcess && selProcess.value ? selProcess.value : '';
+    if (addCandidate) addCandidate.style.display = pid ? 'inline-block' : 'none';
     if(!selInfo && !boardProcInfo){ return; }
     if(!pid){
       if(selInfo) selInfo.style.display='none';
@@ -5391,6 +5424,7 @@ function kvtInit(){
     };
     Promise.all(ids.map(assignOne)).then(()=>{ alert('Candidatos asignados.'); refresh(); });
   });
+  addCandidate && addCandidate.addEventListener('click', ()=>{ openModal('candidates'); });
   assignSearch && assignSearch.addEventListener('click', ()=>{
     const ids = Array.from(els('.kvt-row-select:checked', tBody)).map(cb=>cb.value);
     if(!ids.length){ alert('Seleccione candidatos'); return; }
@@ -8058,7 +8092,7 @@ JS;
         $req = [
             'model' => 'gpt-4o-mini',
             'messages' => [
-                ['role' => 'system', 'content' => 'Eres un asistente que extrae del CV nombre, apellidos, email, teléfono, país actual, ciudad actual, puesto y empresa actuales. Devuelve JSON con las claves "first_name","last_name","email","phone","country","city","role" y "company". Si falta algún dato devuelve campo vacío.'],
+                ['role' => 'system', 'content' => 'Eres un asistente que extrae del CV nombre, apellidos, email, teléfono, país actual, ciudad actual, puesto y empresa actuales. Devuelve JSON con las claves "first_name","last_name","email","phone","country","city","role","company" y "current_role" (puesto + empresa). Si falta algún dato devuelve campo vacío.'],
                 ['role' => 'user', 'content' => "CV:\n$cv_text"],
             ],
             'max_tokens' => 300,
@@ -8102,29 +8136,32 @@ JS;
             if (in_array($field, ['first_name','last_name'], true)) {
                 $val = $this->normalize_name($val);
             }
-            if ($this->meta_get_compat($post_id, $meta, [substr($meta,4)]) === '') {
+            if (trim($this->meta_get_compat($post_id, $meta, [substr($meta,4)])) === '') {
                 update_post_meta($post_id, $meta, $val);
                 update_post_meta($post_id, substr($meta,4), $val);
                 $updated[$field] = $val;
             }
         }
-        $role = isset($data['role']) ? trim($data['role']) : '';
-        $company = isset($data['company']) ? trim($data['company']) : '';
-        $role_combined = '';
-        if ($role && $company) $role_combined = $role . ' at ' . $company;
-        elseif ($role) $role_combined = $role;
-        elseif ($company) $role_combined = $company;
-        if ($role && $this->meta_get_compat($post_id, 'kvt_role', ['role']) === '') {
+        $role     = isset($data['role']) ? trim($data['role']) : '';
+        $company  = isset($data['company']) ? trim($data['company']) : '';
+        $current  = isset($data['current_role']) ? trim($data['current_role']) : '';
+        $role_combined = $current;
+        if ($role_combined === '') {
+            if ($role && $company) $role_combined = $role . ' at ' . $company;
+            elseif ($role) $role_combined = $role;
+            elseif ($company) $role_combined = $company;
+        }
+        if ($role && trim($this->meta_get_compat($post_id, 'kvt_role', ['role'])) === '') {
             update_post_meta($post_id, 'kvt_role', $role);
             update_post_meta($post_id, 'role', $role);
             $updated['role'] = $role;
         }
-        if ($company && $this->meta_get_compat($post_id, 'kvt_company', ['company']) === '') {
+        if ($company && trim($this->meta_get_compat($post_id, 'kvt_company', ['company'])) === '') {
             update_post_meta($post_id, 'kvt_company', $company);
             update_post_meta($post_id, 'company', $company);
             $updated['company'] = $company;
         }
-        if ($role_combined && $this->meta_get_compat($post_id, 'kvt_current_role', ['current_role']) === '') {
+        if ($role_combined && trim($this->meta_get_compat($post_id, 'kvt_current_role', ['current_role'])) === '') {
             update_post_meta($post_id, 'kvt_current_role', $role_combined);
             update_post_meta($post_id, 'current_role', $role_combined);
             $updated['current_role'] = $role_combined;
