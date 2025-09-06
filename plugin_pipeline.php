@@ -269,6 +269,7 @@ cv_uploaded|Fecha de subida");
         add_submenu_page('kovacic', __('ATS', 'kovacic'), __('ATS', 'kovacic'), 'manage_options', 'kvt-tracker', [$this, 'tracker_page']);
         add_submenu_page('kovacic', __('Ajustes', 'kovacic'), __('Ajustes', 'kovacic'), 'manage_options', 'kvt-settings', [$this, 'settings_page']);
         add_submenu_page('kovacic', __('Tableros de candidatos/clientes', 'kovacic'), __('Tableros de candidatos/clientes', 'kovacic'), 'manage_options', 'kvt-boards', [$this, 'boards_page']);
+        add_submenu_page('kovacic', __('Actualizar perfiles', 'kovacic'), __('Actualizar perfiles', 'kovacic'), 'manage_options', 'kvt-load-cv', [$this, 'load_cv_page']);
     }
 
     public function tracker_page() {
@@ -866,6 +867,40 @@ JS;
                 </tbody>
             </table>
         </div>
+        <?php
+    }
+
+    public function load_cv_page() {
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Actualizar perfiles desde CVs', 'kovacic'); ?></h1>
+            <p><?php esc_html_e('Lee todos los CVs en texto y completa los campos vacíos del perfil.', 'kovacic'); ?></p>
+            <button id="kvt_load_cv_btn" class="button button-primary"><?php esc_html_e('Cargar CVs', 'kovacic'); ?></button>
+        </div>
+        <script>
+        document.addEventListener('DOMContentLoaded',function(){
+            var btn=document.getElementById('kvt_load_cv_btn');
+            if(!btn) return;
+            btn.addEventListener('click',function(){
+                btn.disabled=true;
+                fetch(ajaxurl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_generate_roles',_ajax_nonce:'<?php echo wp_create_nonce('kvt_nonce'); ?>'}).toString()})
+                    .then(r=>r.json())
+                    .then(function(res){
+                        btn.disabled=false;
+                        if(res && res.success){
+                            alert('<?php echo esc_js(__('Perfiles actualizados.', 'kovacic')); ?>');
+                        } else {
+                            var msg=res && res.data && res.data.msg ? res.data.msg : '<?php echo esc_js(__('No se pudieron actualizar los perfiles.', 'kovacic')); ?>';
+                            alert(msg);
+                        }
+                    })
+                    .catch(function(){
+                        btn.disabled=false;
+                        alert('<?php echo esc_js(__('Error de red al procesar los CVs.', 'kovacic')); ?>');
+                    });
+            });
+        });
+        </script>
         <?php
     }
 
