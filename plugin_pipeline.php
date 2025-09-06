@@ -5272,9 +5272,16 @@ function kvtInit(){
           if(c.description) subs.push(esc(c.description));
           if(c.processes && c.processes.length) subs.push(esc(c.processes.join(', ')));
           const subHtml = subs.length?'<br><span class="kvt-sub">'+subs.join(' / ')+'</span>':'';
-          return '<div class="kvt-row kvt-client-row" data-id="'+escAttr(c.id)+'">'+
-            '<div><span class="kvt-name">'+esc(c.name)+'</span>'+subHtml+'</div>'+
-            '<div class="kvt-meta"><span class="dashicons dashicons-arrow-right-alt2"></span></div>'+
+          return '<div class="kvt-row kvt-client-row" ' +
+            'data-id="'+escAttr(c.id)+'" ' +
+            'data-name="'+escAttr(c.name)+'" ' +
+            'data-contact-name="'+escAttr(c.contact_name||'')+'" ' +
+            'data-contact-email="'+escAttr(c.contact_email||'')+'" ' +
+            'data-contact-phone="'+escAttr(c.contact_phone||'')+'" ' +
+            'data-desc="'+escAttr(c.description||'')+'" ' +
+            'data-meetings="'+escAttr(c.meetings||'')+'">'+
+            '<div><span class="kvt-name">'+esc(c.name)+'</span>'+subHtml+'</div>'+ 
+            '<div class="kvt-meta"><span class="dashicons dashicons-arrow-right-alt2"></span></div>'+ 
           '</div>';
         }).join('');
         targets.forEach(t=>t.innerHTML = html);
@@ -5626,8 +5633,19 @@ function kvtInit(){
     const handleClientClick = e=>{
       const row = e.target.closest('.kvt-client-row');
       if(!row) return;
-      const data = getClientById(row.dataset.id);
-      if(data) openEditClModal(data);
+      let data = getClientById ? getClientById(row.dataset.id) : null;
+      if(!data){
+        data = {
+          id: parseInt(row.dataset.id,10),
+          name: row.dataset.name || '',
+          contact_name: row.dataset.contactName || '',
+          contact_email: row.dataset.contactEmail || '',
+          contact_phone: row.dataset.contactPhone || '',
+          description: row.dataset.desc || '',
+          meetings: row.dataset.meetings || ''
+        };
+      }
+      openEditClModal(data);
     };
     const handleProcessClick = e=>{
       const btn = e.target.closest('.kvt-edit-process');
