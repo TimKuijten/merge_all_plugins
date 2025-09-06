@@ -821,11 +821,32 @@ JS;
             </select>
             <p class="description">(Opcional) Vincula este proceso a un cliente.</p>
         </div>
+        <div class="form-field">
+            <label for="kvt_process_meetings">Reuniones</label>
+            <textarea name="kvt_process_meetings" id="kvt_process_meetings" rows="5"></textarea>
+            <button type="button" class="button" id="kvt_add_process_meeting">Añadir reunión</button>
+        </div>
+        <script>
+        document.addEventListener('DOMContentLoaded',function(){
+            const btn=document.getElementById('kvt_add_process_meeting');
+            if(btn){
+                btn.addEventListener('click',function(){
+                    const ta=document.getElementById('kvt_process_meetings');
+                    const info=prompt('Detalles de la reunión:');
+                    if(info){
+                        const date=new Date().toISOString().slice(0,10);
+                        ta.value += (ta.value?"\n":"") + date + ' - ' + info;
+                    }
+                });
+            }
+        });
+        </script>
         <?php
     }
     public function process_edit_fields($term) {
         $clients = get_terms(['taxonomy'=>self::TAX_CLIENT,'hide_empty'=>false]);
         $current = get_term_meta($term->term_id, 'kvt_process_client', true);
+        $meetings = get_term_meta($term->term_id, 'kvt_process_meetings', true);
         ?>
         <tr class="form-field">
             <th scope="row"><label for="kvt_process_client">Cliente asociado</label></th>
@@ -840,6 +861,28 @@ JS;
                 </select>
             </td>
         </tr>
+        <tr class="form-field">
+            <th scope="row"><label for="kvt_process_meetings">Reuniones</label></th>
+            <td>
+                <textarea name="kvt_process_meetings" id="kvt_process_meetings" rows="5"><?php echo esc_textarea($meetings); ?></textarea><br>
+                <button type="button" class="button" id="kvt_add_process_meeting">Añadir reunión</button>
+            </td>
+        </tr>
+        <script>
+        document.addEventListener('DOMContentLoaded',function(){
+            const btn=document.getElementById('kvt_add_process_meeting');
+            if(btn){
+                btn.addEventListener('click',function(){
+                    const ta=document.getElementById('kvt_process_meetings');
+                    const info=prompt('Detalles de la reunión:');
+                    if(info){
+                        const date=new Date().toISOString().slice(0,10);
+                        ta.value += (ta.value?"\n":"") + date + ' - ' + info;
+                    }
+                });
+            }
+        });
+        </script>
         <?php
     }
     public function save_process_term($term_id, $tt_id) {
@@ -857,6 +900,9 @@ JS;
         if (!get_term_meta($term_id, 'kvt_process_created', true)) {
             update_term_meta($term_id, 'kvt_process_created', current_time('Y-m-d'));
         }
+        if (isset($_POST['kvt_process_meetings'])) {
+            update_term_meta($term_id, 'kvt_process_meetings', sanitize_textarea_field($_POST['kvt_process_meetings']));
+        }
     }
 
     /* Cliente contact meta */
@@ -869,11 +915,32 @@ JS;
             <label for="kvt_client_contact_email">Email de contacto</label>
             <input type="email" name="kvt_client_contact_email" id="kvt_client_contact_email">
         </div>
+        <div class="form-field">
+            <label for="kvt_client_meetings">Reuniones</label>
+            <textarea name="kvt_client_meetings" id="kvt_client_meetings" rows="5"></textarea>
+            <button type="button" class="button" id="kvt_add_client_meeting">Añadir reunión</button>
+        </div>
+        <script>
+        document.addEventListener('DOMContentLoaded',function(){
+            const btn=document.getElementById('kvt_add_client_meeting');
+            if(btn){
+                btn.addEventListener('click',function(){
+                    const ta=document.getElementById('kvt_client_meetings');
+                    const info=prompt('Detalles de la reunión:');
+                    if(info){
+                        const date=new Date().toISOString().slice(0,10);
+                        ta.value += (ta.value?"\n":"") + date + ' - ' + info;
+                    }
+                });
+            }
+        });
+        </script>
         <?php
     }
     public function client_edit_fields($term) {
         $cname  = get_term_meta($term->term_id, 'contact_name', true);
         $cemail = get_term_meta($term->term_id, 'contact_email', true);
+        $meetings = get_term_meta($term->term_id, 'kvt_client_meetings', true);
         ?>
         <tr class="form-field">
             <th scope="row"><label for="kvt_client_contact_name">Persona de contacto</label></th>
@@ -883,6 +950,28 @@ JS;
             <th scope="row"><label for="kvt_client_contact_email">Email de contacto</label></th>
             <td><input type="email" name="kvt_client_contact_email" id="kvt_client_contact_email" value="<?php echo esc_attr($cemail); ?>"></td>
         </tr>
+        <tr class="form-field">
+            <th scope="row"><label for="kvt_client_meetings">Reuniones</label></th>
+            <td>
+                <textarea name="kvt_client_meetings" id="kvt_client_meetings" rows="5"><?php echo esc_textarea($meetings); ?></textarea><br>
+                <button type="button" class="button" id="kvt_add_client_meeting">Añadir reunión</button>
+            </td>
+        </tr>
+        <script>
+        document.addEventListener('DOMContentLoaded',function(){
+            const btn=document.getElementById('kvt_add_client_meeting');
+            if(btn){
+                btn.addEventListener('click',function(){
+                    const ta=document.getElementById('kvt_client_meetings');
+                    const info=prompt('Detalles de la reunión:');
+                    if(info){
+                        const date=new Date().toISOString().slice(0,10);
+                        ta.value += (ta.value?"\n":"") + date + ' - ' + info;
+                    }
+                });
+            }
+        });
+        </script>
         <?php
     }
     public function save_client_term($term_id, $tt_id) {
@@ -891,6 +980,9 @@ JS;
         }
         if (isset($_POST['kvt_client_contact_email'])) {
             update_term_meta($term_id, 'contact_email', sanitize_email($_POST['kvt_client_contact_email']));
+        }
+        if (isset($_POST['kvt_client_meetings'])) {
+            update_term_meta($term_id, 'kvt_client_meetings', sanitize_textarea_field($_POST['kvt_client_meetings']));
         }
     }
 
