@@ -5280,11 +5280,15 @@ function kvtInit(){
             'data-contact-phone="'+escAttr(c.contact_phone||'')+'" ' +
             'data-desc="'+escAttr(c.description||'')+'" ' +
             'data-meetings="'+escAttr(c.meetings||'')+'">'+
-            '<div><span class="kvt-name">'+esc(c.name)+'</span>'+subHtml+'</div>'+ 
-            '<div class="kvt-meta"><span class="dashicons dashicons-arrow-right-alt2"></span></div>'+ 
+            '<div><span class="kvt-name">'+esc(c.name)+'</span>'+subHtml+'</div>'+
+            '<div class="kvt-meta"><button type="button" class="kvt-edit-profile dashicons dashicons-edit"></button></div>'+
           '</div>';
         }).join('');
-        targets.forEach(t=>t.innerHTML = html);
+        targets.forEach(t=>{
+          t.innerHTML = html;
+          els('.kvt-client-row', t).forEach(r=>r.addEventListener('click', handleClientClick));
+          els('.kvt-edit-profile', t).forEach(b=>b.addEventListener('click', e=>{ e.stopPropagation(); handleClientClick(e); }));
+        });
       });
   }
 
@@ -5674,8 +5678,6 @@ function kvtInit(){
       refresh();
       updateSelectedInfo();
     };
-    clientsList && clientsList.addEventListener('click', handleClientClick);
-    boardClientsList && boardClientsList.addEventListener('click', handleClientClick);
     processesList && processesList.addEventListener('click', handleProcessClick);
     boardProcessesList && boardProcessesList.addEventListener('click', handleProcessClick);
     processesList && processesList.addEventListener('click', handleProcessSelect);
