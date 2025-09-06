@@ -1720,6 +1720,7 @@ JS;
                         <button type="button" class="kvt-btn" id="kvt_export_client_board_btn">Exportar Tablero Cliente</button>
                         <button type="button" class="kvt-btn" id="kvt_export_candidate_board_btn">Exportar Tablero Candidato</button>
                         <button type="button" class="kvt-btn" id="kvt_refresh_all">Actualizar todo</button>
+                        <button type="button" class="kvt-btn" id="kvt_add_candidate_process" style="display:none;">Añadir candidato</button>
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
                       <div class="kvt-tabs" id="kvt_board_tabs">
@@ -2449,6 +2450,8 @@ JS;
         .kvt-edit:hover{color:#334155}
         .kvt-edit.dashicons{vertical-align:middle}
         .kvt-main{display:flex;gap:16px;align-items:flex-start}
+        .kvt-main.process-open{flex-direction:column}
+        .kvt-main.process-open .kvt-widgets{width:100%}
         .kvt-widgets{display:flex;flex-wrap:wrap;gap:16px;flex:1;align-items:flex-start;align-content:flex-start}
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
         #kvt_table_wrap{flex:0 0 70%}
@@ -2871,6 +2874,7 @@ function kvtInit(){
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
+  const mainWrap     = el('.kvt-main');
   const toggleKanban = el('#kvt_toggle_kanban');
 
   const selClient  = el('#kvt_client');
@@ -2883,6 +2887,7 @@ function kvtInit(){
   const btnExportClientBoard = el('#kvt_export_client_board_btn');
   const btnExportCandidateBoard = el('#kvt_export_candidate_board_btn');
   const btnRefreshAll = el('#kvt_refresh_all');
+  const btnAddCandidateProcess = el('#kvt_add_candidate_process');
   const shareModal = el('#kvt_share_modal');
   const shareClose = el('#kvt_share_close');
   const shareFieldsWrap = el('#kvt_share_fields');
@@ -2914,6 +2919,12 @@ function kvtInit(){
   let emailPageTotal = 1;
   if (typeof KVT_TEMPLATES === 'undefined' || !Array.isArray(KVT_TEMPLATES)) KVT_TEMPLATES = [];
   if (typeof KVT_SENT_EMAILS === 'undefined' || !Array.isArray(KVT_SENT_EMAILS)) KVT_SENT_EMAILS = [];
+
+  function updateLayout(){
+    const hasProc = selProcess && selProcess.value;
+    if(mainWrap) mainWrap.classList.toggle('process-open', !!hasProc);
+    if(btnAddCandidateProcess) btnAddCandidateProcess.style.display = hasProc ? 'inline-block' : 'none';
+  }
 
   function populateTemplateSelect(){
     if(!emailTplSelect) return;
@@ -4907,6 +4918,7 @@ function kvtInit(){
   });
 
   function refresh(){
+    updateLayout();
     fetchCandidates().then(j=>{
       if(j.success){
         totalPages = j.data.pages || 1;
@@ -4925,8 +4937,8 @@ function kvtInit(){
       }
     });
   }
-  selClient && selClient.addEventListener('change', ()=>{ currentPage=1; filterProcessOptions(); refresh(); updateSelectedInfo(); });
-  selProcess && selProcess.addEventListener('change', ()=>{ currentPage=1; refresh(); updateSelectedInfo(); });
+  selClient && selClient.addEventListener('change', ()=>{ currentPage=1; filterProcessOptions(); refresh(); updateSelectedInfo(); updateLayout(); });
+  selProcess && selProcess.addEventListener('change', ()=>{ currentPage=1; refresh(); updateSelectedInfo(); updateLayout(); });
   btnTaskOpen && btnTaskOpen.addEventListener('click', e=>{ e.preventDefault(); if(taskModalWrap){ taskModalWrap.style.display='flex'; populateTaskProcesses(); populateTaskCandidates(); } });
   taskProcess && taskProcess.addEventListener('change', ()=>{ populateTaskCandidates(taskProcess.value); });
   taskClose && taskClose.addEventListener('click', ()=>{ if(taskModalWrap) taskModalWrap.style.display='none'; });
@@ -5428,6 +5440,7 @@ function kvtInit(){
         }
       });
     }
+    if (selProcess && selProcess.value) cproc.value = selProcess.value;
     cfirst.value=''; clast.value=''; cemail.value='';
     if (cphone)   cphone.value='';
     if (ccountry) ccountry.value='';
@@ -5444,6 +5457,7 @@ function kvtInit(){
   cmodal && cmodal.addEventListener('click', (e)=>{ if(e.target===cmodal) closeCModal(); });
   const btnAddCandidate = el('#kvt_add_candidate_btn');
   btnAddCandidate && btnAddCandidate.addEventListener('click', openCModal);
+  btnAddCandidateProcess && btnAddCandidateProcess.addEventListener('click', openCModal);
   ccli && ccli.addEventListener('change', ()=>{
     if (!window.KVT_PROCESS_MAP || !Array.isArray(window.KVT_PROCESS_MAP)) return;
     const cid = parseInt(ccli.value||'0',10);
@@ -6120,17 +6134,14 @@ JS;
         ]);
     }
 
-    public function ajax_get_outlook_events() {
-        check_ajax_referer('kvt_nonce');
-
+    private function outlook_events() {
         $tenant = get_option(self::OPT_O365_TENANT, '');
         $client = get_option(self::OPT_O365_CLIENT, '');
         $user   = get_option(self::OPT_SMTP_USER, '');
         $pass   = get_option(self::OPT_SMTP_PASS, '');
         if (!$tenant || !$client || !$user || !$pass) {
-            wp_send_json_success([]);
+            return [];
         }
-
         $token_resp = wp_remote_post("https://login.microsoftonline.com/{$tenant}/oauth2/v2.0/token", [
             'headers' => ['Content-Type' => 'application/x-www-form-urlencoded'],
             'body'    => [
@@ -6142,19 +6153,18 @@ JS;
             ],
         ]);
         if (is_wp_error($token_resp)) {
-            wp_send_json_error(['msg' => 'token'], 500);
+            return [];
         }
         $token_data = json_decode(wp_remote_retrieve_body($token_resp), true);
         if (empty($token_data['access_token'])) {
-            wp_send_json_error(['msg' => 'token'], 500);
+            return [];
         }
         $access = $token_data['access_token'];
-
         $events_resp = wp_remote_get('https://graph.microsoft.com/v1.0/me/events?$select=subject,start,end&$top=50', [
             'headers' => ['Authorization' => 'Bearer ' . $access],
         ]);
         if (is_wp_error($events_resp)) {
-            wp_send_json_error(['msg' => 'events'], 500);
+            return [];
         }
         $body = json_decode(wp_remote_retrieve_body($events_resp), true);
         $events = [];
@@ -6170,7 +6180,12 @@ JS;
                 }
             }
         }
-        wp_send_json_success($events);
+        return $events;
+    }
+
+    public function ajax_get_outlook_events() {
+        check_ajax_referer('kvt_nonce');
+        wp_send_json_success($this->outlook_events());
     }
 
     public function ajax_dismiss_comment() {
@@ -6338,6 +6353,8 @@ JS;
             }
         }
 
+        $events = $this->outlook_events();
+
         $summary  = 'Candidatos: ' . implode('; ', $cand_lines) . '.';
         $summary .= ' Clientes: ' . implode('; ', $client_lines) . '.';
         $summary .= ' Procesos: ' . implode('; ', $process_lines) . '.';
@@ -6349,6 +6366,13 @@ JS;
         }
         if ($news) {
             $summary .= ' Noticias del mercado: ' . implode(' | ', $news) . '.';
+        }
+        if ($events) {
+            $ev_lines = [];
+            foreach (array_slice($events, 0, 5) as $ev) {
+                $ev_lines[] = $ev['date'] . ' ' . $ev['time'] . ' ' . $ev['text'];
+            }
+            $summary .= ' Eventos próximos: ' . implode('; ', $ev_lines) . '.';
         }
 
         return ['summary' => $summary, 'news' => $news];
