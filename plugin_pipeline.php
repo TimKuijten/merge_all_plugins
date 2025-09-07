@@ -143,6 +143,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_mit_chat',             [$this, 'ajax_mit_chat']);
         add_action('wp_ajax_kvt_send_email',           [$this, 'ajax_send_email']);
         add_action('wp_ajax_nopriv_kvt_send_email',    [$this, 'ajax_send_email']);
+        add_action('wp_ajax_kvt_get_email_log',        [$this, 'ajax_get_email_log']);
+        add_action('wp_ajax_nopriv_kvt_get_email_log', [$this, 'ajax_get_email_log']);
         add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
         add_action('wp_ajax_kvt_save_template',        [$this, 'ajax_save_template']);
         add_action('wp_ajax_kvt_delete_template',      [$this, 'ajax_delete_template']);
@@ -1683,7 +1685,7 @@ JS;
         $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
         $ctx = $this->mit_gather_context();
         $summary = $ctx['summary'];
-        $prompt = "Eres MIT, un asistente de reclutamiento especializado en energía renovable. Nunca uses '—'. Inicio del mensaje: Siempre comienza con un tono juguetón y cercano, presentándote como MIT, su asistente de IA. Incluye un consejo positivo para iniciar el día, relacionado con la vida o con los retos de emprender una nueva empresa (varía entre ambos). Dirígete siempre a Alan (usa su nombre). No empieces hablando directamente de energía renovable; primero da el consejo positivo. Contenido principal: Ofrece recomendaciones sobre cómo progresar en los procesos, cómo dar seguimiento a candidatos y clientes, y cualquier otro consejo útil para que la empresa sea más exitosa. Recuerda que tienes acceso a todos los datos, clientes, candidatos y procesos, así que puedes usarlos libremente para dar recomendaciones concretas. Plantillas de correo: Cuando generes plantillas, no menciones a MIT. Deja el cierre del correo abierto para que lo firme el remitente. Usa las siguientes variables disponibles: {{first_name}} {{surname}} {{country}} {{city}} {{client}} {{role}} {{status}} {{board}} (enlace al tablero) {{sender}} (remitente) Importante: si recomiendas un nuevo rol para un candidato, no uses {{role}} en el texto, ya que este campo hace referencia al rol actual del candidato en su perfil. Formato de salida: Devuelve la respuesta siempre en HTML. Usa la etiqueta h3 para los títulos de sección, ul/li para listas, blockquote para plantillas de correo y strong para resaltar nombres o roles importantes. Separa las secciones con hr. Datos de entrad: Dispones del campo $summary, que resume información clave de procesos, clientes o candidatos. Con esos datos, genera un informe con recomendaciones y sugerencias accionables.";
+        $prompt = "Eres MIT, un asistente de reclutamiento especializado en energía renovable. Nunca uses '—'. Inicio del mensaje: Siempre comienza con un tono juguetón y cercano, presentándote como MIT, su asistente de IA. Incluye un consejo positivo para iniciar el día, relacionado con la vida o con los retos de emprender una nueva empresa (varía entre ambos). Dirígete siempre a Alan (usa su nombre). No empieces hablando directamente de energía renovable; primero da el consejo positivo. Contenido principal: Ofrece recomendaciones sobre cómo progresar en los procesos, cómo dar seguimiento a candidatos y clientes, y cualquier otro consejo útil para que la empresa sea más exitosa. Recuerda que tienes acceso a todos los datos, clientes, candidatos y procesos, así que puedes usarlos libremente para dar recomendaciones concretas. No inventes datos nuevos; utiliza únicamente la información disponible y, si falta algún dato, indícalo claramente. Plantillas de correo: Cuando generes plantillas, no menciones a MIT. Deja el cierre del correo abierto para que lo firme el remitente. Usa las siguientes variables disponibles: {{first_name}} {{surname}} {{country}} {{city}} {{client}} {{role}} {{status}} {{board}} (enlace al tablero) {{sender}} (remitente) Importante: si recomiendas un nuevo rol para un candidato, no uses {{role}} en el texto, ya que este campo hace referencia al rol actual del candidato en su perfil. Formato de salida: Devuelve la respuesta siempre en HTML. Usa la etiqueta h3 para los títulos de sección, ul/li para listas, blockquote para plantillas de correo y strong para resaltar nombres o roles importantes. Separa las secciones con hr. Datos de entrad: Dispones del campo $summary, que resume información clave de procesos, clientes o candidatos. Con esos datos, genera un informe con recomendaciones y sugerencias accionables.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -2834,6 +2836,7 @@ function kvtInit(){
   const els = (sel, root=document)=>Array.from(root.querySelectorAll(sel));
   const esc = (s)=>String(s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m]));
   const escAttr = esc;
+  const fixUnicode = (s)=>{ try{ return decodeURIComponent(escape(String(s||''))); }catch(e){ return s; } };
   const urlParams = new URLSearchParams(location.search);
   const CLIENT_VIEW = typeof KVT_CLIENT_VIEW !== 'undefined' && KVT_CLIENT_VIEW;
   const CANDIDATE_VIEW = typeof KVT_CANDIDATE_VIEW !== 'undefined' && KVT_CANDIDATE_VIEW;
@@ -3054,6 +3057,7 @@ function kvtInit(){
   let totalPages = 1;
   let allRows = [];
   let calendarEvents = [];
+  let dragIdx = null;
   let calMonth = (new Date()).getMonth();
   let calYear  = (new Date()).getFullYear();
   let shareMode = 'client';
@@ -3218,7 +3222,15 @@ function kvtInit(){
 
   if(window.jQuery){
     [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
-      if(sel) jQuery(sel).select2({width:'style', dropdownAutoWidth:true});
+      if(sel) {
+        jQuery(sel)
+          .select2({width:'style', dropdownAutoWidth:true})
+          .on('select2:select select2:unselect', () => loadEmailCandidates(1));
+      }
+    });
+  } else {
+    [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
+      sel && sel.addEventListener('change', ()=>loadEmailCandidates(1));
     });
   }
 
@@ -3299,9 +3311,6 @@ function kvtInit(){
 
   emailClear && emailClear.addEventListener('click', ()=>{ emailSelected.clear(); renderEmailTable(); });
 
-  [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
-    sel && sel.addEventListener('change', ()=>loadEmailCandidates(1));
-  });
   emailSearch && emailSearch.addEventListener('input', ()=>loadEmailCandidates(1));
 
   emailPrev && emailPrev.addEventListener('click', ()=>{ if(emailPageNum>1) loadEmailCandidates(emailPageNum-1); });
@@ -4218,7 +4227,14 @@ function kvtInit(){
   function loadOutlookEvents(){
     fetchOutlookEvents().then(j=>{
       if(j.success && Array.isArray(j.data)){
-        j.data.forEach(e=>{ e.manual = true; calendarEvents.push(e); });
+        j.data.forEach(e=>{
+          e.manual = true;
+          e.text = fixUnicode(e.text||'');
+          if(e.candidate) e.candidate = fixUnicode(e.candidate);
+          if(e.process)   e.process   = fixUnicode(e.process);
+          if(e.client)    e.client    = fixUnicode(e.client);
+          calendarEvents.push(e);
+        });
         renderCalendarSmall();
         renderCalendar();
       }
@@ -4246,7 +4262,15 @@ function kvtInit(){
             const day = d.getDay();
             if(d < today) return; // skip past dates
             if(day===0 || day===6) return; // skip weekends
-            calendarEvents.push({date:item.date, time:'', text:item.text, strategy:item.strategy, template:item.template, done:false, manual:false});
+            calendarEvents.push({
+              date:item.date,
+              time:'',
+              text:fixUnicode(item.text),
+              strategy:fixUnicode(item.strategy),
+              template:fixUnicode(item.template),
+              done:false,
+              manual:false
+            });
           }
         });
         renderCalendar();
@@ -4485,13 +4509,15 @@ function kvtInit(){
     const due=[]; const upcoming=[]; const notifs=[]; const logs=[];
     calendarEvents = [];
     rows.forEach(r=>{
-      const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
+      const nameRaw = ((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim();
+      const nameTxt = fixUnicode(nameRaw);
       if(r.meta.next_action){
         const parts = r.meta.next_action.split('/');
         if(parts.length===3){
           const d = new Date(parts[2], parts[1]-1, parts[0]);
-          const note = esc(r.meta.next_action_note||'');
-          const item = '<li data-id="'+escAttr(r.id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a> - '+esc(r.meta.next_action)+(note?' — '+note:'')+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+          const noteRaw = r.meta.next_action_note||'';
+          const note = fixUnicode(noteRaw);
+          const item = '<li data-id="'+escAttr(r.id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+esc(nameTxt)+'</a> - '+esc(r.meta.next_action)+(note?' — '+esc(note):'')+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
           (d <= today ? due : upcoming).push(item);
           const ds = parts.join('/');
           calendarEvents.push({date: ds, text: nameTxt, done:false, manual:true});
@@ -4500,7 +4526,8 @@ function kvtInit(){
       if(Array.isArray(r.meta.client_comments)){
         r.meta.client_comments.forEach((cc,idx)=>{
           if(!cc.dismissed){
-            const item = '<li data-id="'+escAttr(r.id)+'" data-index="'+idx+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a> — '+esc(cc.comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
+            const comment = fixUnicode(cc.comment);
+            const item = '<li data-id="'+escAttr(r.id)+'" data-index="'+idx+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+esc(nameTxt)+'</a> — '+esc(comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
             notifs.push(item);
           }
         });
@@ -4508,25 +4535,28 @@ function kvtInit(){
       if(Array.isArray(r.meta.activity_log)){
         r.meta.activity_log.forEach(l=>{
           let msg='';
+          const lStatus = fixUnicode(l.status||'');
+          const lComment = fixUnicode(l.comment||'');
+          const lNote = fixUnicode(l.note||'');
           switch(l.type){
             case 'status':
-              msg='Estado a '+esc(l.status)+(l.comment?' — '+esc(l.comment):'');
+              msg='Estado a '+esc(lStatus)+(lComment?' — '+esc(lComment):'');
               break;
             case 'task_add':
-              msg='Tarea '+esc(l.date)+(l.note?' — '+esc(l.note):'');
+              msg='Tarea '+esc(l.date)+(lNote?' — '+esc(lNote):'');
               break;
             case 'task_done':
-              msg='Tarea completada '+esc(l.date)+(l.comment?' — '+esc(l.comment):'');
+              msg='Tarea completada '+esc(l.date)+(lComment?' — '+esc(lComment):'');
               break;
             case 'task_deleted':
-              msg='Tarea eliminada '+esc(l.date)+(l.note?' — '+esc(l.note):'');
+              msg='Tarea eliminada '+esc(l.date)+(lNote?' — '+esc(lNote):'');
               break;
             default:
-              msg=esc(l.type||'');
+              msg=esc(fixUnicode(l.type||''));
           }
-          const author = esc(l.author||'');
-          const time = esc(l.time||'');
-          logs.push({time,text: nameTxt+' — '+msg+(author?' ('+author+')':'')});
+          const author = fixUnicode(l.author||'');
+          const time = fixUnicode(l.time||'');
+          logs.push({time: esc(time), text: esc(nameTxt)+' — '+msg+(author?' ('+esc(author)+')':'')});
         });
       }
     });
@@ -4545,27 +4575,40 @@ function kvtInit(){
     if(!activityDue || !activityUpcoming || !activityNotify) return;
     calendarEvents = [];
     const due = (data.overdue||[]).map(c=>{
-      const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false, manual:true});
-      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+      const noteTxt = c.note ? fixUnicode(c.note) : '';
+      const candTxt = fixUnicode(c.candidate||'');
+      const procTxt = fixUnicode(c.process||'');
+      const clientTxt = fixUnicode(c.client||'');
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:noteTxt, candidate:candTxt, process:procTxt, client:clientTxt, done:false, manual:true});
+      const note = noteTxt ? ' — '+esc(noteTxt) : '';
+      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(candTxt)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const upcoming = (data.upcoming||[]).map(c=>{
-      const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false, manual:true});
-      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+      const noteTxt = c.note ? fixUnicode(c.note) : '';
+      const candTxt = fixUnicode(c.candidate||'');
+      const procTxt = fixUnicode(c.process||'');
+      const clientTxt = fixUnicode(c.client||'');
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:noteTxt, candidate:candTxt, process:procTxt, client:clientTxt, done:false, manual:true});
+      const note = noteTxt ? ' — '+esc(noteTxt) : '';
+      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(candTxt)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const notifs = (data.comments||[]).map(c=>{
-      return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> — '+esc(c.comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
+      const candTxt = fixUnicode(c.candidate||'');
+      const commentTxt = fixUnicode(c.comment||'');
+      return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(candTxt)+'</a> — '+esc(commentTxt)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
     });
-      const active = (data.active||[]).map(p=>{
-        return '<li><a href="#" class="kvt-open-process" data-id="'+escAttr(p.id)+'">'+esc(p.name)+'</a> - '+esc(p.client)+' - '+esc(p.days)+' días activo - creado por '+esc(p.creator)+'</li>';
-      });
+    const active = (data.active||[]).map(p=>{
+      const nameTxt = fixUnicode(p.name||'');
+      const clientTxt = fixUnicode(p.client||'');
+      const creatorTxt = fixUnicode(p.creator||'');
+      return '<li><a href="#" class="kvt-open-process" data-id="'+escAttr(p.id)+'">'+esc(nameTxt)+'</a> - '+esc(clientTxt)+' - '+esc(p.days)+' días activo - creado por '+esc(creatorTxt)+'</li>';
+    });
     const logs = (data.logs||[]).sort((a,b)=>a.time<b.time?1:-1);
     activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
     activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
     activityNotify.innerHTML = notifs.join('') || '<li>No hay notificaciones</li>';
     if(activeList) activeList.innerHTML = active.join('') || '<li>No hay procesos activos</li>';
-    if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(l.time)+' - '+esc(l.text)+'</li>').join('') : '<li>No hay actividad</li>';
+    if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(fixUnicode(l.time))+' - '+esc(fixUnicode(l.text))+'</li>').join('') : '<li>No hay actividad</li>';
     renderCalendarSmall();
     loadOutlookEvents();
   }
@@ -4585,18 +4628,22 @@ function kvtInit(){
       const ev = calendarEvents.map((e,idx)=>Object.assign({idx},e)).filter(e=>e.date===ds);
       let cls = 'kvt-cal-cell';
       if(ev.length) cls += ' has-event';
-      html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
+      html += '<div class="'+cls+'" data-date="'+ds+'"><span class="kvt-cal-day">'+d+'</span>';
       ev.forEach(e=>{
         let lbl='';
-        if(e.time) lbl+=esc(e.time)+' ';
-        lbl+=esc(e.text);
-        const tgt = e.process || e.candidate || e.client || '';
-        if(tgt) lbl+=' <em>- '+esc(tgt)+'</em>';
+        if(e.time) lbl+=esc(fixUnicode(e.time))+' ';
+        lbl+=esc(fixUnicode(e.text));
+        const parts=[];
+        if(e.candidate) parts.push(esc(fixUnicode(e.candidate)));
+        if(e.process)   parts.push(esc(fixUnicode(e.process)));
+        if(e.client)    parts.push(esc(fixUnicode(e.client)));
+        if(parts.length) lbl+=' <em>- '+parts.join(' / ')+'</em>';
         const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
+        const dragAttr = e.manual?'':' draggable="true"';
         if(e.manual){
-          html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+          html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
         } else {
-          html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
+          html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
         }
       });
       html += '</div>';
@@ -4621,6 +4668,7 @@ function kvtInit(){
     nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendar(); });
     addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false, manual:true}); renderCalendar(); }});
     calendarWrap.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
+      evEl.addEventListener('dragstart', e=>{ dragIdx = parseInt(evEl.dataset.idx,10); });
       evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendar(); } else { openMitDetail(ev); }});
     });
     calendarWrap.querySelectorAll('.kvt-cal-remove').forEach(btn=>{
@@ -4631,6 +4679,19 @@ function kvtInit(){
     });
     calendarWrap.querySelectorAll('.kvt-cal-reject').forEach(btn=>{
       btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendar(); });
+    });
+    calendarWrap.querySelectorAll('.kvt-cal-cell').forEach(cell=>{
+      cell.addEventListener('dragover', e=>e.preventDefault());
+      cell.addEventListener('drop', e=>{
+        e.preventDefault();
+        if(dragIdx!==null){
+          calendarEvents[dragIdx].date = cell.dataset.date;
+          calendarEvents[dragIdx].manual = true;
+          dragIdx = null;
+          renderCalendar();
+          renderCalendarSmall();
+        }
+      });
     });
     mitBtn.addEventListener('click', loadMitCalendar);
   }
@@ -4657,24 +4718,21 @@ function kvtInit(){
         const ev = calendarEvents.map((e,idx)=>Object.assign({idx},e)).filter(e=>e.date===ds);
         let cls = 'kvt-cal-cell';
         if(ev.length) cls += ' has-event';
-        html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
+        html += '<div class="'+cls+'" data-date="'+ds+'"><span class="kvt-cal-day">'+d+'</span>';
         ev.forEach(e=>{
-          let lbl = esc(e.text);
-          if(e.time) lbl += ' '+esc(e.time);
-          let tgt = '';
-          if(e.candidate || e.process){
-            if(e.candidate) tgt += esc(e.candidate);
-            if(e.candidate && e.process) tgt += ' / ';
-            if(e.process) tgt += esc(e.process);
-          } else if(e.client){
-            tgt = esc(e.client);
-          }
-          if(tgt) lbl += ' <em>- '+tgt+'</em>';
+          let lbl = esc(fixUnicode(e.text));
+          if(e.time) lbl += ' '+esc(fixUnicode(e.time));
+          const parts=[];
+          if(e.candidate) parts.push(esc(fixUnicode(e.candidate)));
+          if(e.process)   parts.push(esc(fixUnicode(e.process)));
+          if(e.client)    parts.push(esc(fixUnicode(e.client)));
+          if(parts.length) lbl += ' <em>- '+parts.join(' / ')+'</em>';
           const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
+          const dragAttr = e.manual?'':' draggable="true"';
           if(e.manual){
-            html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+            html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
           } else {
-            html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
+            html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
           }
         });
         html += '</div>';
@@ -4698,10 +4756,26 @@ function kvtInit(){
       prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendarSmall(); });
       nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendarSmall(); });
       addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false, manual:true}); renderCalendarSmall(); }});
-      calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{ evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendarSmall(); } else { openMitDetail(ev); }}); });
+      calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
+        evEl.addEventListener('dragstart', e=>{ dragIdx = parseInt(evEl.dataset.idx,10); });
+        evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendarSmall(); } else { openMitDetail(ev); }});
+      });
       calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
       calendarSmall.querySelectorAll('.kvt-cal-accept').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendarSmall(); }); });
       calendarSmall.querySelectorAll('.kvt-cal-reject').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
+      calendarSmall.querySelectorAll('.kvt-cal-cell').forEach(cell=>{
+        cell.addEventListener('dragover', e=>e.preventDefault());
+        cell.addEventListener('drop', e=>{
+          e.preventDefault();
+          if(dragIdx!==null){
+            calendarEvents[dragIdx].date = cell.dataset.date;
+            calendarEvents[dragIdx].manual = true;
+            dragIdx = null;
+            renderCalendarSmall();
+            renderCalendar();
+          }
+        });
+      });
       mitBtn.addEventListener('click', loadMitCalendar);
     }
 
@@ -6009,22 +6083,20 @@ function kvtInit(){
           credentials:'same-origin',
           body:new URLSearchParams({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)})
         });
-        const txt = await res2.text();
         let out = null;
-        try { out = JSON.parse(txt); } catch(e) {
-          const start = txt.indexOf('{');
-          const end   = txt.lastIndexOf('}');
-          if(start !== -1 && end !== -1) {
-            try { out = JSON.parse(txt.slice(start,end+1)); } catch(e2){ out = null; }
-          }
-        }
-        if(out && out.success){
+        try { out = await res2.json(); } catch(e) {}
+        if(res2.ok && out && out.success){
           emailStatusMsg.textContent=`Enviados: ${out.data.sent}`;
-          if(out.data.log){ KVT_SENT_EMAILS=out.data.log; renderSentEmails(); }
+        } else if (res2.ok) {
+          emailStatusMsg.textContent='Enviados';
         } else {
           emailStatusMsg.textContent='Error enviando';
-          console.error(txt);
+          return;
         }
+        try {
+          const logRes = await ajaxForm({action:'kvt_get_email_log', _ajax_nonce:KVT_NONCE});
+          if(logRes.success && logRes.data.log){ KVT_SENT_EMAILS = logRes.data.log; renderSentEmails(); }
+        } catch(e){}
       } catch(err){
         emailStatusMsg.textContent='Error enviando';
       }
@@ -6730,7 +6802,7 @@ JS;
         $news    = $ctx['news'];
 
         $hist['summary'] = $summary;
-        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos y clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente). Al final, incluye hasta 5 sugerencias de agenda en una lista HTML <ul id=\"mit_agenda\">; cada <li> debe tener data-date (DD/MM/YYYY) y data-action, contener un <p class=\"strategy\"> con la estrategia o explicación y un <blockquote class=\"template\"> con una plantilla de correo breve. Evita proponer fechas en sábado o domingo o en el pasado.";
+        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. No inventes datos nuevos; utiliza únicamente la información disponible y, si falta algún dato, indícalo. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos y clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente). Al final, incluye hasta 5 sugerencias de agenda en una lista HTML <ul id=\"mit_agenda\">; cada <li> debe tener data-date (DD/MM/YYYY) y data-action, contener un <p class=\"strategy\"> con la estrategia o explicación y un <blockquote class=\"template\"> con una plantilla de correo breve. Evita proponer fechas en sábado o domingo o en el pasado.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -6822,7 +6894,7 @@ JS;
         $ctx     = $this->mit_gather_context();
         $summary = $ctx['summary'];
 
-        $identity = 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto.';
+        $identity = 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto. No inventes datos nuevos; utiliza únicamente la información disponible y, si falta algún dato, indícalo.';
 
         // Ensure system identity and summary are always the first entries
         if (empty($hist['messages']) || ($hist['messages'][0]['role'] ?? '') !== 'system') {
@@ -8634,6 +8706,14 @@ JS;
             if (!empty($queue)) {
                 wp_schedule_single_event(time()+5, 'kvt_refresh_worker');
             }
+        }
+
+        public function ajax_get_email_log() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+
+            $log = array_reverse((array) get_option(self::OPT_EMAIL_LOG, []));
+            wp_send_json_success(['log' => $log]);
         }
 
         public function ajax_send_email() {
