@@ -7130,6 +7130,8 @@ JS;
             if ($pn) $notes[] = $pn;
             $desc = trim(wp_strip_all_tags($c->post_content));
             if ($desc) $notes[] = $desc;
+            $cv   = $this->get_candidate_cv_text($c->ID);
+            if ($cv) $notes[] = $c->post_title . ' CV: ' . mb_substr($cv, 0, 500);
             $ccs = get_post_meta($c->ID, 'kvt_client_comments', true);
             if (is_array($ccs)) {
                 foreach ($ccs as $cc) {
@@ -7701,7 +7703,7 @@ JS;
         $ctx     = $this->mit_gather_context();
         $summary = $ctx['summary'];
 
-        $identity = 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto. Dispones de herramientas externas: "search_web" para buscar en Google y "fetch_url" para leer páginas. Úsalas sólo cuando la conversación no contenga la información solicitada, si se pide algo reciente o si tu confianza es baja. Si no es necesario, responde directamente.';
+        $identity = 'Eres MIT, el asistente personal de la empresa. Tienes acceso completo a las bases de datos de clientes, procesos, candidatos, sus perfiles, notas, reuniones y etapas en cada proceso. Recuerdas los correos diarios enviados y su contexto. Dispones de herramientas externas: "search_web" para buscar en Google, "fetch_url" para leer páginas y "use_gemini" para análisis multimedia o redundancia. Cuando la conversación no contenga la información solicitada o se requiera un dato reciente, debes llamar a la herramienta adecuada en lugar de decir que no puedes obtenerlo. Si no es necesario, responde directamente.';
 
         // Ensure system identity and summary are always the first entries
         if (empty($hist['messages']) || ($hist['messages'][0]['role'] ?? '') !== 'system') {
@@ -7778,6 +7780,15 @@ JS;
         }
         if ($reply === '') {
             $reply = $this->mit_gemini_chat($messages);
+        }
+        if ($reply === '' || stripos($reply, 'no pude') !== false || stripos($reply, 'no puedo') !== false) {
+            $web = $this->mit_search_web($msg);
+            if ($web) {
+                $fallback = $this->mit_use_gemini($msg . "\n\nInformación encontrada:\n" . $web, 'text');
+                if ($fallback) {
+                    $reply = $fallback;
+                }
+            }
         }
         $file_url = '';
         if ($reply) {
