@@ -2610,7 +2610,9 @@ JS;
         .kvt-cal-accept,.kvt-cal-reject{background:none;border:0;margin-left:4px;cursor:pointer;font-size:12px}
         .kvt-cal-accept{color:#16a34a}
         .kvt-cal-reject{color:#dc2626}
-        .kvt-mit-btn{background:#2563eb;color:#fff;border:1px solid #2563eb;border-radius:4px;padding:2px 8px;font-weight:600}
+        .kvt-mit-btn{background:#0A212E;color:#fff;border:1px solid #0A212E;border-radius:4px;padding:2px 8px;font-weight:600}
+        .kvt-mit-btn.loading{opacity:.7}
+        .kvt-mit-btn.loading:after{content:'';display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:kvt-spin 1s linear infinite;margin-left:6px;vertical-align:middle}
         #kvt_mit_detail{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:1000}
         #kvt_mit_detail_box{background:#fff;padding:20px;border-radius:8px;max-width:500px;width:90%;position:relative}
         #kvt_mit_detail_box h4{margin-top:0}
@@ -4223,7 +4225,9 @@ function kvtInit(){
     });
   }
 
-  async function loadMitCalendar(){
+  async function loadMitCalendar(ev){
+    const btn = ev?.target;
+    if(btn){ btn.disabled = true; btn.classList.add('loading'); }
     try {
       const resp = await fetch(KVT_AJAX, {
         method:'POST',
@@ -4233,12 +4237,14 @@ function kvtInit(){
       });
       const json = await resp.json();
       if(json && json.success && json.data && Array.isArray(json.data.agenda)){
+        const today = new Date(); today.setHours(0,0,0,0);
         calendarEvents = calendarEvents.filter(e=>e.manual);
         json.data.agenda.forEach(item=>{
           const parts = item.date.split('/');
           if(parts.length===3){
             const d = new Date(parts[2], parts[1]-1, parts[0]);
             const day = d.getDay();
+            if(d < today) return; // skip past dates
             if(day===0 || day===6) return; // skip weekends
             calendarEvents.push({date:item.date, time:'', text:item.text, strategy:item.strategy, template:item.template, done:false, manual:false});
           }
@@ -4246,7 +4252,9 @@ function kvtInit(){
         renderCalendar();
         renderCalendarSmall();
       }
-    } catch(e){}
+    } catch(e){} finally {
+      if(btn){ btn.disabled = false; btn.classList.remove('loading'); }
+    }
   }
 
   let mitDetailModal;
@@ -6700,7 +6708,7 @@ JS;
         $news    = $ctx['news'];
 
         $hist['summary'] = $summary;
-        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos y clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente). Al final, incluye hasta 5 sugerencias de agenda en una lista HTML <ul id=\"mit_agenda\">; cada <li> debe tener data-date (DD/MM/YYYY) y data-action, contener un <p class=\"strategy\"> con la estrategia o explicación y un <blockquote class=\"template\"> con una plantilla de correo breve. Evita proponer fechas en sábado o domingo.";
+        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos y clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente). Al final, incluye hasta 5 sugerencias de agenda en una lista HTML <ul id=\"mit_agenda\">; cada <li> debe tener data-date (DD/MM/YYYY) y data-action, contener un <p class=\"strategy\"> con la estrategia o explicación y un <blockquote class=\"template\"> con una plantilla de correo breve. Evita proponer fechas en sábado o domingo o en el pasado.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -6737,6 +6745,13 @@ JS;
                         if ($child->nodeName === 'blockquote') $template .= $doc->saveHTML($child);
                     }
                     if ($date && $action) {
+                        $parts = explode('/', $date);
+                        if (count($parts) === 3) {
+                            $d = \DateTime::createFromFormat('d/m/Y', $date, new \DateTimeZone('Europe/Madrid'));
+                            $d->setTime(0,0);
+                            $today = new \DateTime('today', new \DateTimeZone('Europe/Madrid'));
+                            if ($d < $today) continue;
+                        }
                         $agenda[] = [
                             'date'     => $date,
                             'text'     => $action,
