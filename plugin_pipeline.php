@@ -2607,6 +2607,14 @@ JS;
         .kvt-cal-add label{display:flex;flex-direction:column;font-size:12px}
         .kvt-cal-event.done{text-decoration:line-through;color:#9ca3af}
         .kvt-cal-remove{background:none;border:0;color:#ef4444;margin-left:4px;cursor:pointer}
+        .kvt-cal-accept,.kvt-cal-reject{background:none;border:0;margin-left:4px;cursor:pointer;font-size:12px}
+        .kvt-cal-accept{color:#16a34a}
+        .kvt-cal-reject{color:#dc2626}
+        .kvt-mit-btn{background:#2563eb;color:#fff;border:1px solid #2563eb;border-radius:4px;padding:2px 8px;font-weight:600}
+        #kvt_mit_detail{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:1000}
+        #kvt_mit_detail_box{background:#fff;padding:20px;border-radius:8px;max-width:500px;width:90%;position:relative}
+        #kvt_mit_detail_box h4{margin-top:0}
+        #kvt_mit_detail_close{position:absolute;top:8px;right:8px;background:none;border:0;font-size:16px;cursor:pointer}
         #kvt_table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
         #kvt_table thead th{position:sticky;top:0;background:#f8fafc;color:#0A212E;padding:10px;border-bottom:1px solid #e5e7eb;text-align:left;font-weight:600}
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
@@ -4224,24 +4232,36 @@ function kvtInit(){
         body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:KVT_MIT_NONCE})
       });
       const json = await resp.json();
-      if(json && json.success && json.data && json.data.suggestions){
+      if(json && json.success && json.data && Array.isArray(json.data.agenda)){
         calendarEvents = calendarEvents.filter(e=>e.manual);
-        const lines = json.data.suggestions.split(/\r?\n/);
-        const re = /(\d{1,2}\/\d{1,2}\/\d{4})/;
-        lines.forEach(line=>{
-          const m = line.match(re);
-          if(m){
-            const dateFmt = m[1];
-            const text = line.replace(re,'').replace(/^[\s\-–—:,]+/,'').trim();
-            if(text){
-              calendarEvents.push({date:dateFmt, time:'', text:text, done:false, manual:false});
-            }
+        json.data.agenda.forEach(item=>{
+          const parts = item.date.split('/');
+          if(parts.length===3){
+            const d = new Date(parts[2], parts[1]-1, parts[0]);
+            const day = d.getDay();
+            if(day===0 || day===6) return; // skip weekends
+            calendarEvents.push({date:item.date, time:'', text:item.text, strategy:item.strategy, template:item.template, done:false, manual:false});
           }
         });
         renderCalendar();
         renderCalendarSmall();
       }
     } catch(e){}
+  }
+
+  let mitDetailModal;
+
+  function openMitDetail(ev){
+    if(!mitDetailModal){
+      mitDetailModal = document.createElement('div');
+      mitDetailModal.id='kvt_mit_detail';
+      mitDetailModal.innerHTML='<div id="kvt_mit_detail_box"><button type="button" id="kvt_mit_detail_close">&times;</button><div id="kvt_mit_detail_body"></div></div>';
+      document.body.appendChild(mitDetailModal);
+      mitDetailModal.addEventListener('click', e=>{ if(e.target===mitDetailModal || e.target.id==='kvt_mit_detail_close') mitDetailModal.style.display='none'; });
+    }
+    const body = el('#kvt_mit_detail_body');
+    body.innerHTML='<h4>'+esc(ev.text)+'</h4>'+(ev.strategy?'<p>'+esc(ev.strategy)+'</p>':'')+(ev.template||'');
+    mitDetailModal.style.display='flex';
   }
 
   function fetchProcessesList(){
@@ -4548,7 +4568,7 @@ function kvtInit(){
     const last = new Date(calYear, calMonth+1, 0);
     const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     const monthName = first.toLocaleString('default',{month:'long'});
-    let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next">&gt;</button><button type="button" id="kvt_cal_mit">MIT</button></span></div>';
+    let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next">&gt;</button><button type="button" id="kvt_cal_mit" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
     html += '<div class="kvt-cal-add"><input type="text" id="kvt_cal_date" placeholder="DD/MM/YYYY"><input type="time" id="kvt_cal_time"><input type="text" id="kvt_cal_text" placeholder="Evento"><select id="kvt_cal_process"><option value="">Proceso (opcional)</option></select><select id="kvt_cal_candidate"><option value="">Candidato (opcional)</option></select><button type="button" id="kvt_cal_add">Añadir</button></div>';
     html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
     for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
@@ -4565,7 +4585,11 @@ function kvtInit(){
         const tgt = e.process || e.candidate || e.client || '';
         if(tgt) lbl+=' <em>- '+esc(tgt)+'</em>';
         const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
-        html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+        if(e.manual){
+          html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+        } else {
+          html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
+        }
       });
       html += '</div>';
     }
@@ -4589,9 +4613,15 @@ function kvtInit(){
     nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendar(); });
     addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false, manual:true}); renderCalendar(); }});
     calendarWrap.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
-      evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); calendarEvents[idx].done=!calendarEvents[idx].done; renderCalendar(); });
+      evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendar(); } else { openMitDetail(ev); }});
     });
     calendarWrap.querySelectorAll('.kvt-cal-remove').forEach(btn=>{
+      btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendar(); });
+    });
+    calendarWrap.querySelectorAll('.kvt-cal-accept').forEach(btn=>{
+      btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendar(); });
+    });
+    calendarWrap.querySelectorAll('.kvt-cal-reject').forEach(btn=>{
       btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendar(); });
     });
     mitBtn.addEventListener('click', loadMitCalendar);
@@ -4603,7 +4633,7 @@ function kvtInit(){
       const last = new Date(calYear, calMonth+1, 0);
       const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
       const monthName = first.toLocaleString('default',{month:'long'});
-      let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next_s">&gt;</button><button type="button" id="kvt_cal_mit_s">MIT</button></span></div>';
+      let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next_s">&gt;</button><button type="button" id="kvt_cal_mit_s" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
       html += '<div class="kvt-cal-add">'
         +'<label>Fecha<input type="text" id="kvt_cal_date_s" placeholder="DD/MM/YYYY"></label>'
         +'<label>Hora<input type="time" id="kvt_cal_time_s"></label>'
@@ -4633,7 +4663,11 @@ function kvtInit(){
           }
           if(tgt) lbl += ' <em>- '+tgt+'</em>';
           const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
-          html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+          if(e.manual){
+            html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+          } else {
+            html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
+          }
         });
         html += '</div>';
       }
@@ -4656,8 +4690,10 @@ function kvtInit(){
       prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendarSmall(); });
       nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendarSmall(); });
       addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false, manual:true}); renderCalendarSmall(); }});
-      calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{ evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); calendarEvents[idx].done=!calendarEvents[idx].done; renderCalendarSmall(); }); });
+      calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{ evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendarSmall(); } else { openMitDetail(ev); }}); });
       calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
+      calendarSmall.querySelectorAll('.kvt-cal-accept').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendarSmall(); }); });
+      calendarSmall.querySelectorAll('.kvt-cal-reject').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
       mitBtn.addEventListener('click', loadMitCalendar);
     }
 
@@ -6664,7 +6700,7 @@ JS;
         $news    = $ctx['news'];
 
         $hist['summary'] = $summary;
-        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente). Al final, incluye hasta 5 sugerencias de agenda, cada una en una línea independiente que comience con la fecha en formato DD/MM/YYYY, seguido de un guion y la acción a realizar.";
+        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos y clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente). Al final, incluye hasta 5 sugerencias de agenda en una lista HTML <ul id=\"mit_agenda\">; cada <li> debe tener data-date (DD/MM/YYYY) y data-action, contener un <p class=\"strategy\"> con la estrategia o explicación y un <blockquote class=\"template\"> con una plantilla de correo breve. Evita proponer fechas en sábado o domingo.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -6679,12 +6715,38 @@ JS;
             'timeout' => self::MIT_TIMEOUT,
         ]);
         $text = '';
+        $agenda = [];
         if (!is_wp_error($resp)) {
             $data = json_decode(wp_remote_retrieve_body($resp), true);
             $text = trim($data['choices'][0]['message']['content'] ?? '');
         }
         if ($text) {
             $text = $this->mit_strip_fences($text);
+            if (preg_match('/<ul id="mit_agenda">.*?<\/ul>/s', $text, $m)) {
+                $ul = $m[0];
+                $doc = new \DOMDocument();
+                \libxml_use_internal_errors(true);
+                $doc->loadHTML($ul);
+                foreach ($doc->getElementsByTagName('li') as $li) {
+                    $date = $li->getAttribute('data-date');
+                    $action = $li->getAttribute('data-action');
+                    $strategy = '';
+                    $template = '';
+                    foreach ($li->childNodes as $child) {
+                        if ($child->nodeName === 'p') $strategy .= $child->textContent;
+                        if ($child->nodeName === 'blockquote') $template .= $doc->saveHTML($child);
+                    }
+                    if ($date && $action) {
+                        $agenda[] = [
+                            'date'     => $date,
+                            'text'     => $action,
+                            'strategy' => trim($strategy),
+                            'template' => wp_kses_post(trim($template)),
+                        ];
+                    }
+                }
+                $text = str_replace($ul, '', $text);
+            }
             $plain = preg_replace('/<\/(li|p)>/i', "\n", $text);
             $plain = preg_replace('/<br\s*\/?\>/i', "\n", $plain);
             $plain = wp_strip_all_tags($plain);
@@ -6702,6 +6764,7 @@ JS;
         wp_send_json_success([
             'suggestions'       => $plain,
             'suggestions_html'  => wp_kses_post($text),
+            'agenda'            => $agenda,
             'news'              => $news,
             'history'           => $hist['messages'],
         ]);
