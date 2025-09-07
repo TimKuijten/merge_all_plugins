@@ -140,3 +140,8 @@
   .kcvf tbody td{border:none;padding:6px 0}
   .kcvf .checkbox{position:absolute;right:12px;top:12px}
 }
+
+/* MIT calendar email icon */
+.kvt-mit-template{position:relative;}
+.kvt-mit-email-icon{background:none;border:none;cursor:pointer;position:absolute;top:0;right:0;color:#2271b1;}
+.kvt-mit-email-icon .dashicons{font-size:16px;}

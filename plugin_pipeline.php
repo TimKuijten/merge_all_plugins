@@ -2381,6 +2381,24 @@ JS;
           </div>
         </div>
 
+        <!-- MIT Email Modal -->
+        <div class="kvt-modal" id="kvt_mit_email_modal" style="display:none;">
+          <div class="kvt-modal-content">
+            <div class="kvt-modal-header">
+              <h3 id="kvt_mit_email_title"></h3>
+              <button type="button" class="kvt-modal-close" id="kvt_mit_email_close" aria-label="Cerrar"><span class="dashicons dashicons-no-alt"></span></button>
+            </div>
+            <div class="kvt-modal-body">
+              <input type="text" id="kvt_mit_email_subject" class="kvt-input" placeholder="Asunto">
+              <textarea id="kvt_mit_email_body" class="kvt-textarea" rows="8"></textarea>
+              <div class="kvt-row" style="margin-top:8px;">
+                <button type="button" class="kvt-btn" id="kvt_mit_email_send">Enviar</button>
+              </div>
+              <div id="kvt_mit_email_status"></div>
+            </div>
+          </div>
+        </div>
+
         <!-- Modal de comentarios -->
         <div class="kvt-modal" id="kvt_feedback_modal" style="display:none;">
           <div class="kvt-modal-content">
@@ -4652,8 +4670,77 @@ function kvtInit(){
       mitDetailModal.addEventListener('click', e=>{ if(e.target===mitDetailModal || e.target.id==='kvt_mit_detail_close') mitDetailModal.style.display='none'; });
     }
     const body = el('#kvt_mit_detail_body');
-    body.innerHTML='<h4>'+esc(ev.text)+'</h4>'+(ev.strategy?'<p>'+esc(ev.strategy)+'</p>':'')+(ev.template||'');
+    body.innerHTML='<h4>'+esc(ev.text)+'</h4>'+(ev.strategy?'<p>'+esc(ev.strategy)+'</p>':'')+(ev.template?'<div class="kvt-mit-template">'+ev.template+'</div>':'');
+    if(ev.template){
+      const box = body.querySelector('.kvt-mit-template');
+      if(box){
+        const btn = document.createElement('button');
+        btn.type='button';
+        btn.className='kvt-mit-email-icon';
+        btn.innerHTML='<span class="dashicons dashicons-email"></span>';
+        box.insertBefore(btn, box.firstChild);
+        btn.addEventListener('click', ()=>{ openMitEmail(ev); });
+      }
+    }
     mitDetailModal.style.display='flex';
+  }
+
+  let mitEmailModal, mitEmailTitle, mitEmailSubject, mitEmailBody, mitEmailStatus, mitEmailCandidate;
+
+  function openMitEmail(ev){
+    if(!mitEmailModal){
+      mitEmailModal = el('#kvt_mit_email_modal');
+      mitEmailTitle = el('#kvt_mit_email_title', mitEmailModal);
+      mitEmailSubject = el('#kvt_mit_email_subject', mitEmailModal);
+      mitEmailBody = el('#kvt_mit_email_body', mitEmailModal);
+      mitEmailStatus = el('#kvt_mit_email_status', mitEmailModal);
+      const close = el('#kvt_mit_email_close', mitEmailModal);
+      close.addEventListener('click', ()=>{ mitEmailModal.style.display='none'; });
+      mitEmailModal.addEventListener('click', e=>{ if(e.target===mitEmailModal) mitEmailModal.style.display='none'; });
+      const sendBtn = el('#kvt_mit_email_send', mitEmailModal);
+      sendBtn.addEventListener('click', sendMitEmail);
+    }
+    mitEmailStatus.textContent='';
+    const m = ev.text.match(/(?:a|con)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+)/i);
+    const first = m ? m[1] : '';
+    fetchCandidatesAll().then(res=>{
+      const items = (res && res.success && res.data && Array.isArray(res.data.items))?res.data.items:[];
+      const cand = items.find(c=> (c.meta&&c.meta.first_name||'').toLowerCase()===first.toLowerCase());
+      if(!cand || !cand.meta || !cand.meta.email){
+        alert('No se encontró email para '+first);
+        return;
+      }
+      mitEmailCandidate = cand;
+      mitEmailTitle.textContent = 'Correo a '+(cand.meta.first_name||'');
+      mitEmailSubject.value = '';
+      const tmp=document.createElement('div'); tmp.innerHTML=ev.template||''; mitEmailBody.value=tmp.textContent||'';
+      mitEmailModal.style.display='flex';
+    });
+  }
+
+  async function sendMitEmail(){
+    if(!mitEmailCandidate) return;
+    const body = mitEmailBody.value.trim();
+    if(!body){ alert('Mensaje vacío'); return; }
+    const subject = mitEmailSubject.value.trim();
+    const r = mitEmailCandidate;
+    const payload = {
+      recipients:[{email:r.meta.email||'', first_name:r.meta.first_name||'', surname:r.meta.last_name||'', country:r.meta.country||'', city:r.meta.city||'', role:r.meta.process||'', status:r.meta.status||'', client:r.meta.client||'', board:r.meta.board||''}],
+      subject_template:subject,
+      body_template:body,
+      from_email:KVT_FROM_EMAIL||'',
+      from_name:KVT_FROM_NAME||'',
+      use_signature:0,
+      copy_sender:0
+    };
+    mitEmailStatus.textContent='Enviando...';
+    try{
+      const resp=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload:JSON.stringify(payload)})});
+      const json=await resp.json();
+      mitEmailStatus.textContent=json && json.success ? 'Enviado' : 'Error';
+    }catch(e){
+      mitEmailStatus.textContent='Error';
+    }
   }
 
   function fetchProcessesList(){
