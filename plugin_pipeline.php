@@ -6209,13 +6209,13 @@ function kvtInit(){
       try{
         const out = await ajaxForm({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)});
         emailStatusMsg.textContent = out && out.success ? `Enviados: ${out.data.sent}` : 'Enviados';
+        if(out && out.success && out.data && out.data.log){
+          KVT_SENT_EMAILS = out.data.log;
+          renderSentEmails();
+        }
       } catch(err){
         emailStatusMsg.textContent = 'Enviados';
       }
-      try {
-        const logRes = await ajaxForm({action:'kvt_get_email_log', _ajax_nonce:KVT_NONCE});
-        if(logRes.success && logRes.data.log){ KVT_SENT_EMAILS = logRes.data.log; renderSentEmails(); }
-      } catch(e){}
     });
 
     // Easier drag & drop: allow drop anywhere in column and highlight
@@ -8874,7 +8874,7 @@ JS;
             if (count($log) > 100) $log = array_slice($log, -100);
             update_option(self::OPT_EMAIL_LOG, $log);
 
-            wp_send_json_success(['sent' => count($recipients), 'errors' => [], 'log' => $log]);
+            wp_send_json_success(['sent' => count($recipients), 'errors' => [], 'log' => array_reverse($log)]);
         }
 
         public function cron_send_email_batch($batch) {
