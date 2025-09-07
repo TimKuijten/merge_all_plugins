@@ -145,7 +145,6 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_send_email',    [$this, 'ajax_send_email']);
         add_action('wp_ajax_kvt_get_email_log',        [$this, 'ajax_get_email_log']);
         add_action('wp_ajax_nopriv_kvt_get_email_log', [$this, 'ajax_get_email_log']);
-        add_action('kvt_send_email_batch',             [$this, 'cron_send_email_batch'], 10, 1);
         add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
         add_action('wp_ajax_kvt_save_template',        [$this, 'ajax_save_template']);
         add_action('wp_ajax_kvt_delete_template',      [$this, 'ajax_delete_template']);
@@ -2090,6 +2089,10 @@ JS;
                         <input type="checkbox" id="kvt_email_use_signature" checked>
                         Incluir firma
                       </label>
+                      <label for="kvt_email_copy_sender" style="display:flex;align-items:center;font-weight:400;gap:4px;">
+                        <input type="checkbox" id="kvt_email_copy_sender" checked>
+                        Enviar copia al remitente
+                      </label>
                     </div>
                     <div class="kvt-row" style="margin-top:8px;">
                       <button type="button" class="kvt-btn" id="kvt_email_preview">Vista previa</button>
@@ -2109,7 +2112,10 @@ JS;
                       <input type="text" id="kvt_tpl_title" class="kvt-input" placeholder="Título">
                       <input type="text" id="kvt_tpl_subject" class="kvt-input" placeholder="Asunto">
                       <textarea id="kvt_tpl_body" class="kvt-textarea" rows="4" placeholder="Cuerpo"></textarea>
-                      <button type="button" class="kvt-btn" id="kvt_tpl_save">Guardar plantilla</button>
+                      <div class="kvt-row" style="gap:8px;">
+                        <button type="button" class="kvt-btn" id="kvt_tpl_preview">Vista previa</button>
+                        <button type="button" class="kvt-btn" id="kvt_tpl_save">Guardar plantilla</button>
+                      </div>
                     </div>
                     <ul id="kvt_tpl_list"></ul>
                   </div>
@@ -3040,6 +3046,7 @@ function kvtInit(){
   const emailFromName = el('#kvt_email_from_name');
   const emailFromEmail = el('#kvt_email_from_email');
   const emailUseSig = el('#kvt_email_use_signature');
+  const emailCopySender = el('#kvt_email_copy_sender');
   const emailSend = el('#kvt_email_send');
   const emailSaveTplBtn = el('#kvt_email_save_tpl');
   const emailStatusMsg = el('#kvt_email_status_msg');
@@ -3057,6 +3064,7 @@ function kvtInit(){
   const tplTitle = el('#kvt_tpl_title');
   const tplSubject = el('#kvt_tpl_subject');
   const tplBody = el('#kvt_tpl_body');
+  const tplPreview = el('#kvt_tpl_preview');
   const tplSave = el('#kvt_tpl_save');
   const tplList = el('#kvt_tpl_list');
   const sentTbody = el('#kvt_email_sent_tbody');
@@ -3170,6 +3178,17 @@ function kvtInit(){
     tplEditId=id;
     if(tplSave) tplSave.textContent='Actualizar';
   }
+
+  tplPreview && tplPreview.addEventListener('click', ()=>{
+    const subject=(tplSubject.value||'').trim();
+    const body=(tplBody.value||'').trim();
+    if(!subject || !body){ alert('Completa asunto y cuerpo.'); return; }
+    const meta={first_name:'Tim',surname:'Kuijten',role:'CEO',client:'Kovacic Talent',country:'Paises Bajos',city:'Heeze',sender:(emailFromName?emailFromName.value:(KVT_FROM_NAME||''))};
+    const repl=str=>str.replace(/{{(\w+)}}/g,(m,p)=>meta[p]||'');
+    emailPrevSubject.textContent=repl(subject);
+    emailPrevBody.innerHTML=repl(body).replace(/\n/g,'<br>');
+    if(emailPrevModal) emailPrevModal.style.display='flex';
+  });
 
   tplSave && tplSave.addEventListener('click', async()=>{
     const title=(tplTitle.value||'').trim();
@@ -6245,7 +6264,7 @@ function kvtInit(){
       }).filter(r=>r.email);
       if(!recipients.length){ alert('No hay candidatos seleccionados con email.'); return; }
       if(!confirm(`¿Enviar a ${recipients.length} contactos?`)) return;
-      const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0};
+      const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0, copy_sender: emailCopySender && emailCopySender.checked ? 1 : 0};
       try{
         const out = await ajaxForm({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)});
         emailStatusMsg.textContent = out && out.success ? `Enviados: ${out.data.sent}` : 'Enviados';
@@ -8885,9 +8904,10 @@ JS;
             $from_email    = sanitize_email($payload['from_email'] ?? '');
             $from_name     = sanitize_text_field($payload['from_name'] ?? '');
             $use_signature = !empty($payload['use_signature']);
+            $copy_sender   = !empty($payload['copy_sender']);
 
-            $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature');
-            wp_schedule_single_event(time(), 'kvt_send_email_batch', [$batch]);
+            $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature','copy_sender');
+            $this->cron_send_email_batch($batch);
 
             $log = get_option(self::OPT_EMAIL_LOG, []);
             $log[] = [
@@ -8910,6 +8930,7 @@ JS;
             $from_email    = sanitize_email($batch['from_email'] ?? '');
             $from_name     = sanitize_text_field($batch['from_name'] ?? '');
             $use_signature = !empty($batch['use_signature']);
+            $copy_sender   = !empty($batch['copy_sender']);
 
             if (!$from_email) $from_email = get_option(self::OPT_FROM_EMAIL, '');
             if (!$from_email) $from_email = get_option('admin_email');
@@ -8955,6 +8976,29 @@ JS;
 
                 wp_mail($email, $subject, $body, $headers);
                 usleep(250000);
+            }
+
+            if ($copy_sender && $from_email) {
+                $r0 = $recipients[0] ?? [];
+                $first_name = isset($r0['first_name']) ? sanitize_text_field($r0['first_name']) : '';
+                $surname    = isset($r0['surname']) ? sanitize_text_field($r0['surname']) : '';
+                $country    = isset($r0['country']) ? sanitize_text_field($r0['country']) : '';
+                $city       = isset($r0['city']) ? sanitize_text_field($r0['city']) : '';
+                $role       = isset($r0['role']) ? sanitize_text_field($r0['role']) : '';
+                $status     = isset($r0['status']) ? sanitize_text_field($r0['status']) : '';
+                $client     = isset($r0['client']) ? sanitize_text_field($r0['client']) : '';
+                $board      = isset($r0['board']) ? esc_url_raw($r0['board']) : '';
+                $data = compact('first_name','surname','country','city','role','board','status','client');
+                $data['sender'] = $from_name ?: $from_email ?: get_bloginfo('name');
+                $subject = $this->render_template($subject_tpl, $data);
+                $body_raw = $this->render_template($body_tpl, $data);
+                $body = $this->normalize_br_html($body_raw);
+                if ($signature && $use_signature) {
+                    $body .= '<br><br>' . $this->normalize_br_html($signature);
+                }
+                $headers = ['Content-Type: text/html; charset=UTF-8'];
+                if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
+                wp_mail($from_email, $subject, $body, $headers);
             }
 
             if ($from_cb) remove_filter('wp_mail_from', $from_cb, 99);
