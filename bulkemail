@@ -1342,4 +1342,7 @@ function ktDownloadEMLZip(){
     }
 }
 
-new KT_AIBulkMailer_ES();
+// Expose instance globally for reuse outside the admin screen.
+// This keeps backward compatibility while allowing other plugins
+// (e.g. the pipeline frontend) to render the bulk mailer UI.
+$GLOBALS['kt_abm'] = new KT_AIBulkMailer_ES();
