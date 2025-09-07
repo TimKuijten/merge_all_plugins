@@ -17,7 +17,8 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_COLUMNS   = 'kvt_columns';
     const OPT_OPENAI_KEY= 'kvt_openai_key';
     const OPT_OPENAI_MODEL = 'kvt_openai_model';
-    const OPT_BING_KEY  = 'kvt_bing_key';
+    const OPT_GOOGLE_KEY  = 'kvt_google_key';
+    const OPT_GOOGLE_CX   = 'kvt_google_cx';
     const OPT_NEWS_KEY  = 'kvt_newsapi_key';
     const OPT_SMTP_HOST = 'kvt_smtp_host';
     const OPT_SMTP_PORT = 'kvt_smtp_port';
@@ -204,8 +205,11 @@ cv_url|CV (URL)
         if (!defined('OPENAI_API_KEY')) {
             define('OPENAI_API_KEY', get_option(self::OPT_OPENAI_KEY, ''));
         }
-        if (!defined('BING_SEARCH_KEY')) {
-            define('BING_SEARCH_KEY', get_option(self::OPT_BING_KEY, ''));
+        if (!defined('GOOGLE_SEARCH_KEY')) {
+            define('GOOGLE_SEARCH_KEY', get_option(self::OPT_GOOGLE_KEY, ''));
+        }
+        if (!defined('GOOGLE_SEARCH_CX')) {
+            define('GOOGLE_SEARCH_CX', get_option(self::OPT_GOOGLE_CX, ''));
         }
     }
 
@@ -278,7 +282,8 @@ cv_url|CV (URL)
         register_setting(self::OPT_GROUP, self::OPT_COLUMNS);
         register_setting(self::OPT_GROUP, self::OPT_OPENAI_KEY);
         register_setting(self::OPT_GROUP, self::OPT_OPENAI_MODEL);
-        register_setting(self::OPT_GROUP, self::OPT_BING_KEY);
+        register_setting(self::OPT_GROUP, self::OPT_GOOGLE_KEY);
+        register_setting(self::OPT_GROUP, self::OPT_GOOGLE_CX);
         register_setting(self::OPT_GROUP, self::OPT_NEWS_KEY);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_HOST);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_PORT);
@@ -695,7 +700,8 @@ JS;
         $columns  = get_option(self::OPT_COLUMNS, "");
         $openai   = get_option(self::OPT_OPENAI_KEY, "");
         $openai_model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
-        $bing     = get_option(self::OPT_BING_KEY, "");
+        $google_key = get_option(self::OPT_GOOGLE_KEY, "");
+        $google_cx  = get_option(self::OPT_GOOGLE_CX, "");
         $newskey  = get_option(self::OPT_NEWS_KEY, "");
         $smtp_host = get_option(self::OPT_SMTP_HOST, "");
         $smtp_port = get_option(self::OPT_SMTP_PORT, "");
@@ -745,10 +751,17 @@ JS;
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="<?php echo self::OPT_BING_KEY; ?>">Bing Search Key</label></th>
+                        <th scope="row"><label for="<?php echo self::OPT_GOOGLE_KEY; ?>">Google Search Key</label></th>
                         <td>
-                            <input type="text" name="<?php echo self::OPT_BING_KEY; ?>" id="<?php echo self::OPT_BING_KEY; ?>" class="regular-text" value="<?php echo esc_attr($bing); ?>">
-                            <p class="description">Clave para Bing Web Search v7.</p>
+                            <input type="text" name="<?php echo self::OPT_GOOGLE_KEY; ?>" id="<?php echo self::OPT_GOOGLE_KEY; ?>" class="regular-text" value="<?php echo esc_attr($google_key); ?>">
+                            <p class="description">Clave para Google Custom Search JSON API.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_GOOGLE_CX; ?>">Google Search Engine ID (cx)</label></th>
+                        <td>
+                            <input type="text" name="<?php echo self::OPT_GOOGLE_CX; ?>" id="<?php echo self::OPT_GOOGLE_CX; ?>" class="regular-text" value="<?php echo esc_attr($google_cx); ?>">
+                            <p class="description">Identificador del motor de búsqueda personalizado.</p>
                         </td>
                     </tr>
                     <tr>
@@ -7148,7 +7161,7 @@ JS;
                 'type' => 'function',
                 'function' => [
                     'name' => 'search_web',
-                    'description' => 'Buscar en Bing información reciente o desconocida. Devuelve hasta 5 resultados breves.',
+                    'description' => 'Buscar en Google información reciente o desconocida. Devuelve hasta 5 resultados breves.',
                     'parameters' => [
                         'type' => 'object',
                         'properties' => [
@@ -7199,27 +7212,29 @@ JS;
     }
 
     private function mit_search_web($query) {
-        $key = defined('BING_SEARCH_KEY') ? BING_SEARCH_KEY : '';
-        if (!$key || !$query) return '';
+        $key = defined('GOOGLE_SEARCH_KEY') ? GOOGLE_SEARCH_KEY : '';
+        $cx  = defined('GOOGLE_SEARCH_CX') ? GOOGLE_SEARCH_CX : '';
+        if (!$key || !$cx || !$query) return '';
         $url = add_query_arg([
-            'q' => $query,
-            'mkt' => 'es-ES',
-            'count' => 5,
-            'safeSearch' => 'Moderate'
-        ], 'https://api.bing.microsoft.com/v7.0/search');
+            'q'    => $query,
+            'key'  => $key,
+            'cx'   => $cx,
+            'num'  => 5,
+            'safe' => 'medium',
+            'hl'   => 'es'
+        ], 'https://www.googleapis.com/customsearch/v1');
         $resp = wp_remote_get($url, [
-            'headers' => ['Ocp-Apim-Subscription-Key' => $key],
             'timeout' => 15,
         ]);
         if (is_wp_error($resp)) return '';
         $body = json_decode(wp_remote_retrieve_body($resp), true);
         $out = [];
-        foreach (($body['webPages']['value'] ?? []) as $item) {
-            $name = sanitize_text_field($item['name'] ?? '');
-            $link = esc_url_raw($item['url'] ?? '');
+        foreach (($body['items'] ?? []) as $item) {
+            $title   = sanitize_text_field($item['title'] ?? '');
+            $link    = esc_url_raw($item['link'] ?? '');
             $snippet = sanitize_text_field($item['snippet'] ?? '');
-            if ($name && $link) {
-                $out[] = "$name - $link\n$snippet";
+            if ($title && $link) {
+                $out[] = "$title - $link\n$snippet";
             }
         }
         return implode("\n\n", array_slice($out, 0, 5));
@@ -7389,7 +7404,7 @@ JS;
         $ctx     = $this->mit_gather_context();
         $summary = $ctx['summary'];
 
-        $identity = 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto. Dispones de herramientas externas: "search_web" para buscar en Bing y "fetch_url" para leer páginas. Úsalas sólo cuando la conversación no contenga la información solicitada, si se pide algo reciente o si tu confianza es baja. Si no es necesario, responde directamente.';
+        $identity = 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto. Dispones de herramientas externas: "search_web" para buscar en Google y "fetch_url" para leer páginas. Úsalas sólo cuando la conversación no contenga la información solicitada, si se pide algo reciente o si tu confianza es baja. Si no es necesario, responde directamente.';
 
         // Ensure system identity and summary are always the first entries
         if (empty($hist['messages']) || ($hist['messages'][0]['role'] ?? '') !== 'system') {
