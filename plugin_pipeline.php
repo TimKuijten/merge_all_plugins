@@ -4219,7 +4219,14 @@ function kvtInit(){
   function loadOutlookEvents(){
     fetchOutlookEvents().then(j=>{
       if(j.success && Array.isArray(j.data)){
-        j.data.forEach(e=>{ e.manual = true; calendarEvents.push(e); });
+        j.data.forEach(e=>{
+          e.manual = true;
+          e.text = fixUnicode(e.text||'');
+          if(e.candidate) e.candidate = fixUnicode(e.candidate);
+          if(e.process)   e.process   = fixUnicode(e.process);
+          if(e.client)    e.client    = fixUnicode(e.client);
+          calendarEvents.push(e);
+        });
         renderCalendarSmall();
         renderCalendar();
       }
@@ -4247,7 +4254,15 @@ function kvtInit(){
             const day = d.getDay();
             if(d < today) return; // skip past dates
             if(day===0 || day===6) return; // skip weekends
-            calendarEvents.push({date:item.date, time:'', text:item.text, strategy:item.strategy, template:item.template, done:false, manual:false});
+            calendarEvents.push({
+              date:item.date,
+              time:'',
+              text:fixUnicode(item.text),
+              strategy:fixUnicode(item.strategy),
+              template:fixUnicode(item.template),
+              done:false,
+              manual:false
+            });
           }
         });
         renderCalendar();
@@ -4486,13 +4501,15 @@ function kvtInit(){
     const due=[]; const upcoming=[]; const notifs=[]; const logs=[];
     calendarEvents = [];
     rows.forEach(r=>{
-      const nameTxt = esc(((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim());
+      const nameRaw = ((r.meta.first_name||'')+' '+(r.meta.last_name||'')).trim();
+      const nameTxt = fixUnicode(nameRaw);
       if(r.meta.next_action){
         const parts = r.meta.next_action.split('/');
         if(parts.length===3){
           const d = new Date(parts[2], parts[1]-1, parts[0]);
-          const note = esc(r.meta.next_action_note||'');
-          const item = '<li data-id="'+escAttr(r.id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a> - '+esc(r.meta.next_action)+(note?' — '+note:'')+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+          const noteRaw = r.meta.next_action_note||'';
+          const note = fixUnicode(noteRaw);
+          const item = '<li data-id="'+escAttr(r.id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+esc(nameTxt)+'</a> - '+esc(r.meta.next_action)+(note?' — '+esc(note):'')+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
           (d <= today ? due : upcoming).push(item);
           const ds = parts.join('/');
           calendarEvents.push({date: ds, text: nameTxt, done:false, manual:true});
@@ -4501,7 +4518,8 @@ function kvtInit(){
       if(Array.isArray(r.meta.client_comments)){
         r.meta.client_comments.forEach((cc,idx)=>{
           if(!cc.dismissed){
-            const item = '<li data-id="'+escAttr(r.id)+'" data-index="'+idx+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a> — '+esc(cc.comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
+            const comment = fixUnicode(cc.comment);
+            const item = '<li data-id="'+escAttr(r.id)+'" data-index="'+idx+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+esc(nameTxt)+'</a> — '+esc(comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
             notifs.push(item);
           }
         });
@@ -4509,25 +4527,28 @@ function kvtInit(){
       if(Array.isArray(r.meta.activity_log)){
         r.meta.activity_log.forEach(l=>{
           let msg='';
+          const lStatus = fixUnicode(l.status||'');
+          const lComment = fixUnicode(l.comment||'');
+          const lNote = fixUnicode(l.note||'');
           switch(l.type){
             case 'status':
-              msg='Estado a '+esc(l.status)+(l.comment?' — '+esc(l.comment):'');
+              msg='Estado a '+esc(lStatus)+(lComment?' — '+esc(lComment):'');
               break;
             case 'task_add':
-              msg='Tarea '+esc(l.date)+(l.note?' — '+esc(l.note):'');
+              msg='Tarea '+esc(l.date)+(lNote?' — '+esc(lNote):'');
               break;
             case 'task_done':
-              msg='Tarea completada '+esc(l.date)+(l.comment?' — '+esc(l.comment):'');
+              msg='Tarea completada '+esc(l.date)+(lComment?' — '+esc(lComment):'');
               break;
             case 'task_deleted':
-              msg='Tarea eliminada '+esc(l.date)+(l.note?' — '+esc(l.note):'');
+              msg='Tarea eliminada '+esc(l.date)+(lNote?' — '+esc(lNote):'');
               break;
             default:
-              msg=esc(l.type||'');
+              msg=esc(fixUnicode(l.type||''));
           }
-          const author = esc(l.author||'');
-          const time = esc(l.time||'');
-          logs.push({time,text: nameTxt+' — '+msg+(author?' ('+author+')':'')});
+          const author = fixUnicode(l.author||'');
+          const time = fixUnicode(l.time||'');
+          logs.push({time: esc(time), text: esc(nameTxt)+' — '+msg+(author?' ('+esc(author)+')':'')});
         });
       }
     });
@@ -4546,27 +4567,40 @@ function kvtInit(){
     if(!activityDue || !activityUpcoming || !activityNotify) return;
     calendarEvents = [];
     const due = (data.overdue||[]).map(c=>{
-      const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false, manual:true});
-      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+      const noteTxt = c.note ? fixUnicode(c.note) : '';
+      const candTxt = fixUnicode(c.candidate||'');
+      const procTxt = fixUnicode(c.process||'');
+      const clientTxt = fixUnicode(c.client||'');
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:noteTxt, candidate:candTxt, process:procTxt, client:clientTxt, done:false, manual:true});
+      const note = noteTxt ? ' — '+esc(noteTxt) : '';
+      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(candTxt)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const upcoming = (data.upcoming||[]).map(c=>{
-      const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false, manual:true});
-      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
+      const noteTxt = c.note ? fixUnicode(c.note) : '';
+      const candTxt = fixUnicode(c.candidate||'');
+      const procTxt = fixUnicode(c.process||'');
+      const clientTxt = fixUnicode(c.client||'');
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:noteTxt, candidate:candTxt, process:procTxt, client:clientTxt, done:false, manual:true});
+      const note = noteTxt ? ' — '+esc(noteTxt) : '';
+      return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(candTxt)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const notifs = (data.comments||[]).map(c=>{
-      return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> — '+esc(c.comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
+      const candTxt = fixUnicode(c.candidate||'');
+      const commentTxt = fixUnicode(c.comment||'');
+      return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(candTxt)+'</a> — '+esc(commentTxt)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
     });
-      const active = (data.active||[]).map(p=>{
-        return '<li><a href="#" class="kvt-open-process" data-id="'+escAttr(p.id)+'">'+esc(p.name)+'</a> - '+esc(p.client)+' - '+esc(p.days)+' días activo - creado por '+esc(p.creator)+'</li>';
-      });
+    const active = (data.active||[]).map(p=>{
+      const nameTxt = fixUnicode(p.name||'');
+      const clientTxt = fixUnicode(p.client||'');
+      const creatorTxt = fixUnicode(p.creator||'');
+      return '<li><a href="#" class="kvt-open-process" data-id="'+escAttr(p.id)+'">'+esc(nameTxt)+'</a> - '+esc(clientTxt)+' - '+esc(p.days)+' días activo - creado por '+esc(creatorTxt)+'</li>';
+    });
     const logs = (data.logs||[]).sort((a,b)=>a.time<b.time?1:-1);
     activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
     activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
     activityNotify.innerHTML = notifs.join('') || '<li>No hay notificaciones</li>';
     if(activeList) activeList.innerHTML = active.join('') || '<li>No hay procesos activos</li>';
-    if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(l.time)+' - '+esc(l.text)+'</li>').join('') : '<li>No hay actividad</li>';
+    if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(fixUnicode(l.time))+' - '+esc(fixUnicode(l.text))+'</li>').join('') : '<li>No hay actividad</li>';
     renderCalendarSmall();
     loadOutlookEvents();
   }
