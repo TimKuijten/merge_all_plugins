@@ -1830,10 +1830,7 @@ JS;
                             <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
                             <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                         </form>
-                        <button type="button" class="kvt-btn" id="kvt_assign_search">Asignar a proceso</button>
-                        <button type="button" class="kvt-btn" id="kvt_export_client_board_btn">Exportar Tablero Cliente</button>
-                        <button type="button" class="kvt-btn" id="kvt_export_candidate_board_btn">Exportar Tablero Candidato</button>
-                        <button type="button" class="kvt-btn" id="kvt_refresh_all">Actualizar todo</button>
+                        <button type="button" class="kvt-btn kvt-add-candidate" id="kvt_add_candidate_table_btn">Añadir candidato</button>
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
                       <div class="kvt-tabs" id="kvt_board_tabs">
@@ -1866,7 +1863,7 @@ JS;
                             <input type="hidden" name="format" id="kvt_board_export_all_format" value="xls">
                               <button type="button" class="kvt-btn" id="kvt_board_export_all_xls">Exportar Excel</button>
                             </form>
-                            <button type="button" class="kvt-btn" id="kvt_add_candidate_btn">Nuevo</button>
+                            <button type="button" class="kvt-btn kvt-add-candidate" id="kvt_add_candidate_btn">Nuevo</button>
                           </div>
                         </div>
                         <div id="kvt_board_list" class="kvt-list"></div>
@@ -2443,6 +2440,7 @@ JS;
                   <ul id="kvt_client_meetings_list"></ul>
                   <textarea id="kvt_client_meetings_modal" style="display:none"></textarea>
                   <button type="button" class="kvt-btn" id="kvt_client_add_meeting">Añadir reunión</button>
+                  <button type="button" class="kvt-btn" id="kvt_client_save_meetings">Guardar</button>
                 </div>
               </div>
             </div>
@@ -2570,13 +2568,13 @@ JS;
         .kvt-edit{background:none !important;border:none !important;color:#0A212E;font-size:18px;line-height:1;cursor:pointer;padding:0}
         .kvt-edit:hover{color:#334155}
         .kvt-edit.dashicons{vertical-align:middle}
-        .kvt-main{display:flex;gap:16px;align-items:flex-start}
-        .kvt-widgets{display:flex;flex-wrap:wrap;gap:16px;flex:1;align-items:flex-start;align-content:flex-start}
+        .kvt-main{display:grid;grid-template-columns:1fr;gap:16px;align-items:start}
+        .kvt-widgets{display:flex;flex-wrap:wrap;gap:16px;width:100%;align-items:flex-start;align-content:flex-start}
         .kvt-table-wrap{margin-top:16px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
-        #kvt_table_wrap{flex:0 0 70%}
-        .kvt-calendar{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
+        #kvt_table_wrap{width:100%}
+        .kvt-calendar{width:100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:16px}
         .kvt-calendar-small{flex:0 0 100%;border:1px solid #e5e7eb;border-radius:12px;padding:8px;max-width:750px}
-        .kvt-mit{flex:0 0 70%;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-top:16px}
+        .kvt-mit{width:100%;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-top:16px}
         #kvt_mit_chat_log{display:flex;flex-direction:column;gap:4px}
         #kvt_mit_chat_log p{margin:0;padding:6px 10px;border-radius:8px;max-width:80%;white-space:pre-wrap;word-break:break-word}
         #kvt_mit_chat_log p.user{align-self:flex-end;background:#e0f2fe;text-align:right}
@@ -2906,8 +2904,8 @@ function kvtInit(){
   const tBody = el('#kvt_table_body');
   const searchInput = el('#kvt_search');
   const stageSelect = el('#kvt_stage_filter');
-  const assignSearch = el('#kvt_assign_search');
   const addCandidate = el('#k-add-candidate');
+  const addCandidateTable = el('#kvt_add_candidate_table_btn');
   const boardBase   = el('#kvt_board_base');
   const boardList   = el('#kvt_board_list');
   const boardName   = el('#kvt_board_name');
@@ -3011,9 +3009,6 @@ function kvtInit(){
   const exportAllForm   = el('#kvt_export_all_form');
   const exportAllFormat = el('#kvt_export_all_format');
   const btnShare   = el('#kvt_share_board');
-  const btnExportClientBoard = el('#kvt_export_client_board_btn');
-  const btnExportCandidateBoard = el('#kvt_export_candidate_board_btn');
-  const btnRefreshAll = el('#kvt_refresh_all');
   const shareModal = el('#kvt_share_modal');
   const shareClose = el('#kvt_share_close');
   const shareFieldsWrap = el('#kvt_share_fields');
@@ -3496,6 +3491,7 @@ function kvtInit(){
   const fbText  = el('#kvt_fb_text');
   const fbSave  = el('#kvt_fb_save');
   let fbCandidate = null;
+  let modalSelectMode = false;
 
   const modal      = el('#kvt_modal');
   const modalClose = el('.kvt-modal-close', modal);
@@ -3624,14 +3620,15 @@ function kvtInit(){
   procStatusFilter && procStatusFilter.addEventListener('change', ()=>listProcesses());
   procClientFilter && procClientFilter.addEventListener('change', ()=>listProcesses());
 
-  function openModal(tab='candidates'){
+  function openModal(tab='candidates', select=false){
+    modalSelectMode = select;
     modal.style.display = 'flex';
     if(modalName) modalName.value = '';
     if(modalRole) modalRole.value = '';
     if(modalLoc) modalLoc.value = '';
     switchTab(tab);
   }
-  function closeModal(){ modal.style.display = 'none'; }
+  function closeModal(){ modal.style.display = 'none'; modalSelectMode = false; }
   modalClose && modalClose.addEventListener('click', closeModal);
   modal && modal.addEventListener('click', (e)=>{ if(e.target===modal) closeModal(); });
 
@@ -4400,7 +4397,6 @@ function kvtInit(){
       }
       if(forceSelect) els('.kvt-row-select', tBody).forEach(cb=>cb.checked = true);
     }
-    if(assignSearch) assignSearch.style.display = (showSelect && selProcess && selProcess.value) ? 'inline-block' : 'none';
   }
 
   function renderActivity(rows){
@@ -5114,46 +5110,6 @@ function kvtInit(){
     buildShareOptions();
     if(shareModal) shareModal.style.display='flex';
   });
-  btnExportClientBoard && btnExportClientBoard.addEventListener('click', ()=>{
-    if (!selClient || !selClient.value || !selProcess || !selProcess.value) {
-      alert('Selecciona un cliente y un proceso.');
-      return;
-    }
-    shareMode = 'client';
-    ALLOWED_FIELDS = ['first_name','last_name','email','phone','country','city','cv_url'];
-    ALLOWED_STEPS = ['Long list','Short list','Contactados','Entrevistados','En oferta','Incorporado','Descartados'];
-    ALLOW_COMMENTS = true;
-    buildShareOptions();
-    if(shareModal) shareModal.style.display='flex';
-  });
-  btnExportCandidateBoard && btnExportCandidateBoard.addEventListener('click', ()=>{
-    if (!selClient || !selClient.value || !selProcess || !selProcess.value) {
-      alert('Selecciona un cliente y un proceso.');
-      return;
-    }
-    const ids = Array.from(els('.kvt-row-select:checked', tBody)).map(cb=>cb.value);
-    if(!ids.length){
-      forceSelect = true;
-      refresh();
-      alert('Selecciona candidatos y vuelve a pulsar el botón (puedes usar la casilla superior para seleccionar todos).');
-      return;
-    }
-    selectedCandidateIds = ids.map(id=>parseInt(id,10));
-    selectedCandidateId = selectedCandidateIds[0] || 0;
-    shareMode = 'candidate';
-    ALLOWED_FIELDS = ['first_name','last_name','email','phone','country','city','cv_url'];
-    ALLOWED_STEPS = ['Long list','Short list','Contactados','Entrevistados','En oferta','Incorporado','Descartados'];
-    ALLOW_COMMENTS = true;
-    buildShareOptions();
-    if(shareModal) shareModal.style.display='flex';
-  });
-  btnRefreshAll && btnRefreshAll.addEventListener('click', async ()=>{
-    if(!confirm('¿Actualizar todos los candidatos? Puede tardar.')) return;
-    const res = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_refresh_all', _ajax_nonce:KVT_NONCE})});
-    let j; try{ j=await res.json(); }catch(e){ return; }
-    if(j.success){ alert('Actualización iniciada para '+j.data.count+' candidatos.'); }
-    else { alert(j.data && j.data.msg ? j.data.msg : 'No se pudo iniciar.'); }
-  });
   tablePrev && tablePrev.addEventListener('click', ()=>{ if(currentPage>1){ currentPage--; refresh(); } });
   tableNext && tableNext.addEventListener('click', ()=>{ if(currentPage<totalPages){ currentPage++; refresh(); } });
   shareClose && shareClose.addEventListener('click', ()=>{ shareModal.style.display='none'; forceSelect=false; selectedCandidateIds=[]; selectedCandidateId=0; EDIT_SLUG=''; });
@@ -5301,6 +5257,7 @@ function kvtInit(){
         const cliSel  = selClient && selClient.value;
         const allowAdd = !!(procSel && (cliSel || getClientIdForProcess(procSel)));
         const filterActive = (ctx.name && ctx.name.value) || (ctx.role && ctx.role.value) || (ctx.loc && ctx.loc.value);
+        const showSelect = modalSelectMode || filterActive;
         let html = items.map(it=>{
           const m = it.meta||{};
           const name = esc((m.first_name||'')+' '+(m.last_name||''));
@@ -5316,11 +5273,11 @@ function kvtInit(){
           const infoLine = '<em>'+infoParts.join(' / ')+'</em>';
           const cv = m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'';
           const firstLineWithCv = firstLine.replace('</a>', '</a>'+cv);
-          const check = filterActive?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" aria-label="Seleccionar"></div>':'';
+          const check = showSelect?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" aria-label="Seleccionar"></div>':'';
           const addBtn = allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'';
           const editBtn = '<button type="button" class="kvt-edit kvt-mini-view kvt-mini-edit dashicons dashicons-edit" data-id="'+it.id+'" data-label="Editar perfil" aria-label="Editar perfil"></button>';
-          return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
-            '<div class="kvt-row'+(filterActive?' with-check':'')+'">'+
+            return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
+            '<div class="kvt-row'+(showSelect?' with-check':'')+'">'+
               check+
               '<div>'+firstLineWithCv+'<br>'+infoLine+'</div>'+
               '<div class="kvt-meta"><button type="button" class="kvt-delete kvt-mini-delete dashicons dashicons-trash" data-id="'+it.id+'" aria-label="Eliminar"></button>'+editBtn+addBtn+'</div>'+
@@ -5355,7 +5312,7 @@ function kvtInit(){
             });
           });
         }
-        if(ctx.assign) ctx.assign.style.display = (filterActive && allowAdd) ? 'inline-flex' : 'none';
+        if(ctx.assign) ctx.assign.style.display = (showSelect && allowAdd) ? 'inline-flex' : 'none';
         els('.kvt-mini-view', ctx.list).forEach(b=>{
           b.addEventListener('click', e=>{
             e.preventDefault();
@@ -5425,23 +5382,9 @@ function kvtInit(){
     Promise.all(ids.map(assignOne)).then(()=>{ alert('Candidatos asignados.'); refresh(); });
   });
   addCandidate && addCandidate.addEventListener('click', ()=>{ openModal('candidates'); });
-  assignSearch && assignSearch.addEventListener('click', ()=>{
-    const ids = Array.from(els('.kvt-row-select:checked', tBody)).map(cb=>cb.value);
-    if(!ids.length){ alert('Seleccione candidatos'); return; }
-    const proc = selProcess && selProcess.value;
-    let cli  = selClient && selClient.value;
-    if(!proc){ alert('Seleccione proceso en el tablero.'); return; }
-    if(!cli) cli = getClientIdForProcess(proc);
-    const assignOne = id => {
-      const p = new URLSearchParams();
-      p.set('action','kvt_assign_candidate');
-      p.set('_ajax_nonce', KVT_NONCE);
-      p.set('candidate_id', id);
-      p.set('process_id', proc);
-      p.set('client_id', cli);
-      return fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()}).then(r=>r.json());
-    };
-    Promise.all(ids.map(assignOne)).then(()=>{ alert('Candidatos asignados.'); refresh(); });
+  addCandidateTable && addCandidateTable.addEventListener('click', ()=>{
+    if(!selProcess || !selProcess.value){ alert('Seleccione proceso en el tablero.'); return; }
+    openModal('candidates', true);
   });
   let mto=null;
   [modalName, modalRole, modalLoc].forEach(inp=>{
@@ -5615,8 +5558,9 @@ function kvtInit(){
   function closeCModal(){ cmodal.style.display='none'; }
   cclose && cclose.addEventListener('click', closeCModal);
   cmodal && cmodal.addEventListener('click', (e)=>{ if(e.target===cmodal) closeCModal(); });
-  const btnAddCandidate = el('#kvt_add_candidate_btn');
-  btnAddCandidate && btnAddCandidate.addEventListener('click', openCModal);
+  document.querySelectorAll('.kvt-add-candidate').forEach(btn => {
+    btn.addEventListener('click', openCModal);
+  });
   ccli && ccli.addEventListener('change', ()=>{
     if (!window.KVT_PROCESS_MAP || !Array.isArray(window.KVT_PROCESS_MAP)) return;
     const cid = parseInt(ccli.value||'0',10);
@@ -5700,6 +5644,7 @@ function kvtInit(){
     const clmeet  = el('#kvt_client_meetings_modal');
     const clmeetList = el('#kvt_client_meetings_list');
     const claddmeet = el('#kvt_client_add_meeting');
+    const clsaveMeet = el('#kvt_client_save_meetings');
     const clTabs = clmodal ? els('.kvt-tab', clmodal) : [];
     const clPanels = clmodal ? els('.kvt-tab-panel', clmodal) : [];
     const mtmodal = el('#kvt_client_meeting_modal');
@@ -5736,6 +5681,7 @@ function kvtInit(){
     const btnAddClient = el('#kvt_add_client_btn');
     btnAddClient && btnAddClient.addEventListener('click', openClModal);
     claddmeet && claddmeet.addEventListener('click', ()=>{ if(mtperson) mtperson.value=''; if(mtdate) mtdate.value=new Date().toISOString().slice(0,10); if(mtdetails) mtdetails.value=''; mtmodal.dataset.edit=''; mtmodal.style.display='flex'; });
+    clsaveMeet && clsaveMeet.addEventListener('click', ()=>{ clsubmit && clsubmit.click(); });
     function closeMeetingModal(){ mtmodal.style.display='none'; mtmodal.dataset.edit=''; }
     mtclose && mtclose.addEventListener('click', closeMeetingModal);
     mtmodal && mtmodal.addEventListener('click', e=>{ if(e.target===mtmodal) closeMeetingModal(); });
@@ -6467,14 +6413,27 @@ JS;
             }
         }
 
-        $client_lines = [];
+        $client_lines   = [];
+        $meeting_lines  = [];
         foreach ($clients as $cl) {
             $contact = get_term_meta($cl->term_id, 'contact_name', true);
-            $line    = $cl->name;
-            if ($contact) $line .= " ($contact)";
+            $email   = get_term_meta($cl->term_id, 'contact_email', true);
+            $phone   = get_term_meta($cl->term_id, 'contact_phone', true);
+            $parts   = [];
+            if ($contact) $parts[] = $contact;
+            if ($email)   $parts[] = $email;
+            if ($phone)   $parts[] = $phone;
+            $line = $cl->name;
+            if ($parts) $line .= ' (' . implode(' - ', $parts) . ')';
             $client_lines[] = $line;
             $desc = term_description($cl, self::TAX_CLIENT);
             if ($desc) $notes[] = $cl->name . ': ' . wp_strip_all_tags($desc);
+            $meet = get_term_meta($cl->term_id, 'kvt_client_meetings', true);
+            if ($meet) {
+                $clean = preg_replace('/\r\n|\r|\n/', '; ', $meet);
+                $meeting_lines[] = $cl->name . ': ' . $clean;
+                $notes[] = $cl->name . ' reuniones: ' . $clean;
+            }
         }
 
         $process_lines = [];
@@ -6483,11 +6442,17 @@ JS;
             $line = $pr->name;
             if ($cid) {
                 $cl_obj = get_term_by('id', $cid, self::TAX_CLIENT);
-                if ($cl_obj) $line .= " (" . $cl_obj->name . ")";
+                if ($cl_obj) $line .= ' (' . $cl_obj->name . ')';
             }
             $process_lines[] = $line;
             $desc = term_description($pr, self::TAX_PROCESS);
             if ($desc) $notes[] = $pr->name . ': ' . wp_strip_all_tags($desc);
+            $meet = get_term_meta($pr->term_id, 'kvt_process_meetings', true);
+            if ($meet) {
+                $clean = preg_replace('/\r\n|\r|\n/', '; ', $meet);
+                $meeting_lines[] = $pr->name . ': ' . $clean;
+                $notes[] = $pr->name . ' reuniones: ' . $clean;
+            }
         }
 
         $email_lines = [];
@@ -6535,6 +6500,9 @@ JS;
         }
         if ($email_lines) {
             $summary .= ' Correos recientes: ' . implode('; ', $email_lines) . '.';
+        }
+        if ($meeting_lines) {
+            $summary .= ' Reuniones: ' . implode(' | ', $meeting_lines) . '.';
         }
 
         return ['summary' => $summary, 'news' => $news];
