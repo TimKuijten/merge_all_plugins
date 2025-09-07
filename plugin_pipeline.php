@@ -7552,7 +7552,14 @@ JS;
             error_log('mit_make_pptx: ' . $e->getMessage());
             return '';
         }
-        return trailingslashit($upload['url']) . $filename;
+
+        $scheme = is_ssl() ? 'https://' : 'http://';
+        $host   = $_SERVER['HTTP_HOST'] ?? '';
+        if (!$host) {
+            $host = parse_url(home_url(), PHP_URL_HOST);
+        }
+        $relative = '/' . ltrim(str_replace(wp_normalize_path(ABSPATH), '', wp_normalize_path($filepath)), '/');
+        return $scheme . $host . $relative;
     }
 
     private function mit_gemini_chat($messages) {
