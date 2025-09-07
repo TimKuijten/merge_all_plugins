@@ -34,6 +34,7 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_MIT_DAY = 'kvt_mit_day';
     const OPT_O365_TENANT = 'kvt_o365_tenant';
     const OPT_O365_CLIENT = 'kvt_o365_client';
+    const OPT_CALENDAR_ICS = 'kvt_calendar_ics';
     const CPT_EMAIL_TEMPLATE = 'kvt_email_tpl';
     const MIT_HISTORY_LIMIT = 20;
     const MIT_TIMEOUT      = 60;
@@ -152,6 +153,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
         add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_nopriv_kvt_get_outlook_events', [$this, 'ajax_get_outlook_events']);
+        add_action('wp_ajax_kvt_get_calendar_ics',     [$this, 'ajax_get_calendar_ics']);
+        add_action('wp_ajax_nopriv_kvt_get_calendar_ics', [$this, 'ajax_get_calendar_ics']);
 
         add_action('kvt_refresh_worker',               [$this, 'cron_refresh_worker']);
 
@@ -268,6 +271,7 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_FROM_EMAIL);
         register_setting(self::OPT_GROUP, self::OPT_O365_TENANT);
         register_setting(self::OPT_GROUP, self::OPT_O365_CLIENT);
+        register_setting(self::OPT_GROUP, self::OPT_CALENDAR_ICS);
         register_setting(self::OPT_GROUP, self::OPT_EMAIL_LOG, [
             'type'    => 'array',
             'default' => [],
@@ -679,6 +683,7 @@ JS;
         $smtp_sig  = get_option(self::OPT_SMTP_SIGNATURE, "");
         $o365_tenant = get_option(self::OPT_O365_TENANT, "");
         $o365_client = get_option(self::OPT_O365_CLIENT, "");
+        $calendar_ics = get_option(self::OPT_CALENDAR_ICS, "");
         $from_name_def = get_option(self::OPT_FROM_NAME, "");
         $from_email_def = get_option(self::OPT_FROM_EMAIL, "");
         $mit_time = get_option(self::OPT_MIT_TIME, '09:00');
@@ -772,6 +777,13 @@ JS;
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_O365_CLIENT; ?>">Outlook Client ID</label></th>
                         <td><input type="text" name="<?php echo self::OPT_O365_CLIENT; ?>" id="<?php echo self::OPT_O365_CLIENT; ?>" class="regular-text" value="<?php echo esc_attr($o365_client); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_CALENDAR_ICS; ?>">Calendar 2 .ics URL</label></th>
+                        <td>
+                            <input type="text" name="<?php echo self::OPT_CALENDAR_ICS; ?>" id="<?php echo self::OPT_CALENDAR_ICS; ?>" class="regular-text" value="<?php echo esc_attr($calendar_ics); ?>">
+                            <p class="description">Enlace al archivo .ics para el Calendario 2.</p>
+                        </td>
                     </tr>
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_FROM_NAME; ?>">Nombre remitente por defecto</label></th>
@@ -1788,6 +1800,7 @@ JS;
             <nav class="kvt-nav" aria-label="Navegación principal">
                 <a href="#" class="active" data-view="detalles"><span class="dashicons dashicons-dashboard"></span> Panel</a>
                 <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendario</a>
+                <a href="#" data-view="calendario2"><span class="dashicons dashicons-calendar"></span> Calendar 2</a>
                 <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidatos</a>
                 <a href="#" data-view="base" id="kvt_open_clients"><span class="dashicons dashicons-businessman"></span> Clientes</a>
                 <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
@@ -2090,7 +2103,7 @@ JS;
                       <tbody id="kvt_email_sent_tbody"></tbody>
                     </table>
                   </div>
-                  <div id="kvt_email_tab_templates" class="kvt-tab-panel">
+                <div id="kvt_email_tab_templates" class="kvt-tab-panel">
                     <div class="kvt-row" style="margin-bottom:10px;flex-wrap:wrap;gap:8px;">
                       <input type="text" id="kvt_tpl_title" class="kvt-input" placeholder="Título">
                       <input type="text" id="kvt_tpl_subject" class="kvt-input" placeholder="Asunto">
@@ -2101,6 +2114,7 @@ JS;
                   </div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
+                <div id="kvt_calendar2" class="kvt-calendar" style="display:none;"></div>
                 <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
                     <h4>Asistente MIT</h4>
                     <p id="kvt_mit_content"></p>
@@ -2828,6 +2842,8 @@ JS;
             wp_add_inline_script('kvt-app', 'const KVT_PROCESS_ID='.$pid.';', 'before');
         }
         wp_add_inline_script('kvt-app', 'const KVT_BULKREADER_URL="'.esc_url(admin_url('admin.php?page=kt-abm')).'";', 'before');
+        $ics_url = (string) get_option(self::OPT_CALENDAR_ICS, '');
+        wp_add_inline_script('kvt-app', 'const KVT_CALENDAR_ICS='.wp_json_encode(!empty($ics_url)).';', 'before');
 
             // App JS
             $js = <<<'JS'
@@ -2979,6 +2995,7 @@ function kvtInit(){
 
   const filtersBar = el('#kvt_filters_bar');
   const calendarWrap = el('#kvt_calendar');
+  const calendar2Wrap = el('#kvt_calendar2');
   const mitWrap = el('#kvt_mit_view');
   const keywordBoard = el('#kvt_keyword_view');
   const aiBoard = el('#kvt_ai_view');
@@ -3400,10 +3417,11 @@ function kvtInit(){
     if(boardsView) boardsView.style.display='none';
     if(emailView) emailView.style.display='none';
     if(widgetsWrap) widgetsWrap.style.display='flex';
+    if(calendarWrap) calendarWrap.style.display='none';
+    if(calendar2Wrap) calendar2Wrap.style.display='none';
     if(view==='ats'){
       filtersBar.style.display='flex';
       tableWrap.style.display='block';
-      calendarWrap.style.display='none';
       if(boardBase) boardBase.style.display='none';
       if(overview) overview.style.display='block';
       if(atsBar) atsBar.style.display='flex';
@@ -3416,15 +3434,21 @@ function kvtInit(){
     } else if(view==='calendario'){
       filtersBar.style.display='none';
       tableWrap.style.display='none';
-      calendarWrap.style.display='block';
+      if(calendarWrap) calendarWrap.style.display='block';
       if(activityWrap) activityWrap.style.display='none';
       if(boardWrap) boardWrap.style.display='none';
       if(toggleKanban) toggleKanban.style.display='none';
       renderCalendar();
+    } else if(view==='calendario2'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(calendar2Wrap){ calendar2Wrap.style.display='block'; loadCalendar2(); }
     } else if(view==='base'){
       filtersBar.style.display='none';
       tableWrap.style.display='block';
-      calendarWrap.style.display='none';
       if(overview) overview.style.display='none';
       if(atsBar) atsBar.style.display='none';
       const tbl = el('#kvt_table'); if(tbl) tbl.style.display='none';
@@ -4778,6 +4802,22 @@ function kvtInit(){
       });
       mitBtn.addEventListener('click', loadMitCalendar);
     }
+
+  function loadCalendar2(){
+    if(!calendar2Wrap) return;
+    calendar2Wrap.textContent='Cargando...';
+    if(!KVT_CALENDAR_ICS){ calendar2Wrap.textContent='Sin calendario'; return; }
+    const params=new URLSearchParams({action:'kvt_get_calendar_ics', _ajax_nonce:KVT_NONCE});
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json())
+      .then(res=>{
+        const events = (res && res.success && Array.isArray(res.data)) ? res.data : [];
+        if(!events.length){ calendar2Wrap.textContent='Sin eventos'; return; }
+        const html='<ul>'+events.map(e=>'<li>'+esc(e.date)+' - '+esc(e.summary||'')+'</li>').join('')+'</ul>';
+        calendar2Wrap.innerHTML=html;
+      })
+      .catch(()=>{ calendar2Wrap.textContent='No se pudo cargar el calendario'; });
+  }
 
   function renderOverview(rows){
     if(!overview) return;
@@ -6470,6 +6510,49 @@ JS;
                 }
             }
         }
+        wp_send_json_success($events);
+    }
+
+    public function ajax_get_calendar_ics() {
+        check_ajax_referer('kvt_nonce');
+
+        $url = (string) get_option(self::OPT_CALENDAR_ICS, '');
+        if (!$url) {
+            wp_send_json_success([]);
+        }
+
+        $resp = wp_remote_get($url);
+        if (is_wp_error($resp) || wp_remote_retrieve_response_code($resp) !== 200) {
+            wp_send_json_error(['msg' => 'fetch'], 500);
+        }
+
+        $body   = wp_remote_retrieve_body($resp);
+        $lines  = preg_split('/\r\n|\r|\n/', $body);
+        $events = [];
+        $ev     = null;
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === 'BEGIN:VEVENT') {
+                $ev = [];
+            } elseif ($line === 'END:VEVENT') {
+                if ($ev) {
+                    $events[] = $ev;
+                }
+                $ev = null;
+            } elseif ($ev) {
+                if (strpos($line, 'DTSTART') === 0) {
+                    $parts = explode(':', $line);
+                    $dt    = end($parts);
+                    if (preg_match('/^(\d{4})(\d{2})(\d{2})/', $dt, $m)) {
+                        $ev['date'] = $m[3] . '/' . $m[2] . '/' . $m[1];
+                    }
+                } elseif (strpos($line, 'SUMMARY') === 0) {
+                    $ev['summary'] = trim(substr($line, strpos($line, ':') + 1));
+                }
+            }
+        }
+
         wp_send_json_success($events);
     }
 
