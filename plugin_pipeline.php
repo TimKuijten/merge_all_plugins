@@ -8907,17 +8907,12 @@ JS;
             $copy_sender   = !empty($payload['copy_sender']);
 
             $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature','copy_sender');
-            $result = $this->cron_send_email_batch($batch);
+            $result = $this->send_email_batch($batch);
 
-            $log = array_reverse((array) get_option(self::OPT_EMAIL_LOG, []));
-            wp_send_json_success([
-                'sent'   => $result['sent'],
-                'errors' => $result['errors'],
-                'log'    => $log
-            ]);
+            wp_send_json_success($result);
         }
 
-        public function cron_send_email_batch($batch) {
+        private function send_email_batch($batch) {
             $result = ['sent' => 0, 'errors' => []];
             if (!is_array($batch)) return $result;
 
@@ -8984,8 +8979,6 @@ JS;
                     'recipients' => [$email]
                 ];
                 if (count($log) > 100) $log = array_slice($log, -100);
-
-                sleep(1);
             }
 
             if ($copy_sender && $from_email) {
@@ -9023,6 +9016,7 @@ JS;
             if ($from_cb) remove_filter('wp_mail_from', $from_cb, 99);
             if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
 
+            $result['log'] = array_reverse($log);
             return $result;
         }
 
