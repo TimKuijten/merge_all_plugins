@@ -158,9 +158,9 @@ class Kovacic_Pipeline_Visualizer {
         add_action('admin_post_kvt_delete_board',   [$this, 'handle_delete_board']);
 
         // Follow-up reminders
-        add_action('wp',                            [$this, 'schedule_followup_cron']);
+        add_action('init',                          [$this, 'schedule_followup_cron']);
         add_action('kvt_daily_followup',            [$this, 'cron_check_followups']);
-        add_action('wp',                            [$this, 'schedule_mit_report']);
+        add_action('init',                          [$this, 'schedule_mit_report']);
         add_action('kvt_mit_report',                [$this, 'cron_mit_report']);
         add_action('admin_notices',                 [$this, 'followup_admin_notice']);
         add_action('template_redirect',             [$this, 'maybe_redirect_share_link']);
@@ -195,6 +195,20 @@ cv_uploaded|Fecha de subida");
                 'post_status'  => 'publish',
                 'post_type'    => 'page',
             ]);
+        }
+        if (!wp_next_scheduled('kvt_mit_report')) {
+            $tz   = new DateTimeZone('Europe/Madrid');
+            $time = get_option(self::OPT_MIT_TIME, '07:45');
+            if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $time)) {
+                $time = '07:45';
+            }
+            list($hour, $min) = array_map('intval', explode(':', $time));
+            $next = new DateTime('now', $tz);
+            $next->setTime($hour, $min);
+            if ($next->getTimestamp() <= time()) {
+                $next->modify('+1 day');
+            }
+            wp_schedule_event($next->getTimestamp(), 'daily', 'kvt_mit_report');
         }
     }
 
@@ -1685,7 +1699,7 @@ JS;
         ]);
         if (is_wp_error($resp)) return;
         $data = json_decode(wp_remote_retrieve_body($resp), true);
-        $text = trim($data['choices'][0]['message']['content'] ?? '');
+        $text = $this->mit_strip_fences(trim($data['choices'][0]['message']['content'] ?? ''));
         if (!$text) return;
 
         $raw = get_option(self::OPT_MIT_RECIPIENTS, get_option('admin_email'));
@@ -1830,7 +1844,7 @@ JS;
                             <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
                             <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                         </form>
-                        <button type="button" class="kvt-btn kvt-add-candidate" id="kvt_add_candidate_table_btn">Añadir candidato</button>
+                        <button type="button" class="kvt-btn" id="kvt_add_candidate_table_btn">Añadir candidato</button>
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
                       <div class="kvt-tabs" id="kvt_board_tabs">
@@ -2584,12 +2598,25 @@ JS;
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
         .kvt-cal-day{font-size:12px;color:#6b7280;position:absolute;top:4px;right:4px}
         .kvt-cal-event{display:block;margin-top:16px;font-size:12px;text-align:left}
+        .kvt-cal-event.manual{font-weight:700;color:#000}
+        .kvt-cal-event.suggested{font-style:italic;color:#6b7280}
         .kvt-cal-cell.has-event{background:#f1f5f9}
         .kvt-cal-controls{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+        .kvt-cal-nav{display:flex;gap:4px}
         .kvt-cal-add{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
         .kvt-cal-add label{display:flex;flex-direction:column;font-size:12px}
         .kvt-cal-event.done{text-decoration:line-through;color:#9ca3af}
         .kvt-cal-remove{background:none;border:0;color:#ef4444;margin-left:4px;cursor:pointer}
+        .kvt-cal-accept,.kvt-cal-reject{background:none;border:0;margin-left:4px;cursor:pointer;font-size:12px}
+        .kvt-cal-accept{color:#16a34a}
+        .kvt-cal-reject{color:#dc2626}
+        .kvt-mit-btn{background:#0A212E;color:#fff;border:1px solid #0A212E;border-radius:4px;padding:2px 8px;font-weight:600}
+        .kvt-mit-btn.loading{opacity:.7}
+        .kvt-mit-btn.loading:after{content:'';display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:kvt-spin 1s linear infinite;margin-left:6px;vertical-align:middle}
+        #kvt_mit_detail{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:1000}
+        #kvt_mit_detail_box{background:#fff;padding:20px;border-radius:8px;max-width:500px;width:90%;position:relative}
+        #kvt_mit_detail_box h4{margin-top:0}
+        #kvt_mit_detail_close{position:absolute;top:8px;right:8px;background:none;border:0;font-size:16px;cursor:pointer}
         #kvt_table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
         #kvt_table thead th{position:sticky;top:0;background:#f8fafc;color:#0A212E;padding:10px;border-bottom:1px solid #e5e7eb;text-align:left;font-weight:600}
         #kvt_table td{padding:8px;border-bottom:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word}
@@ -3280,7 +3307,13 @@ function kvtInit(){
   emailPrev && emailPrev.addEventListener('click', ()=>{ if(emailPageNum>1) loadEmailCandidates(emailPageNum-1); });
   emailNext && emailNext.addEventListener('click', ()=>{ if(emailPageNum<emailPageTotal) loadEmailCandidates(emailPageNum+1); });
 
-  function formatInputDate(v){ const p=v.split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : v; }
+  function formatInputDate(v){
+    if(/^\d{4}-\d{2}-\d{2}$/.test(v)){
+      const p=v.split('-');
+      return p[2]+'/'+p[1]+'/'+p[0];
+    }
+    return v;
+  }
 
   async function loadMit(){
     if(!mitContent) return;
@@ -4185,11 +4218,58 @@ function kvtInit(){
   function loadOutlookEvents(){
     fetchOutlookEvents().then(j=>{
       if(j.success && Array.isArray(j.data)){
-        j.data.forEach(e=>{ calendarEvents.push(e); });
+        j.data.forEach(e=>{ e.manual = true; calendarEvents.push(e); });
         renderCalendarSmall();
         renderCalendar();
       }
     });
+  }
+
+  async function loadMitCalendar(ev){
+    const btn = ev?.target;
+    if(btn){ btn.disabled = true; btn.classList.add('loading'); }
+    try {
+      const resp = await fetch(KVT_AJAX, {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        credentials:'same-origin',
+        body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:KVT_MIT_NONCE})
+      });
+      const json = await resp.json();
+      if(json && json.success && json.data && Array.isArray(json.data.agenda)){
+        const today = new Date(); today.setHours(0,0,0,0);
+        calendarEvents = calendarEvents.filter(e=>e.manual);
+        json.data.agenda.forEach(item=>{
+          const parts = item.date.split('/');
+          if(parts.length===3){
+            const d = new Date(parts[2], parts[1]-1, parts[0]);
+            const day = d.getDay();
+            if(d < today) return; // skip past dates
+            if(day===0 || day===6) return; // skip weekends
+            calendarEvents.push({date:item.date, time:'', text:item.text, strategy:item.strategy, template:item.template, done:false, manual:false});
+          }
+        });
+        renderCalendar();
+        renderCalendarSmall();
+      }
+    } catch(e){} finally {
+      if(btn){ btn.disabled = false; btn.classList.remove('loading'); }
+    }
+  }
+
+  let mitDetailModal;
+
+  function openMitDetail(ev){
+    if(!mitDetailModal){
+      mitDetailModal = document.createElement('div');
+      mitDetailModal.id='kvt_mit_detail';
+      mitDetailModal.innerHTML='<div id="kvt_mit_detail_box"><button type="button" id="kvt_mit_detail_close">&times;</button><div id="kvt_mit_detail_body"></div></div>';
+      document.body.appendChild(mitDetailModal);
+      mitDetailModal.addEventListener('click', e=>{ if(e.target===mitDetailModal || e.target.id==='kvt_mit_detail_close') mitDetailModal.style.display='none'; });
+    }
+    const body = el('#kvt_mit_detail_body');
+    body.innerHTML='<h4>'+esc(ev.text)+'</h4>'+(ev.strategy?'<p>'+esc(ev.strategy)+'</p>':'')+(ev.template||'');
+    mitDetailModal.style.display='flex';
   }
 
   function fetchProcessesList(){
@@ -4414,7 +4494,7 @@ function kvtInit(){
           const item = '<li data-id="'+escAttr(r.id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a> - '+esc(r.meta.next_action)+(note?' — '+note:'')+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
           (d <= today ? due : upcoming).push(item);
           const ds = parts.join('/');
-          calendarEvents.push({date: ds, text: nameTxt, done:false});
+          calendarEvents.push({date: ds, text: nameTxt, done:false, manual:true});
         }
       }
       if(Array.isArray(r.meta.client_comments)){
@@ -4466,12 +4546,12 @@ function kvtInit(){
     calendarEvents = [];
     const due = (data.overdue||[]).map(c=>{
       const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false});
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false, manual:true});
       return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const upcoming = (data.upcoming||[]).map(c=>{
       const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false});
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false, manual:true});
       return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const notifs = (data.comments||[]).map(c=>{
@@ -4496,8 +4576,8 @@ function kvtInit(){
     const last = new Date(calYear, calMonth+1, 0);
     const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     const monthName = first.toLocaleString('default',{month:'long'});
-    let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><button type="button" id="kvt_cal_next">&gt;</button></div>';
-    html += '<div class="kvt-cal-add"><input type="date" id="kvt_cal_date"><input type="time" id="kvt_cal_time"><input type="text" id="kvt_cal_text" placeholder="Evento"><select id="kvt_cal_process"><option value="">Proceso (opcional)</option></select><select id="kvt_cal_candidate"><option value="">Candidato (opcional)</option></select><button type="button" id="kvt_cal_add">Añadir</button></div>';
+    let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next">&gt;</button><button type="button" id="kvt_cal_mit" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
+    html += '<div class="kvt-cal-add"><input type="text" id="kvt_cal_date" placeholder="DD/MM/YYYY"><input type="time" id="kvt_cal_time"><input type="text" id="kvt_cal_text" placeholder="Evento"><select id="kvt_cal_process"><option value="">Proceso (opcional)</option></select><select id="kvt_cal_candidate"><option value="">Candidato (opcional)</option></select><button type="button" id="kvt_cal_add">Añadir</button></div>';
     html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
     for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
     for(let d=1; d<=last.getDate(); d++){
@@ -4506,7 +4586,19 @@ function kvtInit(){
       let cls = 'kvt-cal-cell';
       if(ev.length) cls += ' has-event';
       html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
-      ev.forEach(e=>{ let lbl=''; if(e.time) lbl+=esc(e.time)+' '; lbl+=esc(e.text); const tgt = e.process || e.candidate || e.client || ''; if(tgt) lbl+=' <em>- '+esc(tgt)+'</em>'; html += '<span class="kvt-cal-event'+(e.done?' done':'')+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>'; });
+      ev.forEach(e=>{
+        let lbl='';
+        if(e.time) lbl+=esc(e.time)+' ';
+        lbl+=esc(e.text);
+        const tgt = e.process || e.candidate || e.client || '';
+        if(tgt) lbl+=' <em>- '+esc(tgt)+'</em>';
+        const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
+        if(e.manual){
+          html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+        } else {
+          html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
+        }
+      });
       html += '</div>';
     }
     const fill = (first.getDay()+last.getDate())%7;
@@ -4521,18 +4613,26 @@ function kvtInit(){
     const textInp = el('#kvt_cal_text', calendarWrap);
     const procSel = el('#kvt_cal_process', calendarWrap);
     const candSel = el('#kvt_cal_candidate', calendarWrap);
+    const mitBtn  = el('#kvt_cal_mit', calendarWrap);
     populateCalProcesses(procSel);
     populateCalCandidates('', candSel);
     procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
     prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendar(); });
     nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendar(); });
-    addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false}); renderCalendar(); }});
+    addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false, manual:true}); renderCalendar(); }});
     calendarWrap.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
-      evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); calendarEvents[idx].done=!calendarEvents[idx].done; renderCalendar(); });
+      evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendar(); } else { openMitDetail(ev); }});
     });
     calendarWrap.querySelectorAll('.kvt-cal-remove').forEach(btn=>{
       btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendar(); });
     });
+    calendarWrap.querySelectorAll('.kvt-cal-accept').forEach(btn=>{
+      btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendar(); });
+    });
+    calendarWrap.querySelectorAll('.kvt-cal-reject').forEach(btn=>{
+      btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendar(); });
+    });
+    mitBtn.addEventListener('click', loadMitCalendar);
   }
 
     function renderCalendarSmall(){
@@ -4541,9 +4641,9 @@ function kvtInit(){
       const last = new Date(calYear, calMonth+1, 0);
       const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
       const monthName = first.toLocaleString('default',{month:'long'});
-      let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><button type="button" id="kvt_cal_next_s">&gt;</button></div>';
+      let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next_s">&gt;</button><button type="button" id="kvt_cal_mit_s" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
       html += '<div class="kvt-cal-add">'
-        +'<label>Fecha<input type="date" id="kvt_cal_date_s"></label>'
+        +'<label>Fecha<input type="text" id="kvt_cal_date_s" placeholder="DD/MM/YYYY"></label>'
         +'<label>Hora<input type="time" id="kvt_cal_time_s"></label>'
         +'<label>Tarea<input type="text" id="kvt_cal_text_s" placeholder="Descripción"></label>'
         +'<label>Proceso<select id="kvt_cal_process_s"><option value="">(opcional)</option></select></label>'
@@ -4570,7 +4670,12 @@ function kvtInit(){
             tgt = esc(e.client);
           }
           if(tgt) lbl += ' <em>- '+tgt+'</em>';
-          html += '<span class="kvt-cal-event'+(e.done?' done':'')+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+          const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
+          if(e.manual){
+            html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+          } else {
+            html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
+          }
         });
         html += '</div>';
       }
@@ -4586,14 +4691,18 @@ function kvtInit(){
       const textInp = el('#kvt_cal_text_s', calendarSmall);
       const procSel = el('#kvt_cal_process_s', calendarSmall);
       const candSel = el('#kvt_cal_candidate_s', calendarSmall);
+      const mitBtn  = el('#kvt_cal_mit_s', calendarSmall);
       populateCalProcesses(procSel);
       populateCalCandidates('', candSel);
       procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
       prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendarSmall(); });
       nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendarSmall(); });
-      addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false}); renderCalendarSmall(); }});
-      calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{ evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); calendarEvents[idx].done=!calendarEvents[idx].done; renderCalendarSmall(); }); });
+      addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false, manual:true}); renderCalendarSmall(); }});
+      calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{ evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendarSmall(); } else { openMitDetail(ev); }}); });
       calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
+      calendarSmall.querySelectorAll('.kvt-cal-accept').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendarSmall(); }); });
+      calendarSmall.querySelectorAll('.kvt-cal-reject').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
+      mitBtn.addEventListener('click', loadMitCalendar);
     }
 
   function renderOverview(rows){
@@ -6388,11 +6497,16 @@ JS;
         $notes      = [];
         $cand_lines = [];
         $followups  = [];
+        $history    = [];
         foreach ($cands as $c) {
             $country = get_post_meta($c->ID, 'kvt_country', true);
             $role    = $this->meta_get_compat($c->ID, 'kvt_current_role', ['current_role']);
+            $status  = $this->meta_get_compat($c->ID, 'kvt_status', ['status']);
+            $procs   = wp_get_object_terms($c->ID, self::TAX_PROCESS, ['fields' => 'names']);
             $line    = $c->post_title;
-            if ($role)    $line .= " ($role)";
+            if ($role)   $line .= " ($role)";
+            if ($status) $line .= " [$status]";
+            if ($procs) $line .= ' {' . implode(', ', $procs) . '}';
             if ($country) $line .= " - $country";
             $cand_lines[] = $line;
             $n = get_post_meta($c->ID, 'kvt_notes', true);
@@ -6409,6 +6523,19 @@ JS;
                     $fline = $c->post_title . ' - ' . $next;
                     if ($na_note) $fline .= ': ' . $na_note;
                     $followups[] = $fline;
+                }
+            }
+            $log = get_post_meta($c->ID, 'kvt_activity_log', true);
+            if (is_array($log)) {
+                foreach (array_slice($log, -5) as $entry) {
+                    $parts = [];
+                    $parts[] = sanitize_text_field($entry['type'] ?? '');
+                    if (!empty($entry['status'])) $parts[] = sanitize_text_field($entry['status']);
+                    if (!empty($entry['note'])) $parts[] = sanitize_text_field($entry['note']);
+                    if (!empty($entry['comment'])) $parts[] = sanitize_text_field($entry['comment']);
+                    if (!empty($entry['date'])) $parts[] = sanitize_text_field($entry['date']);
+                    if (!empty($entry['time'])) $parts[] = sanitize_text_field($entry['time']);
+                    $history[] = $c->post_title . ': ' . implode(' ', array_filter($parts));
                 }
             }
         }
@@ -6456,6 +6583,11 @@ JS;
         }
 
         $email_lines = [];
+        $templates   = $this->get_email_templates();
+        $template_lines = [];
+        foreach ($templates as $tpl) {
+            $template_lines[] = sanitize_text_field($tpl['title']);
+        }
         foreach (array_slice($emails, 0, 5) as $em) {
             $sub = sanitize_text_field($em['subject'] ?? '');
             $to  = implode(', ', array_map('sanitize_text_field', $em['recipients'] ?? []));
@@ -6504,8 +6636,22 @@ JS;
         if ($meeting_lines) {
             $summary .= ' Reuniones: ' . implode(' | ', $meeting_lines) . '.';
         }
+        if ($history) {
+            $summary .= ' Historial: ' . implode('; ', $history) . '.';
+        }
+        if ($template_lines) {
+            $summary .= ' Plantillas: ' . implode('; ', $template_lines) . '.';
+        }
 
         return ['summary' => $summary, 'news' => $news];
+    }
+
+    private function mit_strip_fences($text) {
+        if (strpos($text, '```') !== false) {
+            $text = preg_replace('/^```\w*\n?/', '', $text);
+            $text = preg_replace('/\n?```$/', '', $text);
+        }
+        return trim($text);
     }
 
     private function mit_create_excel() {
@@ -6562,7 +6708,7 @@ JS;
         $news    = $ctx['news'];
 
         $hist['summary'] = $summary;
-        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente)";
+        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos y clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente). Al final, incluye hasta 5 sugerencias de agenda en una lista HTML <ul id=\"mit_agenda\">; cada <li> debe tener data-date (DD/MM/YYYY) y data-action, contener un <p class=\"strategy\"> con la estrategia o explicación y un <blockquote class=\"template\"> con una plantilla de correo breve. Evita proponer fechas en sábado o domingo o en el pasado.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -6577,22 +6723,63 @@ JS;
             'timeout' => self::MIT_TIMEOUT,
         ]);
         $text = '';
+        $agenda = [];
         if (!is_wp_error($resp)) {
             $data = json_decode(wp_remote_retrieve_body($resp), true);
             $text = trim($data['choices'][0]['message']['content'] ?? '');
         }
         if ($text) {
-            $hist['messages'][] = ['role' => 'assistant', 'content' => wp_strip_all_tags($text), 'html' => $text];
+            $text = $this->mit_strip_fences($text);
+            if (preg_match('/<ul id="mit_agenda">.*?<\/ul>/s', $text, $m)) {
+                $ul = $m[0];
+                $doc = new \DOMDocument();
+                \libxml_use_internal_errors(true);
+                $doc->loadHTML($ul);
+                foreach ($doc->getElementsByTagName('li') as $li) {
+                    $date = $li->getAttribute('data-date');
+                    $action = $li->getAttribute('data-action');
+                    $strategy = '';
+                    $template = '';
+                    foreach ($li->childNodes as $child) {
+                        if ($child->nodeName === 'p') $strategy .= $child->textContent;
+                        if ($child->nodeName === 'blockquote') $template .= $doc->saveHTML($child);
+                    }
+                    if ($date && $action) {
+                        $parts = explode('/', $date);
+                        if (count($parts) === 3) {
+                            $d = \DateTime::createFromFormat('d/m/Y', $date, new \DateTimeZone('Europe/Madrid'));
+                            $d->setTime(0,0);
+                            $today = new \DateTime('today', new \DateTimeZone('Europe/Madrid'));
+                            if ($d < $today) continue;
+                        }
+                        $agenda[] = [
+                            'date'     => $date,
+                            'text'     => $action,
+                            'strategy' => trim($strategy),
+                            'template' => wp_kses_post(trim($template)),
+                        ];
+                    }
+                }
+                $text = str_replace($ul, '', $text);
+            }
+            $plain = preg_replace('/<\/(li|p)>/i', "\n", $text);
+            $plain = preg_replace('/<br\s*\/?\>/i', "\n", $plain);
+            $plain = wp_strip_all_tags($plain);
+            $hist['messages'][] = ['role' => 'assistant', 'content' => $plain, 'html' => $text];
             $this->mit_summarize_history($hist, $key, $model);
+        } else {
+            $plain = '';
         }
         $this->mit_save_history($uid, $hist);
         if (is_wp_error($resp)) {
             $err = $resp->get_error_message();
             $text = sprintf(__('No se pudo conectar con OpenAI: %s', 'kovacic'), $err);
+            $plain = $text;
         }
         wp_send_json_success([
-            'suggestions'       => wp_strip_all_tags($text),
+            'suggestions'       => $plain,
             'suggestions_html'  => wp_kses_post($text),
+            'agenda'            => $agenda,
             'news'              => $news,
             'history'           => $hist['messages'],
         ]);
@@ -6650,6 +6837,7 @@ JS;
             $reply = trim($data['choices'][0]['message']['content'] ?? '');
         }
         if ($reply) {
+            $reply = $this->mit_strip_fences($reply);
             // Detect request for Excel generation based on user message
             if (stripos($msg, 'excel') !== false) {
                 $autoload = __DIR__ . '/vendor/autoload.php';
