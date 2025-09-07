@@ -17,6 +17,8 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_COLUMNS   = 'kvt_columns';
     const OPT_OPENAI_KEY= 'kvt_openai_key';
     const OPT_OPENAI_MODEL = 'kvt_openai_model';
+    const OPT_GEMINI_KEY  = 'kvt_gemini_key';
+    const OPT_GEMINI_MODEL = 'kvt_gemini_model';
     const OPT_GOOGLE_KEY  = 'kvt_google_key';
     const OPT_GOOGLE_CX   = 'kvt_google_cx';
     const OPT_NEWS_KEY  = 'kvt_newsapi_key';
@@ -207,6 +209,9 @@ cv_url|CV (URL)
         if (!defined('OPENAI_API_KEY')) {
             define('OPENAI_API_KEY', get_option(self::OPT_OPENAI_KEY, ''));
         }
+        if (!defined('GEMINI_API_KEY')) {
+            define('GEMINI_API_KEY', get_option(self::OPT_GEMINI_KEY, ''));
+        }
         if (!defined('GOOGLE_SEARCH_KEY')) {
             define('GOOGLE_SEARCH_KEY', get_option(self::OPT_GOOGLE_KEY, ''));
         }
@@ -284,6 +289,8 @@ cv_url|CV (URL)
         register_setting(self::OPT_GROUP, self::OPT_COLUMNS);
         register_setting(self::OPT_GROUP, self::OPT_OPENAI_KEY);
         register_setting(self::OPT_GROUP, self::OPT_OPENAI_MODEL);
+        register_setting(self::OPT_GROUP, self::OPT_GEMINI_KEY);
+        register_setting(self::OPT_GROUP, self::OPT_GEMINI_MODEL);
         register_setting(self::OPT_GROUP, self::OPT_GOOGLE_KEY);
         register_setting(self::OPT_GROUP, self::OPT_GOOGLE_CX);
         register_setting(self::OPT_GROUP, self::OPT_NEWS_KEY);
@@ -7296,6 +7303,28 @@ JS;
                         'required' => ['url']
                     ]
                 ]
+            ],
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'use_gemini',
+                    'description' => 'Acceder a Gemini para análisis multimedia, contenido tipo Google Slides o generación de PowerPoint.',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'prompt' => [
+                                'type' => 'string',
+                                'description' => 'Instrucciones para Gemini'
+                            ],
+                            'mode' => [
+                                'type' => 'string',
+                                'description' => 'Tipo de salida: text, image, slides o ppt',
+                                'enum' => ['text','image','slides','ppt']
+                            ]
+                        ],
+                        'required' => ['prompt']
+                    ]
+                ]
             ]
         ];
 
@@ -7312,6 +7341,11 @@ JS;
             case 'fetch_url':
                 $url = is_string($args['url'] ?? '') ? $args['url'] : '';
                 $result = $this->mit_fetch_url($url);
+                break;
+            case 'use_gemini':
+                $prompt = is_string($args['prompt'] ?? '') ? $args['prompt'] : '';
+                $mode   = is_string($args['mode'] ?? '') ? $args['mode'] : 'text';
+                $result = $this->mit_use_gemini($prompt, $mode);
                 break;
         }
         return apply_filters('kvt_mit_tool_result', $result, $name, $args);
@@ -7354,6 +7388,40 @@ JS;
         $text = wp_strip_all_tags($html);
         $text = preg_replace('/\s+/', ' ', $text);
         return mb_substr($text, 0, 1000);
+    }
+
+    private function mit_use_gemini($prompt, $mode = 'text') {
+        $key = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '';
+        if (!$key || !$prompt) return '';
+        $model = get_option(self::OPT_GEMINI_MODEL, 'gemini-1.5-pro-latest');
+        $url = sprintf('https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s', $model, $key);
+        $body = [
+            'contents' => [
+                [
+                    'parts' => [
+                        ['text' => $prompt]
+                    ]
+                ]
+            ]
+        ];
+        $resp = wp_remote_post($url, [
+            'headers' => ['Content-Type' => 'application/json'],
+            'body'    => wp_json_encode($body),
+            'timeout' => self::MIT_TIMEOUT,
+        ]);
+        if (is_wp_error($resp)) return '';
+        $data = json_decode(wp_remote_retrieve_body($resp), true);
+        $text = trim($data['candidates'][0]['content']['parts'][0]['text'] ?? '');
+        if ($mode === 'ppt' && $text) {
+            $file = $this->mit_create_ppt($text);
+            if (is_wp_error($file)) {
+                return $file->get_error_message();
+            }
+            if ($file) {
+                return $text . "\n\n" . esc_url($file);
+            }
+        }
+        return $text;
     }
 
     private function mit_strip_fences($text) {
@@ -7400,6 +7468,62 @@ JS;
         }
 
         return trailingslashit($upload['url']) . $filename;
+    }
+
+    private function mit_create_ppt($content) {
+        if (!class_exists('\\PhpOffice\\PhpPresentation\\PhpPresentation')) {
+            error_log('mit_create_ppt: PhpPresentation not available');
+            return new \WP_Error('missing_phppresentation', __('La librería PhpPresentation no está instalada.', 'kovacic'));
+        }
+
+        $ppt   = new \PhpOffice\PhpPresentation\PhpPresentation();
+        $slide = $ppt->getActiveSlide();
+        $shape = $slide->createRichTextShape();
+        $shape->setHeight(300);
+        $shape->setWidth(600);
+        $shape->setOffsetX(50);
+        $shape->setOffsetY(50);
+        $shape->createTextRun($content);
+
+        $upload   = wp_upload_dir();
+        $filename = wp_unique_filename($upload['path'], 'mit_output.pptx');
+        $filepath = trailingslashit($upload['path']) . $filename;
+        $writer   = \PhpOffice\PhpPresentation\IOFactory::createWriter($ppt, 'PowerPoint2007');
+        try {
+            $writer->save($filepath);
+        } catch (\Throwable $e) {
+            error_log('mit_create_ppt: ' . $e->getMessage());
+            return new \WP_Error('ppt_write_failed', __('Error al guardar el PowerPoint: ', 'kovacic') . $e->getMessage());
+        }
+
+        return trailingslashit($upload['url']) . $filename;
+    }
+
+    private function mit_gemini_chat($messages) {
+        $key = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '';
+        if (!$key) return '';
+        $model = get_option(self::OPT_GEMINI_MODEL, 'gemini-1.5-pro-latest');
+        $contents = [];
+        foreach ($messages as $m) {
+            $role = ($m['role'] === 'assistant') ? 'model' : 'user';
+            $contents[] = [
+                'role'  => $role,
+                'parts' => [
+                    ['text' => $m['content'] ?? '']
+                ]
+            ];
+        }
+        $url = sprintf('https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s', $model, $key);
+        $body = ['contents' => $contents];
+        $resp = wp_remote_post($url, [
+            'headers' => ['Content-Type' => 'application/json'],
+            'body'    => wp_json_encode($body),
+            'timeout' => self::MIT_TIMEOUT,
+        ]);
+        if (is_wp_error($resp)) return '';
+        $data  = json_decode(wp_remote_retrieve_body($resp), true);
+        $reply = trim($data['candidates'][0]['content']['parts'][0]['text'] ?? '');
+        return $reply;
     }
 
     public function ajax_mit_suggestions() {
@@ -7500,10 +7624,14 @@ JS;
         if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
         $msg = isset($_POST['message']) ? sanitize_text_field(wp_unslash($_POST['message'])) : '';
         $key = defined('OPENAI_API_KEY') ? OPENAI_API_KEY : '';
+        $gkey = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '';
         $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
         $uid  = get_current_user_id();
-        if (!$key || !$msg) {
-            wp_send_json_error(['msg' => __('Falta la clave de OpenAI', 'kovacic')]);
+        if (!$key && !$gkey) {
+            wp_send_json_error(['msg' => __('Falta la clave de IA', 'kovacic')]);
+        }
+        if (!$msg) {
+            wp_send_json_error(['msg' => __('Mensaje vacío', 'kovacic')]);
         }
 
         $hist    = $this->mit_load_history($uid);
@@ -7537,14 +7665,14 @@ JS;
             'tools'    => $tools,
         ];
 
-        $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+        $resp = $key ? wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
                 'Content-Type'  => 'application/json',
             ],
             'body' => wp_json_encode($body),
             'timeout' => self::MIT_TIMEOUT,
-        ]);
+        ]) : new \WP_Error('missing_openai');
 
         $reply = '';
         if (!is_wp_error($resp)) {
@@ -7581,6 +7709,9 @@ JS;
             }
             $reply = trim($message['content'] ?? '');
         }
+        if ($reply === '') {
+            $reply = $this->mit_gemini_chat($messages);
+        }
         $file_url = '';
         if ($reply) {
             $reply = $this->mit_strip_fences($reply);
@@ -7598,6 +7729,16 @@ JS;
                     $reply .= "\n\n<a href='" . esc_url($file_result) . "' target='_blank'>" . __('Descargar Excel generado', 'kovacic') . "</a>";
                 } else {
                     $reply .= "\n\n" . __('No se pudo generar el archivo Excel.', 'kovacic');
+                }
+            }
+            if (stripos($msg, 'powerpoint') !== false || stripos($msg, 'ppt') !== false) {
+                $autoload = __DIR__ . '/vendor/autoload.php';
+                if (file_exists($autoload)) {
+                    require_once $autoload;
+                }
+                $ppt_result = $this->mit_use_gemini($msg, 'ppt');
+                if ($ppt_result) {
+                    $reply .= "\n\n" . $ppt_result;
                 }
             }
 
