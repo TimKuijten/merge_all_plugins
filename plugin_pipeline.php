@@ -315,7 +315,6 @@ cv_url|CV (URL)
         add_submenu_page('kovacic', __('Ajustes', 'kovacic'), __('Ajustes', 'kovacic'), 'manage_options', 'kvt-settings', [$this, 'settings_page']);
         add_submenu_page('kovacic', __('Tableros de candidatos/clientes', 'kovacic'), __('Tableros de candidatos/clientes', 'kovacic'), 'manage_options', 'kvt-boards', [$this, 'boards_page']);
         add_submenu_page('kovacic', __('Actualizar perfiles', 'kovacic'), __('Actualizar perfiles', 'kovacic'), 'manage_options', 'kvt-load-cv', [$this, 'load_cv_page']);
-        add_submenu_page('kovacic', __('Analytics', 'kovacic'), __('Analytics', 'kovacic'), 'manage_options', 'kvt-analytics', [$this, 'analytics_page']);
     }
 
     public function tracker_page() {
@@ -975,10 +974,6 @@ JS;
         });
         </script>
         <?php
-    }
-
-    public function analytics_page() {
-        include __DIR__ . '/admin/analytics.php';
     }
 
     public function handle_delete_board() {
