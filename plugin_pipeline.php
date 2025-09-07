@@ -877,8 +877,7 @@ JS;
                     <tr>
                         <th scope="row">Canales de recordatorio</th>
                         <td>
-                            <label><input type="checkbox" name="<?php echo self::OPT_REMINDER_CHANNELS; ?>[]" value="email" <?php checked(in_array('email', $rem_channels, true)); ?>> Email</label><br>
-                            <label><input type="checkbox" name="<?php echo self::OPT_REMINDER_CHANNELS; ?>[]" value="calendar" <?php checked(in_array('calendar', $rem_channels, true)); ?>> Calendario</label>
+                            <label><input type="checkbox" name="<?php echo self::OPT_REMINDER_CHANNELS; ?>[]" value="email" <?php checked(in_array('email', $rem_channels, true)); ?>> Email</label>
                         </td>
                     </tr>
                 </table>
@@ -1712,7 +1711,7 @@ JS;
 
     public function cron_reminder_scan() {
         $interval = intval(get_option(self::OPT_REMINDER_INTERVAL, 7));
-        $channels = (array) get_option(self::OPT_REMINDER_CHANNELS, ['email', 'calendar']);
+        $channels = (array) get_option(self::OPT_REMINDER_CHANNELS, ['email']);
         $args = [
             'post_type'   => self::CPT,
             'post_status' => 'any',
@@ -1721,35 +1720,21 @@ JS;
         $posts = get_posts($args);
         $now = current_time('timestamp');
         $due = [];
-        $events = [];
         foreach ($posts as $p) {
             $next = get_post_meta($p->ID, 'kvt_next_action', true);
             if ($next) {
                 $ts = strtotime(str_replace('/', '-', $next));
                 if ($ts && $ts <= $now + DAY_IN_SECONDS * $interval) {
                     $due[] = $p->post_title . ' — ' . $next;
-                    $events[] = [
-                        'date' => $this->fmt_date_ddmmyyyy($next),
-                        'text' => 'Follow up: ' . $p->post_title,
-                        'candidate' => $p->post_title,
-                        'candidate_id' => $p->ID,
-                    ];
                 }
             } else {
                 $mod = strtotime($p->post_modified_gmt ?: $p->post_modified);
                 if ($mod && $mod <= $now - DAY_IN_SECONDS * $interval) {
                     $due[] = $p->post_title . ' — inactive';
-                    $events[] = [
-                        'date' => date('d/m/Y', $now + DAY_IN_SECONDS),
-                        'text' => 'Inactive: ' . $p->post_title,
-                        'candidate' => $p->post_title,
-                        'candidate_id' => $p->ID,
-                    ];
                 }
             }
         }
         update_option('kvt_auto_followups', $due);
-        update_option('kvt_reminder_events', $events);
         if (in_array('email', $channels, true) && $due) {
             wp_mail(get_option('admin_email'), 'Recordatorios de seguimiento', implode("\n", $due));
         }
@@ -4920,19 +4905,32 @@ function kvtInit(){
       const metaStr = meta.filter(Boolean).map(m=>esc(m)).join(' / ');
       return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(candTxt)+'</a> — '+(metaStr?metaStr+' — ':'')+esc(commentTxt)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
     });
-    const logs = (data.logs||[]).sort((a,b)=>a.time<b.time?1:-1);
-    (data.reminders||[]).forEach(r=>{
-      calendarEvents.push({date:formatInputDate(r.date), time:r.time||'', text:fixUnicode(r.text||''), candidate:r.candidate?fixUnicode(r.candidate):'', process:r.process?fixUnicode(r.process):'', client:r.client?fixUnicode(r.client):'', candidate_id:r.candidate_id||0, done:false, manual:true});
-    });
+      const logs = (data.logs||[]).sort((a,b)=>a.time<b.time?1:-1);
     activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
     activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
     activityNotify.innerHTML = notifs.join('') || '<li>No hay notificaciones</li>';
     if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(fixUnicode(l.time))+' - '+esc(fixUnicode(l.text))+'</li>').join('') : '<li>No hay actividad</li>';
-    renderCalendarSmall();
-    loadOutlookEvents();
-  }
+      renderCalendarSmall();
+      loadOutlookEvents();
+    }
 
-  function removeCalendarEvent(idx){
+    function clearCalendar(){
+      const ids = calendarEvents.map(e=>e.candidate_id).filter(id=>id);
+      const requests = ids.map(id=>{
+        const params = new URLSearchParams();
+        params.set('action','kvt_delete_task');
+        params.set('id', id);
+        return fetch(ajaxurl,{method:'POST',credentials:'same-origin',body:params}).catch(()=>{});
+      });
+      Promise.all(requests).then(()=>{
+        calendarEvents = [];
+        renderCalendar();
+        renderCalendarSmall();
+        refresh();
+      });
+    }
+
+    function removeCalendarEvent(idx){
     const ev = calendarEvents[idx];
     const finish = ()=>{
       calendarEvents.splice(idx,1);
@@ -4960,7 +4958,7 @@ function kvtInit(){
     const todayStr = (today.getDate()<10?'0'+today.getDate():today.getDate())+'/'+(today.getMonth()+1<10?'0'+(today.getMonth()+1):(today.getMonth()+1))+'/'+today.getFullYear();
     const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     const monthName = first.toLocaleString('default',{month:'long'});
-    let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next">&gt;</button><button type="button" id="kvt_cal_mit" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
+      let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next">&gt;</button><button type="button" id="kvt_cal_clear">Vaciar</button><button type="button" id="kvt_cal_mit" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
     html += '<div class="kvt-cal-add"><input type="text" id="kvt_cal_date" placeholder="DD/MM/YYYY"><input type="time" id="kvt_cal_time"><input type="text" id="kvt_cal_text" placeholder="Evento"><select id="kvt_cal_process"><option value="">Proceso (opcional)</option></select><select id="kvt_cal_candidate"><option value="">Candidato (opcional)</option></select><select id="kvt_cal_client"><option value="">Cliente (opcional)</option></select><button type="button" id="kvt_cal_add">Añadir</button></div>';
     html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
     for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
@@ -5002,13 +5000,15 @@ function kvtInit(){
     const textInp = el('#kvt_cal_text', calendarWrap);
     const procSel = el('#kvt_cal_process', calendarWrap);
     const candSel = el('#kvt_cal_candidate', calendarWrap);
-    const mitBtn  = el('#kvt_cal_mit', calendarWrap);
-    const clientSel = el('#kvt_cal_client', calendarWrap);
+      const mitBtn  = el('#kvt_cal_mit', calendarWrap);
+      const clearBtn = el('#kvt_cal_clear', calendarWrap);
+      const clientSel = el('#kvt_cal_client', calendarWrap);
     populateCalProcesses(procSel);
     populateCalCandidates('', candSel);
     populateCalClients(clientSel);
-    procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
-    prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendar(); });
+      procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
+      clearBtn.addEventListener('click', clearCalendar);
+      prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendar(); });
     nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendar(); });
     addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; const clientName = clientSel.value?clientSel.options[clientSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, client:clientName, done:false, manual:true}); renderCalendar(); }});
     calendarWrap.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
@@ -5048,7 +5048,7 @@ function kvtInit(){
       const monthName = first.toLocaleString('default',{month:'long'});
       const today = new Date();
       const todayStr = (today.getDate()<10?'0'+today.getDate():today.getDate())+'/'+(today.getMonth()+1<10?'0'+(today.getMonth()+1):(today.getMonth()+1))+'/'+today.getFullYear();
-      let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next_s">&gt;</button><button type="button" id="kvt_cal_mit_s" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
+        let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next_s">&gt;</button><button type="button" id="kvt_cal_clear_s">Vaciar</button><button type="button" id="kvt_cal_mit_s" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
       html += '<div class="kvt-cal-add">'
         +'<label>Fecha<input type="text" id="kvt_cal_date_s" placeholder="DD/MM/YYYY"></label>'
         +'<label>Hora<input type="time" id="kvt_cal_time_s"></label>'
@@ -5097,13 +5097,15 @@ function kvtInit(){
       const textInp = el('#kvt_cal_text_s', calendarSmall);
       const procSel = el('#kvt_cal_process_s', calendarSmall);
       const candSel = el('#kvt_cal_candidate_s', calendarSmall);
-      const mitBtn  = el('#kvt_cal_mit_s', calendarSmall);
-      const clientSel = el('#kvt_cal_client_s', calendarSmall);
+        const mitBtn  = el('#kvt_cal_mit_s', calendarSmall);
+        const clearBtn = el('#kvt_cal_clear_s', calendarSmall);
+        const clientSel = el('#kvt_cal_client_s', calendarSmall);
       populateCalProcesses(procSel);
       populateCalCandidates('', candSel);
       populateCalClients(clientSel);
-      procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
-      prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendarSmall(); });
+        procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
+        clearBtn.addEventListener('click', clearCalendar);
+        prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendarSmall(); });
       nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendarSmall(); });
       addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; const clientName = clientSel.value?clientSel.options[clientSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, client:clientName, done:false, manual:true}); renderCalendarSmall(); }});
       calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
@@ -6825,8 +6827,7 @@ JS;
             'comments' => $comments,
             'upcoming' => $upcoming,
             'overdue'  => $overdue,
-            'logs'     => $logs,
-            'reminders'=> get_option('kvt_reminder_events', []),
+            'logs'     => $logs
         ]);
     }
 
