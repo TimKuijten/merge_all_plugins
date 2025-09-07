@@ -185,6 +185,14 @@ class Kovacic_Pipeline_Visualizer {
 
         add_action('plugins_loaded',                 [$this, 'ensure_defaults']);
         add_action('plugins_loaded',                 [$this, 'define_api_keys']);
+        add_action('save_post_' . self::CPT,         [$this, 'clear_mit_context']);
+        add_action('deleted_post',                   [$this, 'clear_mit_context_on_post_delete']);
+        add_action('created_' . self::TAX_CLIENT,    [$this, 'clear_mit_context']);
+        add_action('edited_'  . self::TAX_CLIENT,    [$this, 'clear_mit_context']);
+        add_action('delete_'  . self::TAX_CLIENT,    [$this, 'clear_mit_context']);
+        add_action('created_' . self::TAX_PROCESS,   [$this, 'clear_mit_context']);
+        add_action('edited_'  . self::TAX_PROCESS,   [$this, 'clear_mit_context']);
+        add_action('delete_'  . self::TAX_PROCESS,   [$this, 'clear_mit_context']);
     }
 
     public function ensure_defaults() {
@@ -7077,6 +7085,12 @@ JS;
     }
 
     private function mit_gather_context() {
+        $key    = $this->mit_ctx_key();
+        $cached = get_transient($key);
+        if ($cached !== false) {
+            return $cached;
+        }
+
         $cands = get_posts([
             'post_type'   => self::CPT,
             'post_status' => 'any',
@@ -7265,7 +7279,23 @@ JS;
             $summary .= ' Plantillas: ' . implode('; ', $template_lines) . '.';
         }
 
-        return ['summary' => $summary, 'news' => $news];
+        $data = ['summary' => $summary, 'news' => $news];
+        set_transient($key, $data, 5 * MINUTE_IN_SECONDS);
+        return $data;
+    }
+
+    private function mit_ctx_key() {
+        return 'kvt_mit_ctx_' . md5(get_site_url());
+    }
+
+    public function clear_mit_context($arg = null) {
+        delete_transient($this->mit_ctx_key());
+    }
+
+    public function clear_mit_context_on_post_delete($post_id) {
+        if (get_post_type($post_id) === self::CPT) {
+            $this->clear_mit_context();
+        }
     }
 
     private function mit_get_tools() {
