@@ -149,6 +149,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_generate_roles',[$this, 'ajax_generate_roles']);
         add_action('wp_ajax_kvt_mit_suggestions',      [$this, 'ajax_mit_suggestions']);
         add_action('wp_ajax_kvt_mit_chat',             [$this, 'ajax_mit_chat']);
+        add_action('wp_ajax_kvt_save_calendar',        [$this, 'ajax_save_calendar']);
+        add_action('wp_ajax_kvt_load_calendar',        [$this, 'ajax_load_calendar']);
         add_action('wp_ajax_kvt_send_email',           [$this, 'ajax_send_email']);
         add_action('wp_ajax_nopriv_kvt_send_email',    [$this, 'ajax_send_email']);
         add_action('wp_ajax_kvt_get_email_log',        [$this, 'ajax_get_email_log']);
@@ -3323,7 +3325,6 @@ function kvtInit(){
   let totalPages = 1;
   let allRows = [];
   let calendarEvents = [];
-  let allCandidates = null;
   let dragIdx = null;
   let calMonth = (new Date()).getMonth();
   let calYear  = (new Date()).getFullYear();
@@ -3728,13 +3729,14 @@ function kvtInit(){
   }
 
   function appendChat(role, html){
-    if(!mitChatLog) return;
+    if(!mitChatLog) return null;
     const p=document.createElement('p');
     p.className=role;
-    if(role==='assistant') p.innerHTML='<strong>MIT:</strong> '+html.replace(/\n/g,'<br>');
-    else p.textContent='Tú: '+html;
+    if(role==='assistant') p.innerHTML='<strong>MIT:</strong> '+html;
+    else p.innerHTML='Tú: '+esc(html);
     mitChatLog.appendChild(p);
     mitChatLog.scrollTop=mitChatLog.scrollHeight;
+    return p;
   }
 
   async function sendMitChat(){
@@ -3743,13 +3745,34 @@ function kvtInit(){
     if(!msg) return;
     appendChat('user', msg);
     mitChatInput.value='';
+    const aiP = appendChat('assistant','<em>...</em>');
     try {
       const resp = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_mit_chat', nonce:KVT_MIT_NONCE, message:msg})});
-      const json = await resp.json();
-      if(json && json.success && json.data && json.data.reply){
-        appendChat('assistant', json.data.reply);
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer='';
+      let text='';
+      while(true){
+        const {value, done} = await reader.read();
+        if(done) break;
+        buffer += decoder.decode(value, {stream:true});
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for(const line of lines){
+          if(!line.trim()) continue;
+          try{
+            const j = JSON.parse(line);
+            if(j.chunk){
+              text += j.chunk;
+              aiP.innerHTML = '<strong>MIT:</strong> '+esc(text).replace(/\n/g,'<br>');
+            }
+          }catch(e){}
+        }
       }
-    } catch(e){}
+      aiP.innerHTML = '<strong>MIT:</strong> '+esc(text).replace(/\n/g,'<br>');
+    } catch(e){
+      aiP.innerHTML = '<strong>MIT:</strong> Error';
+    }
   }
 
   mitChatSend && mitChatSend.addEventListener('click', sendMitChat);
@@ -4610,6 +4633,29 @@ function kvtInit(){
     });
   }
 
+  function saveCalendar(){
+    const params = new URLSearchParams();
+    params.set('action','kvt_save_calendar');
+    params.set('_ajax_nonce', KVT_NONCE);
+    params.set('events', JSON.stringify(calendarEvents.filter(e=>e.manual)));
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()});
+  }
+
+  async function loadSavedCalendar(){
+    const params = new URLSearchParams();
+    params.set('action','kvt_load_calendar');
+    params.set('_ajax_nonce', KVT_NONCE);
+    try {
+      const resp = await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()});
+      const json = await resp.json();
+      if(json && json.success && Array.isArray(json.data)){
+        json.data.forEach(e=>{ e.manual = true; calendarEvents.push(e); });
+        renderCalendarSmall();
+        renderCalendar();
+      }
+    } catch(e){}
+  }
+
   async function loadMitCalendar(ev){
     const btn = ev?.target;
     if(btn){ btn.disabled = true; btn.classList.add('loading'); }
@@ -4623,7 +4669,6 @@ function kvtInit(){
       const json = await resp.json();
       if(json && json.success && json.data && Array.isArray(json.data.agenda)){
         const today = new Date(); today.setHours(0,0,0,0);
-        const cands = await loadAllCandidates();
         calendarEvents = calendarEvents.filter(e=>e.manual);
         json.data.agenda.forEach(item=>{
           const parts = item.date.split('/');
@@ -4634,23 +4679,8 @@ function kvtInit(){
             if(day===0 || day===6) return; // skip weekends
             let tmpl = fixUnicode(item.template);
             const strat = fixUnicode(item.strategy);
-            let email = '';
-            let firstName = '';
-            if(item.text){
-              const m = item.text.match(/(?:a|con)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+)(?:\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+))?/i);
-              if(m){
-                firstName = m[1];
-                const first = m[1].toLowerCase();
-                const last  = m[2]?m[2].toLowerCase():'';
-                const cand = cands.find(c=>{
-                  const fn = (c.meta && (c.meta.first_name||'')).toLowerCase();
-                  const ln = (c.meta && ((c.meta.last_name||c.meta.surname)||'')).toLowerCase();
-                  if(first && last) return fn===first && ln===last;
-                  return fn===first || ln===first;
-                });
-                if(cand && cand.meta && cand.meta.email) email = cand.meta.email;
-              }
-            }
+            const email = item.candidate_email ? fixUnicode(item.candidate_email) : '';
+            const firstName = item.candidate_name ? fixUnicode(item.candidate_name) : '';
             if(tmpl){
               tmpl = tmpl.replace(/{{\s*first_name\s*}}/gi, firstName);
               tmpl = tmpl.replace(/Estimad[oa]\b/gi,'Hola');
@@ -4668,12 +4698,14 @@ function kvtInit(){
               template:tmpl,
               email:email,
               done:false,
-              manual:false
+              manual:false,
+              candidate_id:item.candidate_id||0
             });
           }
         });
         renderCalendar();
         renderCalendarSmall();
+        saveCalendar();
       }
     } catch(e){} finally {
       if(btn){ btn.disabled = false; btn.classList.remove('loading'); }
@@ -4717,14 +4749,6 @@ function kvtInit(){
     params.set('page',1);
     if(procId) params.set('process', procId);
     return fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()}).then(r=>r.json());
-  }
-
-  function loadAllCandidates(){
-    if(allCandidates) return Promise.resolve(allCandidates);
-    return fetchCandidatesAll().then(res=>{
-      allCandidates = (res && res.success && res.data && Array.isArray(res.data.items)) ? res.data.items : [];
-      return allCandidates;
-    });
   }
 
   function dismissComment(id, idx, card){
@@ -4989,6 +5013,7 @@ function kvtInit(){
     }
     renderCalendarSmall();
     loadOutlookEvents();
+    loadSavedCalendar();
   }
 
   function renderActivityDashboard(data){
@@ -5029,9 +5054,10 @@ function kvtInit(){
     activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
     activityNotify.innerHTML = notifs.join('') || '<li>No hay notificaciones</li>';
     if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(fixUnicode(l.time))+' - '+esc(fixUnicode(l.text))+'</li>').join('') : '<li>No hay actividad</li>';
-      renderCalendarSmall();
-      loadOutlookEvents();
-    }
+    renderCalendarSmall();
+    loadOutlookEvents();
+    loadSavedCalendar();
+  }
 
     function removeCalendarEvent(idx){
     const ev = calendarEvents[idx];
@@ -5039,6 +5065,7 @@ function kvtInit(){
       calendarEvents.splice(idx,1);
       renderCalendar();
       renderCalendarSmall();
+      saveCalendar();
       refresh();
     };
     if(ev && ev.candidate_id){
@@ -5112,10 +5139,10 @@ function kvtInit(){
       procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
       prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendar(); });
     nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendar(); });
-    addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; const clientName = clientSel.value?clientSel.options[clientSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, client:clientName, done:false, manual:true}); renderCalendar(); }});
+    addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; const clientName = clientSel.value?clientSel.options[clientSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, client:clientName, done:false, manual:true}); renderCalendar(); saveCalendar(); }});
     calendarWrap.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
         evEl.addEventListener('dragstart', e=>{ dragIdx = parseInt(evEl.dataset.idx,10); });
-        evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; ev.done=!ev.done; if(ev.done && ev.candidate_id){ const params=new URLSearchParams({action:'kvt_complete_task', _ajax_nonce:KVT_NONCE, id:ev.candidate_id, author:KVT_CURRENT_USER||''}); fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()}); } renderCalendar(); renderCalendarSmall(); });
+        evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; ev.done=!ev.done; if(ev.done && ev.candidate_id){ const params=new URLSearchParams({action:'kvt_complete_task', _ajax_nonce:KVT_NONCE, id:ev.candidate_id, author:KVT_CURRENT_USER||''}); fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()}); } renderCalendar(); renderCalendarSmall(); saveCalendar(); });
       });
       calendarWrap.querySelectorAll('.kvt-cal-detail').forEach(btn=>{
         btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); openMitDetail(calendarEvents[idx]); });
@@ -5124,7 +5151,7 @@ function kvtInit(){
         btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); });
       });
         calendarWrap.querySelectorAll('.kvt-cal-accept').forEach(btn=>{
-          btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendar(); renderCalendarSmall(); });
+          btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendar(); renderCalendarSmall(); saveCalendar(); });
         });
         calendarWrap.querySelectorAll('.kvt-cal-reject').forEach(btn=>{
         btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); });
@@ -5139,6 +5166,7 @@ function kvtInit(){
           dragIdx = null;
           renderCalendar();
           renderCalendarSmall();
+          saveCalendar();
         }
       });
     });
@@ -5211,14 +5239,14 @@ function kvtInit(){
         procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
         prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendarSmall(); });
       nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendarSmall(); });
-      addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; const clientName = clientSel.value?clientSel.options[clientSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, client:clientName, done:false, manual:true}); renderCalendarSmall(); }});
+      addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; const clientName = clientSel.value?clientSel.options[clientSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, client:clientName, done:false, manual:true}); renderCalendarSmall(); saveCalendar(); }});
       calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
         evEl.addEventListener('dragstart', e=>{ dragIdx = parseInt(evEl.dataset.idx,10); });
-        evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; ev.done=!ev.done; if(ev.done && ev.candidate_id){ const params=new URLSearchParams({action:'kvt_complete_task', _ajax_nonce:KVT_NONCE, id:ev.candidate_id, author:KVT_CURRENT_USER||''}); fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()}); } renderCalendarSmall(); renderCalendar(); });
+        evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; ev.done=!ev.done; if(ev.done && ev.candidate_id){ const params=new URLSearchParams({action:'kvt_complete_task', _ajax_nonce:KVT_NONCE, id:ev.candidate_id, author:KVT_CURRENT_USER||''}); fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()}); } renderCalendarSmall(); renderCalendar(); saveCalendar(); });
       });
       calendarSmall.querySelectorAll('.kvt-cal-detail').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); openMitDetail(calendarEvents[idx]); }); });
       calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); }); });
-        calendarSmall.querySelectorAll('.kvt-cal-accept').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendarSmall(); renderCalendar(); }); });
+        calendarSmall.querySelectorAll('.kvt-cal-accept').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendarSmall(); renderCalendar(); saveCalendar(); }); });
       calendarSmall.querySelectorAll('.kvt-cal-reject').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); }); });
       calendarSmall.querySelectorAll('.kvt-cal-cell').forEach(cell=>{
         cell.addEventListener('dragover', e=>e.preventDefault());
@@ -5230,6 +5258,7 @@ function kvtInit(){
             dragIdx = null;
             renderCalendarSmall();
             renderCalendar();
+            saveCalendar();
           }
         });
       });
@@ -7679,12 +7708,53 @@ JS;
                             $today = new \DateTime('today', new \DateTimeZone('Europe/Madrid'));
                             if ($d < $today) continue;
                         }
-                        $agenda[] = [
+
+                        $cand_id   = 0;
+                        $cand_name = '';
+                        $cand_email= '';
+                        if (preg_match('/(?:a|con)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+)(?:\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+))?/u', $action, $nm)) {
+                            $first = sanitize_text_field($nm[1]);
+                            $last  = isset($nm[2]) ? sanitize_text_field($nm[2]) : '';
+                            $meta_q = [
+                                'relation' => 'AND',
+                                [
+                                    'relation' => 'OR',
+                                    ['key' => 'kvt_first_name','value' => $first,'compare' => 'LIKE'],
+                                    ['key' => 'first_name',    'value' => $first,'compare' => 'LIKE'],
+                                ],
+                            ];
+                            if ($last !== '') {
+                                $meta_q[] = [
+                                    'relation' => 'OR',
+                                    ['key' => 'kvt_last_name','value' => $last,'compare' => 'LIKE'],
+                                    ['key' => 'last_name',    'value' => $last,'compare' => 'LIKE'],
+                                ];
+                            }
+                            $cand = get_posts([
+                                'post_type'      => self::CPT,
+                                'posts_per_page' => 1,
+                                'fields'         => 'ids',
+                                'meta_query'     => $meta_q,
+                            ]);
+                            if ($cand) {
+                                $cand_id   = (int) $cand[0];
+                                $cand_name = $this->meta_get_compat($cand_id, 'kvt_first_name', ['first_name']);
+                                $cand_email= $this->meta_get_compat($cand_id, 'kvt_email', ['email']);
+                            }
+                        }
+
+                        $item = [
                             'date'     => $date,
                             'text'     => $action,
                             'strategy' => trim($strategy),
                             'template' => wp_kses_post(trim($template)),
                         ];
+                        if ($cand_id) {
+                            $item['candidate_id']    = $cand_id;
+                            $item['candidate_name']  = $cand_name;
+                            $item['candidate_email'] = $cand_email;
+                        }
+                        $agenda[] = $item;
                     }
                 }
                 $text = str_replace($ul, '', $text);
@@ -7717,10 +7787,9 @@ JS;
         if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
         $msg = isset($_POST['message']) ? sanitize_text_field(wp_unslash($_POST['message'])) : '';
         $key = defined('OPENAI_API_KEY') ? OPENAI_API_KEY : '';
-        $gkey = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '';
         $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
         $uid  = get_current_user_id();
-        if (!$key && !$gkey) {
+        if (!$key) {
             wp_send_json_error(['msg' => __('Falta la clave de IA', 'kovacic')]);
         }
         if (!$msg) {
@@ -7731,9 +7800,7 @@ JS;
         $ctx     = $this->mit_gather_context();
         $summary = $ctx['summary'];
 
-        $identity = 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto. Dispones de herramientas externas: "search_web" para buscar en Google y "fetch_url" para leer páginas. Úsalas sólo cuando la conversación no contenga la información solicitada, si se pide algo reciente o si tu confianza es baja. Si no es necesario, responde directamente.';
-
-        // Ensure system identity and summary are always the first entries
+        $identity = 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto.';
         if (empty($hist['messages']) || ($hist['messages'][0]['role'] ?? '') !== 'system') {
             array_unshift($hist['messages'], ['role' => 'system', 'content' => $identity]);
         } else {
@@ -7749,119 +7816,77 @@ JS;
         }
 
         $hist['messages'][] = ['role' => 'user', 'content' => $msg];
-
-        $tools = $this->mit_get_tools();
         $messages = $hist['messages'];
-        $body = [
-            'model'    => $model,
-            'messages' => $messages,
-            'tools'    => $tools,
-        ];
 
-        $resp = $key ? wp_remote_post('https://api.openai.com/v1/chat/completions', [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $key,
-                'Content-Type'  => 'application/json',
+        nocache_headers();
+        header('Content-Type: application/json; charset=utf-8');
+        header('X-Accel-Buffering: no');
+
+        $reply = '';
+        $ch = curl_init('https://api.openai.com/v1/chat/completions');
+        curl_setopt_array($ch, [
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $key,
+                'Content-Type: application/json',
             ],
-            'body' => wp_json_encode($body),
-            'timeout' => self::MIT_TIMEOUT,
-        ]) : new \WP_Error('missing_openai');
-
-        $reply   = '';
-        $ppt_url = '';
-        if (!is_wp_error($resp)) {
-            $data    = json_decode(wp_remote_retrieve_body($resp), true);
-            $message = $data['choices'][0]['message'] ?? [];
-            while (!empty($message['tool_calls'])) {
-                $messages[] = [
-                    'role' => 'assistant',
-                    'content' => $message['content'] ?? '',
-                    'tool_calls' => $message['tool_calls'],
-                ];
-                foreach ($message['tool_calls'] as $call) {
-                    $args   = json_decode($call['function']['arguments'] ?? '', true);
-                    $result = $this->mit_execute_tool($call['function']['name'], is_array($args) ? $args : []);
-                    if ($call['function']['name'] === 'make_pptx' && is_string($result) && filter_var($result, FILTER_VALIDATE_URL)) {
-                        $ppt_url = $result;
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => wp_json_encode([
+                'model'    => $model,
+                'messages' => $messages,
+                'stream'   => true,
+            ]),
+            CURLOPT_WRITEFUNCTION => function($ch, $data) use (&$reply) {
+                $lines = explode("\n", $data);
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if ($line === '' || strpos($line, 'data:') !== 0) continue;
+                    $payload = trim(substr($line, 5));
+                    if ($payload === '[DONE]') {
+                        echo wp_json_encode(['done' => true]) . "\n";
+                        @ob_flush(); flush();
+                        continue;
                     }
-                    $messages[] = [
-                        'role' => 'tool',
-                        'tool_call_id' => $call['id'],
-                        'name' => $call['function']['name'],
-                        'content' => $result,
-                    ];
+                    $json = json_decode($payload, true);
+                    $chunk = $json['choices'][0]['delta']['content'] ?? '';
+                    if ($chunk !== '') {
+                        $reply .= $chunk;
+                        echo wp_json_encode(['chunk' => $chunk]) . "\n";
+                        @ob_flush(); flush();
+                    }
                 }
-                $body['messages'] = $messages;
-                $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
-                    'headers' => [
-                        'Authorization' => 'Bearer ' . $key,
-                        'Content-Type'  => 'application/json',
-                    ],
-                    'body' => wp_json_encode($body),
-                    'timeout' => self::MIT_TIMEOUT,
-                ]);
-                if (is_wp_error($resp)) break;
-                $data    = json_decode(wp_remote_retrieve_body($resp), true);
-                $message = $data['choices'][0]['message'] ?? [];
-            }
-            $reply = trim($message['content'] ?? '');
-        }
-        if ($reply === '') {
-            $reply = $this->mit_gemini_chat($messages);
-        }
-        $file_url = '';
-        if ($reply) {
-            $reply = $this->mit_strip_fences($reply);
-            $reply = preg_replace('#sandbox:/[^\s<]+#i', '', $reply);
-            $reply = make_clickable($reply);
-            // Detect request for Excel generation based on user message
-            if (stripos($msg, 'excel') !== false) {
-                $autoload = __DIR__ . '/vendor/autoload.php';
-                if (file_exists($autoload)) {
-                    require_once $autoload;
-                }
-                $file_result = $this->mit_create_excel();
-                if (is_wp_error($file_result)) {
-                    $reply .= "\n\n" . $file_result->get_error_message();
-                } elseif ($file_result) {
-                    $file_url = $file_result;
-                    $reply .= "\n\n<a href='" . esc_url($file_result) . "' target='_blank'>" . __('Descargar Excel generado', 'kovacic') . "</a>";
-                } else {
-                    $reply .= "\n\n" . __('No se pudo generar el archivo Excel.', 'kovacic');
-                }
-            }
-            if ($ppt_url) {
-                $reply .= "\n\n<a href='" . esc_url($ppt_url) . "' target='_blank'>" . __('Descargar presentación', 'kovacic') . "</a>";
-            }
+                return strlen($data);
+            },
+            CURLOPT_TIMEOUT => self::MIT_TIMEOUT,
+        ]);
+        curl_exec($ch);
+        curl_close($ch);
 
-            $hist['messages'][] = ['role' => 'assistant', 'content' => wp_strip_all_tags($reply), 'html' => $reply];
+        if ($reply !== '') {
+            $plain = wp_strip_all_tags($reply);
+            $hist['messages'][] = ['role' => 'assistant', 'content' => $plain, 'html' => $reply];
             $this->mit_summarize_history($hist, $key, $model);
-
-            // Preserve system identity and context after summarizing
-            if (($hist['messages'][0]['role'] ?? '') !== 'system' || $hist['messages'][0]['content'] !== $identity) {
-                array_unshift($hist['messages'], ['role' => 'system', 'content' => $identity]);
-            } else {
-                $hist['messages'][0]['content'] = $identity;
-            }
-            if (!isset($hist['messages'][1]) || ($hist['messages'][1]['role'] ?? '') !== 'system') {
-                array_splice($hist['messages'], 1, 0, [[
-                    'role'    => 'system',
-                    'content' => $summary,
-                ]]);
-            } else {
-                $hist['messages'][1]['content'] = $summary;
-            }
-
             $this->mit_save_history($uid, $hist);
-            wp_send_json_success([
-                'reply'   => wp_kses_post($reply),
-                'history' => $hist['messages'],
-                'file'    => $file_url,
-                'ppt'     => $ppt_url,
-            ]);
         }
+        exit;
+    }
 
-        wp_send_json_error(['msg' => __('Sin respuesta', 'kovacic')]);
+    public function ajax_save_calendar() {
+        check_ajax_referer('kvt_nonce');
+        if (!is_user_logged_in()) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $uid = get_current_user_id();
+        $events = isset($_POST['events']) ? json_decode(stripslashes($_POST['events']), true) : [];
+        if (!is_array($events)) $events = [];
+        update_user_meta($uid, 'kvt_calendar_events', $events);
+        wp_send_json_success();
+    }
+
+    public function ajax_load_calendar() {
+        check_ajax_referer('kvt_nonce');
+        if (!is_user_logged_in()) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $uid = get_current_user_id();
+        $events = get_user_meta($uid, 'kvt_calendar_events', true);
+        if (!is_array($events)) $events = [];
+        wp_send_json_success($events);
     }
 
     public function mit_chat_widget() {
