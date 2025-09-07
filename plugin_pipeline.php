@@ -3055,6 +3055,7 @@ function kvtInit(){
   let totalPages = 1;
   let allRows = [];
   let calendarEvents = [];
+  let dragIdx = null;
   let calMonth = (new Date()).getMonth();
   let calYear  = (new Date()).getFullYear();
   let shareMode = 'client';
@@ -4620,7 +4621,7 @@ function kvtInit(){
       const ev = calendarEvents.map((e,idx)=>Object.assign({idx},e)).filter(e=>e.date===ds);
       let cls = 'kvt-cal-cell';
       if(ev.length) cls += ' has-event';
-      html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
+      html += '<div class="'+cls+'" data-date="'+ds+'"><span class="kvt-cal-day">'+d+'</span>';
       ev.forEach(e=>{
         let lbl='';
         if(e.time) lbl+=esc(fixUnicode(e.time))+' ';
@@ -4631,10 +4632,11 @@ function kvtInit(){
         if(e.client)    parts.push(esc(fixUnicode(e.client)));
         if(parts.length) lbl+=' <em>- '+parts.join(' / ')+'</em>';
         const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
+        const dragAttr = e.manual?'':' draggable="true"';
         if(e.manual){
-          html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+          html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
         } else {
-          html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
+          html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
         }
       });
       html += '</div>';
@@ -4659,6 +4661,7 @@ function kvtInit(){
     nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendar(); });
     addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false, manual:true}); renderCalendar(); }});
     calendarWrap.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
+      evEl.addEventListener('dragstart', e=>{ dragIdx = parseInt(evEl.dataset.idx,10); });
       evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendar(); } else { openMitDetail(ev); }});
     });
     calendarWrap.querySelectorAll('.kvt-cal-remove').forEach(btn=>{
@@ -4669,6 +4672,19 @@ function kvtInit(){
     });
     calendarWrap.querySelectorAll('.kvt-cal-reject').forEach(btn=>{
       btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendar(); });
+    });
+    calendarWrap.querySelectorAll('.kvt-cal-cell').forEach(cell=>{
+      cell.addEventListener('dragover', e=>e.preventDefault());
+      cell.addEventListener('drop', e=>{
+        e.preventDefault();
+        if(dragIdx!==null){
+          calendarEvents[dragIdx].date = cell.dataset.date;
+          calendarEvents[dragIdx].manual = true;
+          dragIdx = null;
+          renderCalendar();
+          renderCalendarSmall();
+        }
+      });
     });
     mitBtn.addEventListener('click', loadMitCalendar);
   }
@@ -4695,7 +4711,7 @@ function kvtInit(){
         const ev = calendarEvents.map((e,idx)=>Object.assign({idx},e)).filter(e=>e.date===ds);
         let cls = 'kvt-cal-cell';
         if(ev.length) cls += ' has-event';
-        html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
+        html += '<div class="'+cls+'" data-date="'+ds+'"><span class="kvt-cal-day">'+d+'</span>';
         ev.forEach(e=>{
           let lbl = esc(fixUnicode(e.text));
           if(e.time) lbl += ' '+esc(fixUnicode(e.time));
@@ -4705,10 +4721,11 @@ function kvtInit(){
           if(e.client)    parts.push(esc(fixUnicode(e.client)));
           if(parts.length) lbl += ' <em>- '+parts.join(' / ')+'</em>';
           const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
+          const dragAttr = e.manual?'':' draggable="true"';
           if(e.manual){
-            html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+            html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
           } else {
-            html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
+            html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
           }
         });
         html += '</div>';
@@ -4732,10 +4749,26 @@ function kvtInit(){
       prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendarSmall(); });
       nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendarSmall(); });
       addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false, manual:true}); renderCalendarSmall(); }});
-      calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{ evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendarSmall(); } else { openMitDetail(ev); }}); });
+      calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
+        evEl.addEventListener('dragstart', e=>{ dragIdx = parseInt(evEl.dataset.idx,10); });
+        evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendarSmall(); } else { openMitDetail(ev); }});
+      });
       calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
       calendarSmall.querySelectorAll('.kvt-cal-accept').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendarSmall(); }); });
       calendarSmall.querySelectorAll('.kvt-cal-reject').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
+      calendarSmall.querySelectorAll('.kvt-cal-cell').forEach(cell=>{
+        cell.addEventListener('dragover', e=>e.preventDefault());
+        cell.addEventListener('drop', e=>{
+          e.preventDefault();
+          if(dragIdx!==null){
+            calendarEvents[dragIdx].date = cell.dataset.date;
+            calendarEvents[dragIdx].manual = true;
+            dragIdx = null;
+            renderCalendarSmall();
+            renderCalendar();
+          }
+        });
+      });
       mitBtn.addEventListener('click', loadMitCalendar);
     }
 
