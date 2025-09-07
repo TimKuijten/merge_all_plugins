@@ -3309,6 +3309,7 @@ function kvtInit(){
   let totalPages = 1;
   let allRows = [];
   let calendarEvents = [];
+  let allCandidates = null;
   let dragIdx = null;
   let calMonth = (new Date()).getMonth();
   let calYear  = (new Date()).getFullYear();
@@ -4669,19 +4670,27 @@ function kvtInit(){
   }
 
   function openMitEmail(ev){
-    const m = ev.text.match(/(?:a|con)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+)/i);
-    const first = m ? m[1] : '';
-    fetchCandidatesAll().then(res=>{
-      const items = (res && res.success && res.data && Array.isArray(res.data.items))?res.data.items:[];
-      const cand = items.find(c=> (c.meta&&c.meta.first_name||'').toLowerCase()===first.toLowerCase());
+    const m = ev.text.match(/(?:a|con)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+)(?:\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+))?/i);
+    const first = m ? m[1].toLowerCase() : '';
+    const last  = m && m[2] ? m[2].toLowerCase() : '';
+    loadAllCandidates().then(items=>{
+      const cand = items.find(c=>{
+        const fn = (c.meta && (c.meta.first_name||'')).toLowerCase();
+        const ln = (c.meta && ((c.meta.last_name||c.meta.surname)||'')).toLowerCase();
+        if(first && last) return fn===first && ln===last;
+        return fn===first || ln===first;
+      });
       if(!cand || !cand.meta || !cand.meta.email){
-        alert('No se encontró email para '+first);
+        alert('No se encontró email para '+(first||'el candidato'));
         return;
       }
       const tmp=document.createElement('div'); tmp.innerHTML=ev.template||'';
       const body=tmp.textContent||'';
       const correo=(typeof KVT_CORREO!=='undefined'?KVT_CORREO:'/correo/');
-      const url=correo+'?to='+encodeURIComponent(cand.meta.email||'')+'&body='+encodeURIComponent(body);
+      let url=correo+'?to='+encodeURIComponent(cand.meta.email||'')+'&body='+encodeURIComponent(body);
+      if(cand.id) url+='&id='+encodeURIComponent(cand.id);
+      if(cand.meta && cand.meta.first_name) url+='&first='+encodeURIComponent(cand.meta.first_name);
+      if(cand.meta && (cand.meta.last_name||cand.meta.surname)) url+='&last='+encodeURIComponent(cand.meta.last_name||cand.meta.surname);
       window.open(url,'mit_correo','width=800,height=600');
     });
   }
@@ -4708,6 +4717,14 @@ function kvtInit(){
     params.set('page',1);
     if(procId) params.set('process', procId);
     return fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()}).then(r=>r.json());
+  }
+
+  function loadAllCandidates(){
+    if(allCandidates) return Promise.resolve(allCandidates);
+    return fetchCandidatesAll().then(res=>{
+      allCandidates = (res && res.success && res.data && Array.isArray(res.data.items)) ? res.data.items : [];
+      return allCandidates;
+    });
   }
 
   function dismissComment(id, idx, card){
