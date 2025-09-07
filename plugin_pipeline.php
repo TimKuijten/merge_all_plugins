@@ -2834,6 +2834,7 @@ function kvtInit(){
   const els = (sel, root=document)=>Array.from(root.querySelectorAll(sel));
   const esc = (s)=>String(s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m]));
   const escAttr = esc;
+  const fixUnicode = (s)=>{ try{ return decodeURIComponent(escape(String(s||''))); }catch(e){ return s; } };
   const urlParams = new URLSearchParams(location.search);
   const CLIENT_VIEW = typeof KVT_CLIENT_VIEW !== 'undefined' && KVT_CLIENT_VIEW;
   const CANDIDATE_VIEW = typeof KVT_CANDIDATE_VIEW !== 'undefined' && KVT_CANDIDATE_VIEW;
@@ -4588,10 +4589,13 @@ function kvtInit(){
       html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
       ev.forEach(e=>{
         let lbl='';
-        if(e.time) lbl+=esc(e.time)+' ';
-        lbl+=esc(e.text);
-        const tgt = e.process || e.candidate || e.client || '';
-        if(tgt) lbl+=' <em>- '+esc(tgt)+'</em>';
+        if(e.time) lbl+=esc(fixUnicode(e.time))+' ';
+        lbl+=esc(fixUnicode(e.text));
+        const parts=[];
+        if(e.candidate) parts.push(esc(fixUnicode(e.candidate)));
+        if(e.process)   parts.push(esc(fixUnicode(e.process)));
+        if(e.client)    parts.push(esc(fixUnicode(e.client)));
+        if(parts.length) lbl+=' <em>- '+parts.join(' / ')+'</em>';
         const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
         if(e.manual){
           html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
@@ -4659,17 +4663,13 @@ function kvtInit(){
         if(ev.length) cls += ' has-event';
         html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
         ev.forEach(e=>{
-          let lbl = esc(e.text);
-          if(e.time) lbl += ' '+esc(e.time);
-          let tgt = '';
-          if(e.candidate || e.process){
-            if(e.candidate) tgt += esc(e.candidate);
-            if(e.candidate && e.process) tgt += ' / ';
-            if(e.process) tgt += esc(e.process);
-          } else if(e.client){
-            tgt = esc(e.client);
-          }
-          if(tgt) lbl += ' <em>- '+tgt+'</em>';
+          let lbl = esc(fixUnicode(e.text));
+          if(e.time) lbl += ' '+esc(fixUnicode(e.time));
+          const parts=[];
+          if(e.candidate) parts.push(esc(fixUnicode(e.candidate)));
+          if(e.process)   parts.push(esc(fixUnicode(e.process)));
+          if(e.client)    parts.push(esc(fixUnicode(e.client)));
+          if(parts.length) lbl += ' <em>- '+parts.join(' / ')+'</em>';
           const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
           if(e.manual){
             html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
