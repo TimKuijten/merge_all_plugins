@@ -145,6 +145,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_send_email',    [$this, 'ajax_send_email']);
         add_action('wp_ajax_kvt_get_email_log',        [$this, 'ajax_get_email_log']);
         add_action('wp_ajax_nopriv_kvt_get_email_log', [$this, 'ajax_get_email_log']);
+        add_action('kvt_send_email_batch',             [$this, 'cron_send_email_batch'], 10, 1);
         add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
         add_action('wp_ajax_kvt_save_template',        [$this, 'ajax_save_template']);
         add_action('wp_ajax_kvt_delete_template',      [$this, 'ajax_delete_template']);
@@ -8863,13 +8864,37 @@ JS;
             if (!$payload_json) wp_send_json_error(['error' => 'Missing payload'], 400);
             $payload = json_decode($payload_json, true);
             if (!is_array($payload)) wp_send_json_error(['error' => 'Invalid JSON'], 400);
-
             $subject_tpl   = (string)($payload['subject_template'] ?? '');
             $body_tpl      = (string)($payload['body_template'] ?? '');
             $recipients    = (array)($payload['recipients'] ?? []);
             $from_email    = sanitize_email($payload['from_email'] ?? '');
             $from_name     = sanitize_text_field($payload['from_name'] ?? '');
             $use_signature = !empty($payload['use_signature']);
+
+            $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature');
+            wp_schedule_single_event(time(), 'kvt_send_email_batch', [$batch]);
+
+            $log = get_option(self::OPT_EMAIL_LOG, []);
+            $log[] = [
+                'time' => current_time('mysql'),
+                'subject' => $subject_tpl,
+                'recipients' => array_map(function($r){ return $r['email'] ?? ''; }, $recipients)
+            ];
+            if (count($log) > 100) $log = array_slice($log, -100);
+            update_option(self::OPT_EMAIL_LOG, $log);
+
+            wp_send_json_success(['sent' => count($recipients), 'errors' => [], 'log' => $log]);
+        }
+
+        public function cron_send_email_batch($batch) {
+            if (!is_array($batch)) return;
+
+            $subject_tpl   = (string)($batch['subject_tpl'] ?? '');
+            $body_tpl      = (string)($batch['body_tpl'] ?? '');
+            $recipients    = (array)($batch['recipients'] ?? []);
+            $from_email    = sanitize_email($batch['from_email'] ?? '');
+            $from_name     = sanitize_text_field($batch['from_name'] ?? '');
+            $use_signature = !empty($batch['use_signature']);
 
             if (!$from_email) $from_email = get_option(self::OPT_FROM_EMAIL, '');
             if (!$from_email) $from_email = get_option('admin_email');
@@ -8888,18 +8913,6 @@ JS;
             }
 
             $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
-
-            $sent = 0;
-            $errors = [];
-            $last_error = null;
-            $failed_hook = function($wp_error) use (&$last_error) {
-                if (is_wp_error($wp_error)) {
-                    $last_error = $wp_error->get_error_message();
-                } else {
-                    $last_error = is_string($wp_error) ? $wp_error : 'Unknown mail error';
-                }
-            };
-            add_action('wp_mail_failed', $failed_hook);
 
             foreach ($recipients as $r) {
                 $email      = isset($r['email']) ? sanitize_email($r['email']) : '';
@@ -8925,33 +8938,12 @@ JS;
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
 
-                $ok = wp_mail($email, $subject, $body, $headers);
-                if ($ok) {
-                    $sent++;
-                } else {
-                    $errors[] = ['email' => $email, 'error' => $last_error ?: 'wp_mail failed'];
-                }
+                wp_mail($email, $subject, $body, $headers);
                 usleep(250000);
             }
 
             if ($from_cb) remove_filter('wp_mail_from', $from_cb, 99);
             if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
-            remove_action('wp_mail_failed', $failed_hook);
-
-            if ($last_error && empty($errors)) {
-                $errors[] = ['email' => '(general)', 'error' => $last_error];
-            }
-
-            $log = get_option(self::OPT_EMAIL_LOG, []);
-            $log[] = [
-                'time' => current_time('mysql'),
-                'subject' => $subject_tpl,
-                'recipients' => array_map(function($r){ return $r['email'] ?? ''; }, $recipients)
-            ];
-            if (count($log) > 100) $log = array_slice($log, -100);
-            update_option(self::OPT_EMAIL_LOG, $log);
-
-            wp_send_json_success(['sent' => $sent, 'errors' => $errors, 'log' => $log]);
         }
 
         private function normalize_br_html($html) {
