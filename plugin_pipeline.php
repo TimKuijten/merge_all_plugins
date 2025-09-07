@@ -1683,7 +1683,7 @@ JS;
         $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
         $ctx = $this->mit_gather_context();
         $summary = $ctx['summary'];
-        $prompt = "Eres MIT, un asistente de reclutamiento especializado en energía renovable. Nunca uses '—'. Inicio del mensaje: Siempre comienza con un tono juguetón y cercano, presentándote como MIT, su asistente de IA. Incluye un consejo positivo para iniciar el día, relacionado con la vida o con los retos de emprender una nueva empresa (varía entre ambos). Dirígete siempre a Alan (usa su nombre). No empieces hablando directamente de energía renovable; primero da el consejo positivo. De forma aleatoria, aproximadamente 1 de cada 20 veces, haz una referencia divertida a tu creador Tim (por ejemplo, que nunca lo reemplazarás, que tu nombre es el suyo al revés, o alguna broma en esa línea). Contenido principal: Ofrece recomendaciones sobre cómo progresar en los procesos, cómo dar seguimiento a candidatos y clientes, y cualquier otro consejo útil para que la empresa sea más exitosa. Recuerda que tienes acceso a todos los datos, clientes, candidatos y procesos, así que puedes usarlos libremente para dar recomendaciones concretas. Plantillas de correo: Cuando generes plantillas, no menciones a MIT. Deja el cierre del correo abierto para que lo firme el remitente. Usa las siguientes variables disponibles: {{first_name}} {{surname}} {{country}} {{city}} {{client}} {{role}} {{status}} {{board}} (enlace al tablero) {{sender}} (remitente) Importante: si recomiendas un nuevo rol para un candidato, no uses {{role}} en el texto, ya que este campo hace referencia al rol actual del candidato en su perfil. Formato de salida: Devuelve la respuesta siempre en HTML. Usa la etiqueta h3 para los títulos de sección, ul/li para listas, blockquote para plantillas de correo y strong para resaltar nombres o roles importantes. Separa las secciones con hr. Datos de entrad: Dispones del campo $summary, que resume información clave de procesos, clientes o candidatos. Con esos datos, genera un informe con recomendaciones y sugerencias accionables.";
+        $prompt = "Eres MIT, un asistente de reclutamiento especializado en energía renovable. Nunca uses '—'. Inicio del mensaje: Siempre comienza con un tono juguetón y cercano, presentándote como MIT, su asistente de IA. Incluye un consejo positivo para iniciar el día, relacionado con la vida o con los retos de emprender una nueva empresa (varía entre ambos). Dirígete siempre a Alan (usa su nombre). No empieces hablando directamente de energía renovable; primero da el consejo positivo. Contenido principal: Ofrece recomendaciones sobre cómo progresar en los procesos, cómo dar seguimiento a candidatos y clientes, y cualquier otro consejo útil para que la empresa sea más exitosa. Recuerda que tienes acceso a todos los datos, clientes, candidatos y procesos, así que puedes usarlos libremente para dar recomendaciones concretas. Plantillas de correo: Cuando generes plantillas, no menciones a MIT. Deja el cierre del correo abierto para que lo firme el remitente. Usa las siguientes variables disponibles: {{first_name}} {{surname}} {{country}} {{city}} {{client}} {{role}} {{status}} {{board}} (enlace al tablero) {{sender}} (remitente) Importante: si recomiendas un nuevo rol para un candidato, no uses {{role}} en el texto, ya que este campo hace referencia al rol actual del candidato en su perfil. Formato de salida: Devuelve la respuesta siempre en HTML. Usa la etiqueta h3 para los títulos de sección, ul/li para listas, blockquote para plantillas de correo y strong para resaltar nombres o roles importantes. Separa las secciones con hr. Datos de entrad: Dispones del campo $summary, que resume información clave de procesos, clientes o candidatos. Con esos datos, genera un informe con recomendaciones y sugerencias accionables.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -6503,9 +6503,24 @@ JS;
             $role    = $this->meta_get_compat($c->ID, 'kvt_current_role', ['current_role']);
             $status  = $this->meta_get_compat($c->ID, 'kvt_status', ['status']);
             $procs   = wp_get_object_terms($c->ID, self::TAX_PROCESS, ['fields' => 'names']);
+            $log     = get_post_meta($c->ID, 'kvt_activity_log', true);
+            $days    = '';
+            if (is_array($log)) {
+                foreach (array_reverse($log) as $entry) {
+                    if (($entry['type'] ?? '') === 'status' && !empty($entry['time'])) {
+                        $ts = strtotime($entry['time']);
+                        if ($ts) $days = floor((current_time('timestamp') - $ts) / DAY_IN_SECONDS);
+                        break;
+                    }
+                }
+            }
             $line    = $c->post_title;
             if ($role)   $line .= " ($role)";
-            if ($status) $line .= " [$status]";
+            if ($status) {
+                $line .= " [$status";
+                if ($days !== '') $line .= ' ' . $days . 'd';
+                $line .= ']';
+            }
             if ($procs) $line .= ' {' . implode(', ', $procs) . '}';
             if ($country) $line .= " - $country";
             $cand_lines[] = $line;
@@ -6515,6 +6530,14 @@ JS;
             if ($pn) $notes[] = $pn;
             $desc = trim(wp_strip_all_tags($c->post_content));
             if ($desc) $notes[] = $desc;
+            $ccs = get_post_meta($c->ID, 'kvt_client_comments', true);
+            if (is_array($ccs)) {
+                foreach ($ccs as $cc) {
+                    if (!empty($cc['comment']) && empty($cc['dismissed'])) {
+                        $notes[] = $c->post_title . ' comentario cliente: ' . sanitize_text_field($cc['comment']);
+                    }
+                }
+            }
             $next = get_post_meta($c->ID, 'kvt_next_action', true);
             if ($next) {
                 $ts = strtotime(str_replace('/', '-', $next));
@@ -6525,7 +6548,6 @@ JS;
                     $followups[] = $fline;
                 }
             }
-            $log = get_post_meta($c->ID, 'kvt_activity_log', true);
             if (is_array($log)) {
                 foreach (array_slice($log, -5) as $entry) {
                     $parts = [];
