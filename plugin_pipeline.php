@@ -1767,11 +1767,18 @@ JS;
         ]);
         $recent_candidates = $recent_q->found_posts;
 
+        $o365_tenant = get_option(self::OPT_O365_TENANT, '');
+        $o365_client = get_option(self::OPT_O365_CLIENT, '');
+        $has_outlook = $o365_tenant && $o365_client;
+
         ob_start(); ?>
         <div class="kvt-wrapper">
             <nav class="kvt-nav" aria-label="Navegación principal">
                 <a href="#" class="active" data-view="detalles"><span class="dashicons dashicons-dashboard"></span> Panel</a>
                 <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendario</a>
+                <?php if ($has_outlook): ?>
+                <a href="#" data-view="calendar2"><span class="dashicons dashicons-calendar-alt"></span> Calendar 2</a>
+                <?php endif; ?>
                 <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidatos</a>
                 <a href="#" data-view="base" id="kvt_open_clients"><span class="dashicons dashicons-businessman"></span> Clientes</a>
                 <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
@@ -2085,6 +2092,7 @@ JS;
                   </div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
+                <div id="kvt_calendar2" class="kvt-calendar" style="display:none;"></div>
                 <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
                     <h4>Asistente MIT</h4>
                     <p id="kvt_mit_content"></p>
@@ -2949,6 +2957,7 @@ function kvtInit(){
 
   const filtersBar = el('#kvt_filters_bar');
   const calendarWrap = el('#kvt_calendar');
+  const calendarOutlookWrap = el('#kvt_calendar2');
   const mitWrap = el('#kvt_mit_view');
   const keywordBoard = el('#kvt_keyword_view');
   const aiBoard = el('#kvt_ai_view');
@@ -3027,6 +3036,7 @@ function kvtInit(){
   let totalPages = 1;
   let allRows = [];
   let calendarEvents = [];
+  let calendarOutlookEvents = [];
   let calMonth = (new Date()).getMonth();
   let calYear  = (new Date()).getFullYear();
   let shareMode = 'client';
@@ -3351,6 +3361,7 @@ function kvtInit(){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
     if(activeWrap) activeWrap.style.display='none';
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
+    if(calendarOutlookWrap) calendarOutlookWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
     if(mitChatWrap) mitChatWrap.style.display='none';
     if(keywordBoard) keywordBoard.style.display='none';
@@ -3379,6 +3390,14 @@ function kvtInit(){
       if(boardWrap) boardWrap.style.display='none';
       if(toggleKanban) toggleKanban.style.display='none';
       renderCalendar();
+    } else if(view==='calendar2'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(calendarOutlookWrap){ calendarOutlookWrap.style.display='block'; loadOutlookCalendar(); }
     } else if(view==='base'){
       filtersBar.style.display='none';
       tableWrap.style.display='block';
@@ -4190,6 +4209,39 @@ function kvtInit(){
         renderCalendar();
       }
     });
+  }
+
+  function loadOutlookCalendar(){
+    fetchOutlookEvents().then(j=>{
+      calendarOutlookEvents = (j.success && Array.isArray(j.data)) ? j.data : [];
+      renderCalendar2();
+    });
+  }
+
+  function renderCalendar2(){
+    if(!calendarOutlookWrap) return;
+    const first = new Date(calYear, calMonth, 1);
+    const last = new Date(calYear, calMonth+1, 0);
+    const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    const monthName = first.toLocaleString('default',{month:'long'});
+    let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal2_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><button type="button" id="kvt_cal2_next">&gt;</button></div>';
+    html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
+    for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
+    for(let d=1; d<=last.getDate(); d++){
+      const ds = (d<10?'0'+d:d)+'/'+(calMonth+1<10?'0'+(calMonth+1):(calMonth+1))+'/'+calYear;
+      const ev = calendarOutlookEvents.filter(e=>e.date===ds);
+      let cell = '<div class="kvt-cal-cell">';
+      cell += '<div class="kvt-cal-day">'+d+'</div>';
+      ev.forEach(e=>{ cell += '<div class="kvt-cal-event">'+esc(e.time?e.time+' ':'')+esc(e.text)+'</div>'; });
+      cell += '</div>';
+      html += cell;
+    }
+    html += '</div>';
+    calendarOutlookWrap.innerHTML = html;
+    const prevBtn = el('#kvt_cal2_prev', calendarOutlookWrap);
+    const nextBtn = el('#kvt_cal2_next', calendarOutlookWrap);
+    prevBtn && prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendar2(); });
+    nextBtn && nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendar2(); });
   }
 
   function fetchProcessesList(){
