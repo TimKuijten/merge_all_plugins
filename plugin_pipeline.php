@@ -17,6 +17,7 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_COLUMNS   = 'kvt_columns';
     const OPT_OPENAI_KEY= 'kvt_openai_key';
     const OPT_OPENAI_MODEL = 'kvt_openai_model';
+    const OPT_BING_KEY  = 'kvt_bing_key';
     const OPT_NEWS_KEY  = 'kvt_newsapi_key';
     const OPT_SMTP_HOST = 'kvt_smtp_host';
     const OPT_SMTP_PORT = 'kvt_smtp_port';
@@ -178,6 +179,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('kvt_smart_list_cron',           [$this, 'cron_smart_lists']);
 
         add_action('plugins_loaded',                 [$this, 'ensure_defaults']);
+        add_action('plugins_loaded',                 [$this, 'define_api_keys']);
     }
 
     public function ensure_defaults() {
@@ -194,7 +196,16 @@ country|País
 city|Ciudad
 current_role|Puesto actual
 cv_url|CV (URL)
-cv_uploaded|Fecha de subida");
+  cv_uploaded|Fecha de subida");
+        }
+    }
+
+    public function define_api_keys() {
+        if (!defined('OPENAI_API_KEY')) {
+            define('OPENAI_API_KEY', get_option(self::OPT_OPENAI_KEY, ''));
+        }
+        if (!defined('BING_SEARCH_KEY')) {
+            define('BING_SEARCH_KEY', get_option(self::OPT_BING_KEY, ''));
         }
     }
 
@@ -267,6 +278,7 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_COLUMNS);
         register_setting(self::OPT_GROUP, self::OPT_OPENAI_KEY);
         register_setting(self::OPT_GROUP, self::OPT_OPENAI_MODEL);
+        register_setting(self::OPT_GROUP, self::OPT_BING_KEY);
         register_setting(self::OPT_GROUP, self::OPT_NEWS_KEY);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_HOST);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_PORT);
@@ -683,6 +695,7 @@ JS;
         $columns  = get_option(self::OPT_COLUMNS, "");
         $openai   = get_option(self::OPT_OPENAI_KEY, "");
         $openai_model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
+        $bing     = get_option(self::OPT_BING_KEY, "");
         $newskey  = get_option(self::OPT_NEWS_KEY, "");
         $smtp_host = get_option(self::OPT_SMTP_HOST, "");
         $smtp_port = get_option(self::OPT_SMTP_PORT, "");
@@ -729,6 +742,13 @@ JS;
                                 <?php endforeach; ?>
                             </select>
                             <p class="description">Modelo utilizado por MIT. Por defecto gpt-5.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_BING_KEY; ?>">Bing Search Key</label></th>
+                        <td>
+                            <input type="text" name="<?php echo self::OPT_BING_KEY; ?>" id="<?php echo self::OPT_BING_KEY; ?>" class="regular-text" value="<?php echo esc_attr($bing); ?>">
+                            <p class="description">Clave para Bing Web Search v7.</p>
                         </td>
                     </tr>
                     <tr>
@@ -7122,6 +7142,99 @@ JS;
         return ['summary' => $summary, 'news' => $news];
     }
 
+    private function mit_get_tools() {
+        $tools = [
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'search_web',
+                    'description' => 'Buscar en Bing información reciente o desconocida. Devuelve hasta 5 resultados breves.',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'query' => [
+                                'type' => 'string',
+                                'description' => 'Términos de búsqueda'
+                            ]
+                        ],
+                        'required' => ['query']
+                    ]
+                ]
+            ],
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'fetch_url',
+                    'description' => 'Obtener un extracto de texto limpio de una URL dada.',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'url' => [
+                                'type' => 'string',
+                                'description' => 'URL a consultar'
+                            ]
+                        ],
+                        'required' => ['url']
+                    ]
+                ]
+            ]
+        ];
+
+        return apply_filters('kvt_mit_tools', $tools);
+    }
+
+    private function mit_execute_tool($name, $args) {
+        $result = '';
+        switch ($name) {
+            case 'search_web':
+                $query = is_string($args['query'] ?? '') ? $args['query'] : '';
+                $result = $this->mit_search_web($query);
+                break;
+            case 'fetch_url':
+                $url = is_string($args['url'] ?? '') ? $args['url'] : '';
+                $result = $this->mit_fetch_url($url);
+                break;
+        }
+        return apply_filters('kvt_mit_tool_result', $result, $name, $args);
+    }
+
+    private function mit_search_web($query) {
+        $key = defined('BING_SEARCH_KEY') ? BING_SEARCH_KEY : '';
+        if (!$key || !$query) return '';
+        $url = add_query_arg([
+            'q' => $query,
+            'mkt' => 'es-ES',
+            'count' => 5,
+            'safeSearch' => 'Moderate'
+        ], 'https://api.bing.microsoft.com/v7.0/search');
+        $resp = wp_remote_get($url, [
+            'headers' => ['Ocp-Apim-Subscription-Key' => $key],
+            'timeout' => 15,
+        ]);
+        if (is_wp_error($resp)) return '';
+        $body = json_decode(wp_remote_retrieve_body($resp), true);
+        $out = [];
+        foreach (($body['webPages']['value'] ?? []) as $item) {
+            $name = sanitize_text_field($item['name'] ?? '');
+            $link = esc_url_raw($item['url'] ?? '');
+            $snippet = sanitize_text_field($item['snippet'] ?? '');
+            if ($name && $link) {
+                $out[] = "$name - $link\n$snippet";
+            }
+        }
+        return implode("\n\n", array_slice($out, 0, 5));
+    }
+
+    private function mit_fetch_url($url) {
+        if (!$url) return '';
+        $resp = wp_remote_get($url, ['timeout' => 15]);
+        if (is_wp_error($resp)) return '';
+        $html = wp_remote_retrieve_body($resp);
+        $text = wp_strip_all_tags($html);
+        $text = preg_replace('/\s+/', ' ', $text);
+        return mb_substr($text, 0, 1000);
+    }
+
     private function mit_strip_fences($text) {
         if (strpos($text, '```') !== false) {
             $text = preg_replace('/^```\w*\n?/', '', $text);
@@ -7265,7 +7378,7 @@ JS;
         check_ajax_referer('kvt_mit', 'nonce');
         if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
         $msg = isset($_POST['message']) ? sanitize_text_field(wp_unslash($_POST['message'])) : '';
-        $key = get_option(self::OPT_OPENAI_KEY, '');
+        $key = defined('OPENAI_API_KEY') ? OPENAI_API_KEY : '';
         $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
         $uid  = get_current_user_id();
         if (!$key || !$msg) {
@@ -7276,7 +7389,7 @@ JS;
         $ctx     = $this->mit_gather_context();
         $summary = $ctx['summary'];
 
-        $identity = 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto. No inventes datos nuevos; utiliza únicamente la información disponible y, si falta algún dato, indícalo.';
+        $identity = 'Eres MIT, el asistente personal de la empresa. Conoces todos los datos del negocio y recuerdas los correos diarios enviados y su contexto. Dispones de herramientas externas: "search_web" para buscar en Bing y "fetch_url" para leer páginas. Úsalas sólo cuando la conversación no contenga la información solicitada, si se pide algo reciente o si tu confianza es baja. Si no es necesario, responde directamente.';
 
         // Ensure system identity and summary are always the first entries
         if (empty($hist['messages']) || ($hist['messages'][0]['role'] ?? '') !== 'system') {
@@ -7295,23 +7408,59 @@ JS;
 
         $hist['messages'][] = ['role' => 'user', 'content' => $msg];
 
+        $tools = $this->mit_get_tools();
+        $messages = $hist['messages'];
+        $body = [
+            'model'    => $model,
+            'messages' => $messages,
+            'tools'    => $tools,
+        ];
+
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
                 'Content-Type'  => 'application/json',
             ],
-            'body' => wp_json_encode([
-                'model'    => $model,
-                'messages' => $hist['messages'],
-            ]),
+            'body' => wp_json_encode($body),
             'timeout' => self::MIT_TIMEOUT,
         ]);
 
-        $reply    = '';
+        $reply = '';
         if (!is_wp_error($resp)) {
-            $data  = json_decode(wp_remote_retrieve_body($resp), true);
-            $reply = trim($data['choices'][0]['message']['content'] ?? '');
+            $data    = json_decode(wp_remote_retrieve_body($resp), true);
+            $message = $data['choices'][0]['message'] ?? [];
+            while (!empty($message['tool_calls'])) {
+                $messages[] = [
+                    'role' => 'assistant',
+                    'content' => $message['content'] ?? '',
+                    'tool_calls' => $message['tool_calls'],
+                ];
+                foreach ($message['tool_calls'] as $call) {
+                    $args = json_decode($call['function']['arguments'] ?? '', true);
+                    $result = $this->mit_execute_tool($call['function']['name'], is_array($args) ? $args : []);
+                    $messages[] = [
+                        'role' => 'tool',
+                        'tool_call_id' => $call['id'],
+                        'name' => $call['function']['name'],
+                        'content' => $result,
+                    ];
+                }
+                $body['messages'] = $messages;
+                $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+                    'headers' => [
+                        'Authorization' => 'Bearer ' . $key,
+                        'Content-Type'  => 'application/json',
+                    ],
+                    'body' => wp_json_encode($body),
+                    'timeout' => self::MIT_TIMEOUT,
+                ]);
+                if (is_wp_error($resp)) break;
+                $data    = json_decode(wp_remote_retrieve_body($resp), true);
+                $message = $data['choices'][0]['message'] ?? [];
+            }
+            $reply = trim($message['content'] ?? '');
         }
+        $file_url = '';
         if ($reply) {
             $reply = $this->mit_strip_fences($reply);
             // Detect request for Excel generation based on user message
@@ -7324,6 +7473,7 @@ JS;
                 if (is_wp_error($file_result)) {
                     $reply .= "\n\n" . $file_result->get_error_message();
                 } elseif ($file_result) {
+                    $file_url = $file_result;
                     $reply .= "\n\n<a href='" . esc_url($file_result) . "' target='_blank'>" . __('Descargar Excel generado', 'kovacic') . "</a>";
                 } else {
                     $reply .= "\n\n" . __('No se pudo generar el archivo Excel.', 'kovacic');
