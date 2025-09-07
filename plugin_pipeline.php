@@ -1769,7 +1769,9 @@ JS;
 
         $o365_tenant = get_option(self::OPT_O365_TENANT, '');
         $o365_client = get_option(self::OPT_O365_CLIENT, '');
-        $has_outlook = $o365_tenant && $o365_client;
+        $smtp_user   = get_option(self::OPT_SMTP_USER, '');
+        $smtp_pass   = get_option(self::OPT_SMTP_PASS, '');
+        $has_outlook = $o365_tenant && $o365_client && $smtp_user && $smtp_pass;
 
         ob_start(); ?>
         <div class="kvt-wrapper">
@@ -2092,7 +2094,9 @@ JS;
                   </div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
+                <?php if ($has_outlook): ?>
                 <div id="kvt_calendar2" class="kvt-calendar" style="display:none;"></div>
+                <?php endif; ?>
                 <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
                     <h4>Asistente MIT</h4>
                     <p id="kvt_mit_content"></p>
@@ -2784,6 +2788,7 @@ JS;
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($has_share_link?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_STEPS='.wp_json_encode($sel_steps).';', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_HAS_OUTLOOK='.($has_outlook?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOW_COMMENTS='.(!empty($link_cfg['comments'])?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_SLUG="'.esc_js($slug).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_IS_ADMIN='.((is_user_logged_in() && current_user_can('edit_posts'))?'true':'false').';', 'before');
@@ -4510,7 +4515,7 @@ function kvtInit(){
       activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+l.time+' - '+l.text+'</li>').join('') : '<li>No hay actividad</li>';
     }
     renderCalendarSmall();
-    loadOutlookEvents();
+    if (KVT_HAS_OUTLOOK) loadOutlookEvents();
   }
 
   function renderActivityDashboard(data){
@@ -4539,7 +4544,7 @@ function kvtInit(){
     if(activeList) activeList.innerHTML = active.join('') || '<li>No hay procesos activos</li>';
     if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(l.time)+' - '+esc(l.text)+'</li>').join('') : '<li>No hay actividad</li>';
     renderCalendarSmall();
-    loadOutlookEvents();
+    if (KVT_HAS_OUTLOOK) loadOutlookEvents();
   }
 
   function renderCalendar(){
