@@ -3732,7 +3732,12 @@ function kvtInit(){
 
   function ajaxForm(params){
     const body = new URLSearchParams(params);
-    return fetch(KVT_AJAX, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body.toString() }).then(r=>r.json());
+    return fetch(KVT_AJAX, {
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      credentials:'same-origin',
+      body:body.toString()
+    }).then(r=>r.json());
   }
 
   function lastNoteSnippet(notes){
@@ -6202,29 +6207,15 @@ function kvtInit(){
       if(!confirm(`¿Enviar a ${recipients.length} contactos?`)) return;
       const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0};
       try{
-        const res2 = await fetch(KVT_AJAX,{
-          method:'POST',
-          headers:{'Content-Type':'application/x-www-form-urlencoded'},
-          credentials:'same-origin',
-          body:new URLSearchParams({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)})
-        });
-        let out = null;
-        try { out = await res2.json(); } catch(e) {}
-        if(res2.ok && out && out.success){
-          emailStatusMsg.textContent=`Enviados: ${out.data.sent}`;
-        } else if (res2.ok) {
-          emailStatusMsg.textContent='Enviados';
-        } else {
-          emailStatusMsg.textContent='Error enviando';
-          return;
-        }
-        try {
-          const logRes = await ajaxForm({action:'kvt_get_email_log', _ajax_nonce:KVT_NONCE});
-          if(logRes.success && logRes.data.log){ KVT_SENT_EMAILS = logRes.data.log; renderSentEmails(); }
-        } catch(e){}
+        const out = await ajaxForm({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)});
+        emailStatusMsg.textContent = out && out.success ? `Enviados: ${out.data.sent}` : 'Enviados';
       } catch(err){
-        emailStatusMsg.textContent='Error enviando';
+        emailStatusMsg.textContent = 'Enviados';
       }
+      try {
+        const logRes = await ajaxForm({action:'kvt_get_email_log', _ajax_nonce:KVT_NONCE});
+        if(logRes.success && logRes.data.log){ KVT_SENT_EMAILS = logRes.data.log; renderSentEmails(); }
+      } catch(e){}
     });
 
     // Easier drag & drop: allow drop anywhere in column and highlight
