@@ -8907,22 +8907,19 @@ JS;
             $copy_sender   = !empty($payload['copy_sender']);
 
             $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature','copy_sender');
-            $this->cron_send_email_batch($batch);
+            $result = $this->cron_send_email_batch($batch);
 
-            $log = get_option(self::OPT_EMAIL_LOG, []);
-            $log[] = [
-                'time' => current_time('mysql'),
-                'subject' => $subject_tpl,
-                'recipients' => array_map(function($r){ return $r['email'] ?? ''; }, $recipients)
-            ];
-            if (count($log) > 100) $log = array_slice($log, -100);
-            update_option(self::OPT_EMAIL_LOG, $log);
-
-            wp_send_json_success(['sent' => count($recipients), 'errors' => [], 'log' => array_reverse($log)]);
+            $log = array_reverse((array) get_option(self::OPT_EMAIL_LOG, []));
+            wp_send_json_success([
+                'sent'   => $result['sent'],
+                'errors' => $result['errors'],
+                'log'    => $log
+            ]);
         }
 
         public function cron_send_email_batch($batch) {
-            if (!is_array($batch)) return;
+            $result = ['sent' => 0, 'errors' => []];
+            if (!is_array($batch)) return $result;
 
             $subject_tpl   = (string)($batch['subject_tpl'] ?? '');
             $body_tpl      = (string)($batch['body_tpl'] ?? '');
@@ -8949,6 +8946,7 @@ JS;
             }
 
             $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
+            $log = get_option(self::OPT_EMAIL_LOG, []);
 
             foreach ($recipients as $r) {
                 $email      = isset($r['email']) ? sanitize_email($r['email']) : '';
@@ -8974,8 +8972,20 @@ JS;
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
 
-                wp_mail($email, $subject, $body, $headers);
-                usleep(250000);
+                if (wp_mail($email, $subject, $body, $headers)) {
+                    $result['sent']++;
+                } else {
+                    $result['errors'][] = $email;
+                }
+
+                $log[] = [
+                    'time'       => current_time('mysql'),
+                    'subject'    => $subject,
+                    'recipients' => [$email]
+                ];
+                if (count($log) > 100) $log = array_slice($log, -100);
+
+                sleep(1);
             }
 
             if ($copy_sender && $from_email) {
@@ -8998,11 +9008,22 @@ JS;
                 }
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
-                wp_mail($from_email, $subject, $body, $headers);
+                if (wp_mail($from_email, $subject, $body, $headers)) {
+                    $log[] = [
+                        'time'       => current_time('mysql'),
+                        'subject'    => $subject,
+                        'recipients' => [$from_email]
+                    ];
+                    if (count($log) > 100) $log = array_slice($log, -100);
+                }
             }
+
+            update_option(self::OPT_EMAIL_LOG, $log);
 
             if ($from_cb) remove_filter('wp_mail_from', $from_cb, 99);
             if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
+
+            return $result;
         }
 
         private function normalize_br_html($html) {
