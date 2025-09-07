@@ -4640,8 +4640,7 @@ function kvtInit(){
               tmpl = tmpl.replace(/{{\s*first_name\s*}}/gi, firstName);
               tmpl = tmpl.replace(/Estimad[oa]\b/gi,'Hola');
               tmpl = tmpl.replace(/(Hola\s+[A-ZÁÉÍÓÚÑ][^,]*,)/i,'$1<br><br>');
-              tmpl = tmpl.replace(/(Saludos(?:\s+cordiales)?|Un saludo|Gracias(?:\s+y\s+saludos)?)/i,'<br><br>$1');
-              tmpl = tmpl.replace(/<\/blockquote>$/,'<br><br></blockquote>');
+              tmpl = tmpl.replace(/(Saludos(?:\s+cordiales)?|Un saludo|Gracias(?:\s+y\s+saludos)?)/i,'<br><br>$1<br>');
               if(email){
                 tmpl = tmpl.replace(/<blockquote>/,'<blockquote>'+esc(email)+'<br><br>');
               }
