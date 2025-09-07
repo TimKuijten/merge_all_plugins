@@ -31,7 +31,7 @@ class KVT_Board_Viewer {
         nocache_headers();
         echo '<!DOCTYPE html><html><head><meta charset="utf-8">';
         wp_head();
-        echo '<style>.kvt-nav,.kvt-header,.kvt-help,#kvt_board_wrap,#kvt_toggle_kanban,#kvt_filters_bar,#kvt_ats_bar,#kvt_board_base,#kvt_stage_overview,#k-toggle-activity,.k-sideactions,#kvt_active_wrap,#kvt_calendar_wrap,.kvt-widgets{display:none!important;}#k-sidebar{display:none;width:100%!important;margin-top:20px;}.kvt-wrapper{display:block!important;width:100%!important;max-width:none!important;margin:0!important;}.kvt-content{width:100%!important;padding:0!important;}.kvt-main{display:block!important;}#kvt_table_wrap{display:block!important;flex:1 1 100%!important;width:100%!important;overflow:visible!important;}.kvt-table-wrap{overflow:visible!important;max-height:none!important;}body{overflow-x:hidden!important;}</style>';
+        echo '<style>.kvt-nav,.kvt-header,.kvt-help,#kvt_board_wrap,#kvt_toggle_kanban,#kvt_filters_bar,#kvt_ats_bar,#kvt_board_base,#kvt_stage_overview,#k-toggle-activity,.k-sideactions,#kvt_calendar_wrap,.kvt-widgets{display:none!important;}#k-sidebar{display:none;width:100%!important;margin-top:20px;}.kvt-wrapper{display:block!important;width:100%!important;max-width:none!important;margin:0!important;}.kvt-content{width:100%!important;padding:0!important;}.kvt-main{display:block!important;}#kvt_table_wrap{display:block!important;flex:1 1 100%!important;width:100%!important;overflow:visible!important;}.kvt-table-wrap{overflow:visible!important;max-height:none!important;}body{overflow-x:hidden!important;}</style>';
         echo '</head><body>';
         echo do_shortcode('[kvt_pipeline]');
         wp_footer();

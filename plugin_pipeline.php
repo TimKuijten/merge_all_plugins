@@ -1042,6 +1042,10 @@ JS;
             <input type="email" name="kvt_client_contact_email" id="kvt_client_contact_email">
         </div>
         <div class="form-field">
+            <label for="kvt_client_sector">Sector</label>
+            <input type="text" name="kvt_client_sector" id="kvt_client_sector">
+        </div>
+        <div class="form-field">
             <label for="kvt_client_meetings">Reuniones</label>
             <textarea name="kvt_client_meetings" id="kvt_client_meetings" rows="5"></textarea>
             <button type="button" class="button" id="kvt_add_client_meeting">Añadir reunión</button>
@@ -1068,6 +1072,7 @@ JS;
     public function client_edit_fields($term) {
         $cname  = get_term_meta($term->term_id, 'contact_name', true);
         $cemail = get_term_meta($term->term_id, 'contact_email', true);
+        $sector = get_term_meta($term->term_id, 'kvt_client_sector', true);
         $meetings = get_term_meta($term->term_id, 'kvt_client_meetings', true);
         ?>
         <tr class="form-field">
@@ -1077,6 +1082,10 @@ JS;
         <tr class="form-field">
             <th scope="row"><label for="kvt_client_contact_email">Email de contacto</label></th>
             <td><input type="email" name="kvt_client_contact_email" id="kvt_client_contact_email" value="<?php echo esc_attr($cemail); ?>"></td>
+        </tr>
+        <tr class="form-field">
+            <th scope="row"><label for="kvt_client_sector">Sector</label></th>
+            <td><input type="text" name="kvt_client_sector" id="kvt_client_sector" value="<?php echo esc_attr($sector); ?>"></td>
         </tr>
         <tr class="form-field">
             <th scope="row"><label for="kvt_client_meetings">Reuniones</label></th>
@@ -1110,6 +1119,9 @@ JS;
         }
         if (isset($_POST['kvt_client_contact_email'])) {
             update_term_meta($term_id, 'contact_email', sanitize_email($_POST['kvt_client_contact_email']));
+        }
+        if (isset($_POST['kvt_client_sector'])) {
+            update_term_meta($term_id, 'kvt_client_sector', sanitize_text_field($_POST['kvt_client_sector']));
         }
         if (isset($_POST['kvt_client_meetings'])) {
             update_term_meta($term_id, 'kvt_client_meetings', sanitize_textarea_field($_POST['kvt_client_meetings']));
@@ -2141,10 +2153,6 @@ JS;
                         <ul id="kvt_activity_log_list" class="kvt-activity-list"></ul>
                     </div>
                 </div>
-                <div id="kvt_active_wrap" class="kvt-activity">
-                    <h4 class="kvt-widget-title">Procesos activos</h4>
-                    <ul id="kvt_active_processes" class="kvt-activity-list"></ul>
-                </div>
                 <div id="kvt_calendar_wrap" class="kvt-activity">
                     <h4 class="kvt-widget-title">Calendario</h4>
                     <div id="kvt_dashboard_calendar" class="kvt-calendar-small"></div>
@@ -2446,6 +2454,7 @@ JS;
                   <input type="text" id="kvt_client_contact" placeholder="Persona de contacto">
                   <input type="email" id="kvt_client_email" placeholder="Email">
                   <input type="text" id="kvt_client_phone" placeholder="Teléfono">
+                  <input type="text" id="kvt_client_sector" placeholder="Sector">
                   <textarea id="kvt_client_desc" placeholder="Descripción"></textarea>
                   <textarea id="kvt_client_sig_text" placeholder="Email o firma (texto)"></textarea>
                   <input type="file" id="kvt_client_sig_file" accept="image/*">
@@ -2637,6 +2646,8 @@ JS;
         .kvt-cal-event.manual{font-weight:700;color:#000}
         .kvt-cal-event.suggested{font-style:italic;color:#6b7280}
         .kvt-cal-cell.has-event{background:#f1f5f9}
+        .kvt-cal-cell.today{border:2px solid #000;font-weight:700}
+        .kvt-cal-cell.today:after{content:'\2192';position:absolute;top:2px;right:4px;color:#000;font-weight:700}
         .kvt-cal-controls{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
         .kvt-cal-nav{display:flex;gap:4px}
         .kvt-cal-add{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
@@ -2660,8 +2671,7 @@ JS;
         .kvt-ats-bar{display:flex;gap:8px;align-items:center;padding:8px}
         .kvt-ats-bar label{font-weight:600}
         .kvt-activity{border:1px solid #e5e7eb;border-radius:12px;padding:8px;overflow:auto;flex:0 1 300px;align-self:flex-start}
-        #kvt_activity{flex:0 1 400px}
-        #kvt_active_wrap{flex:0 1 480px}
+        #kvt_activity{flex:0 1 800px}
         #kvt_calendar_wrap{flex:0 1 750px}
         .kvt-widget-title{margin:0 0 8px;font-size:15px;font-weight:600;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
         #kvt_table tbody tr:nth-child(even){background:#f1f5f9}
@@ -2682,9 +2692,6 @@ JS;
         .kvt-activity-col h4{margin:8px 0;font-size:14px}
         .kvt-activity-list{list-style:none;margin:0;padding-left:16px;font-size:13px}
         .kvt-activity-list li{margin-bottom:4px}
-        #kvt_active_processes li{padding:4px 8px;border-radius:4px}
-        #kvt_active_processes li:nth-child(even){background:#e5e7eb}
-        #kvt_active_processes li:nth-child(odd){background:#fff}
         .kvt-ats-bar input,.kvt-ats-bar select{padding:8px;border:1px solid #e5e7eb;border-radius:8px}
         .kvt-stage-cell{display:flex;align-items:center;font-size:12px;flex-wrap:nowrap}
         .kvt-stage-step{display:inline-flex;align-items:center;justify-content:center;width:120px;flex:0 0 120px;padding:4px 12px;background:#e5e7eb;color:#6b7280;white-space:nowrap;box-sizing:border-box;border:none;cursor:pointer}
@@ -2987,9 +2994,7 @@ function kvtInit(){
   const activityUpcoming = el('#kvt_tasks_upcoming');
   const activityNotify = el('#kvt_notifications');
   const activityLog = el('#kvt_activity_log_list');
-  const activeList = el('#kvt_active_processes');
   const calendarSmall = el('#kvt_dashboard_calendar');
-  const activeWrap = el('#kvt_active_wrap');
   const calendarMiniWrap = el('#kvt_calendar_wrap');
   const activityTabs = document.querySelectorAll('.kvt-activity-tab');
   const activityViews = document.querySelectorAll('.kvt-activity-content');
@@ -3425,7 +3430,6 @@ function kvtInit(){
 
   function showView(view){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
-    if(activeWrap) activeWrap.style.display='none';
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
     if(mitChatWrap) mitChatWrap.style.display='none';
@@ -3475,7 +3479,6 @@ function kvtInit(){
       if(activityWrap) activityWrap.style.display='block';
       if(boardWrap) boardWrap.style.display='none';
       if(toggleKanban) toggleKanban.style.display='none';
-      if(activeWrap) activeWrap.style.display='block';
       if(calendarMiniWrap) calendarMiniWrap.style.display='block';
       fetchDashboard().then(d=>{ if(d.success) renderActivityDashboard(d.data); });
     } else if(view==='mit'){
@@ -4566,14 +4569,20 @@ function kvtInit(){
           const item = '<li data-id="'+escAttr(r.id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+esc(nameTxt)+'</a> - '+esc(r.meta.next_action)+(note?' — '+esc(note):'')+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
           (d <= today ? due : upcoming).push(item);
           const ds = parts.join('/');
-          calendarEvents.push({date: ds, text: nameTxt, done:false, manual:true});
+          calendarEvents.push({date: ds, text: nameTxt, candidate_id:r.id, done:false, manual:true});
         }
       }
       if(Array.isArray(r.meta.client_comments)){
         r.meta.client_comments.forEach((cc,idx)=>{
           if(!cc.dismissed){
             const comment = fixUnicode(cc.comment);
-            const item = '<li data-id="'+escAttr(r.id)+'" data-index="'+idx+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+esc(nameTxt)+'</a> — '+esc(comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
+            const cName = cc.name ? fixUnicode(cc.name) : '';
+            const cDate = cc.date ? formatInputDate(cc.date.split(' ')[0]) : '';
+            const meta = [];
+            if(cName) meta.push(esc(cName));
+            if(cDate) meta.push(esc(cDate));
+            const metaStr = meta.join(' / ');
+            const item = '<li data-id="'+escAttr(r.id)+'" data-index="'+idx+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+esc(nameTxt)+'</a> — '+(metaStr?metaStr+' — ':'')+esc(comment)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
             notifs.push(item);
           }
         });
@@ -4625,7 +4634,7 @@ function kvtInit(){
       const candTxt = fixUnicode(c.candidate||'');
       const procTxt = fixUnicode(c.process||'');
       const clientTxt = fixUnicode(c.client||'');
-      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:noteTxt, candidate:candTxt, process:procTxt, client:clientTxt, done:false, manual:true});
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:noteTxt, candidate:candTxt, process:procTxt, client:clientTxt, candidate_id:c.candidate_id, done:false, manual:true});
       const note = noteTxt ? ' — '+esc(noteTxt) : '';
       return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(candTxt)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
@@ -4634,35 +4643,57 @@ function kvtInit(){
       const candTxt = fixUnicode(c.candidate||'');
       const procTxt = fixUnicode(c.process||'');
       const clientTxt = fixUnicode(c.client||'');
-      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:noteTxt, candidate:candTxt, process:procTxt, client:clientTxt, done:false, manual:true});
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:noteTxt, candidate:candTxt, process:procTxt, client:clientTxt, candidate_id:c.candidate_id, done:false, manual:true});
       const note = noteTxt ? ' — '+esc(noteTxt) : '';
       return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(candTxt)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const notifs = (data.comments||[]).map(c=>{
       const candTxt = fixUnicode(c.candidate||'');
+      const clientTxt = fixUnicode(c.client||'');
+      const nameTxt = fixUnicode(c.name||'');
+      const dateTxt = fixUnicode(c.date||'');
       const commentTxt = fixUnicode(c.comment||'');
-      return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(candTxt)+'</a> — '+esc(commentTxt)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
-    });
-    const active = (data.active||[]).map(p=>{
-      const nameTxt = fixUnicode(p.name||'');
-      const clientTxt = fixUnicode(p.client||'');
-      const creatorTxt = fixUnicode(p.creator||'');
-      return '<li><a href="#" class="kvt-open-process" data-id="'+escAttr(p.id)+'">'+esc(nameTxt)+'</a> - '+esc(clientTxt)+' - '+esc(p.days)+' días activo - creado por '+esc(creatorTxt)+'</li>';
+      const meta = [clientTxt];
+      if(nameTxt) meta.push(nameTxt);
+      if(dateTxt) meta.push(dateTxt);
+      const metaStr = meta.filter(Boolean).map(m=>esc(m)).join(' / ');
+      return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(candTxt)+'</a> — '+(metaStr?metaStr+' — ':'')+esc(commentTxt)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
     });
     const logs = (data.logs||[]).sort((a,b)=>a.time<b.time?1:-1);
     activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
     activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
     activityNotify.innerHTML = notifs.join('') || '<li>No hay notificaciones</li>';
-    if(activeList) activeList.innerHTML = active.join('') || '<li>No hay procesos activos</li>';
     if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(fixUnicode(l.time))+' - '+esc(fixUnicode(l.text))+'</li>').join('') : '<li>No hay actividad</li>';
     renderCalendarSmall();
     loadOutlookEvents();
+  }
+
+  function removeCalendarEvent(idx){
+    const ev = calendarEvents[idx];
+    const finish = ()=>{
+      calendarEvents.splice(idx,1);
+      renderCalendar();
+      renderCalendarSmall();
+      refresh();
+    };
+    if(ev && ev.candidate_id){
+      const params = new URLSearchParams();
+      params.set('action','kvt_delete_task');
+      params.set('_ajax_nonce', KVT_NONCE);
+      params.set('id', ev.candidate_id);
+      params.set('author', KVT_CURRENT_USER || '');
+      fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:params.toString()}).then(r=>r.json()).then(finish);
+    } else {
+      finish();
+    }
   }
 
   function renderCalendar(){
     if(!calendarWrap) return;
     const first = new Date(calYear, calMonth, 1);
     const last = new Date(calYear, calMonth+1, 0);
+    const today = new Date();
+    const todayStr = (today.getDate()<10?'0'+today.getDate():today.getDate())+'/'+(today.getMonth()+1<10?'0'+(today.getMonth()+1):(today.getMonth()+1))+'/'+today.getFullYear();
     const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     const monthName = first.toLocaleString('default',{month:'long'});
     let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next">&gt;</button><button type="button" id="kvt_cal_mit" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
@@ -4673,6 +4704,7 @@ function kvtInit(){
       const ds = (d<10?'0'+d:d)+'/'+(calMonth+1<10?'0'+(calMonth+1):(calMonth+1))+'/'+calYear;
       const ev = calendarEvents.map((e,idx)=>Object.assign({idx},e)).filter(e=>e.date===ds);
       let cls = 'kvt-cal-cell';
+      if(ds===todayStr) cls += ' today';
       if(ev.length) cls += ' has-event';
       html += '<div class="'+cls+'" data-date="'+ds+'"><span class="kvt-cal-day">'+d+'</span>';
       ev.forEach(e=>{
@@ -4720,13 +4752,13 @@ function kvtInit(){
       evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendar(); } else { openMitDetail(ev); }});
     });
     calendarWrap.querySelectorAll('.kvt-cal-remove').forEach(btn=>{
-      btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendar(); });
+      btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); });
     });
     calendarWrap.querySelectorAll('.kvt-cal-accept').forEach(btn=>{
       btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendar(); });
     });
     calendarWrap.querySelectorAll('.kvt-cal-reject').forEach(btn=>{
-      btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendar(); });
+      btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); });
     });
     calendarWrap.querySelectorAll('.kvt-cal-cell').forEach(cell=>{
       cell.addEventListener('dragover', e=>e.preventDefault());
@@ -4750,6 +4782,8 @@ function kvtInit(){
       const last = new Date(calYear, calMonth+1, 0);
       const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
       const monthName = first.toLocaleString('default',{month:'long'});
+      const today = new Date();
+      const todayStr = (today.getDate()<10?'0'+today.getDate():today.getDate())+'/'+(today.getMonth()+1<10?'0'+(today.getMonth()+1):(today.getMonth()+1))+'/'+today.getFullYear();
       let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next_s">&gt;</button><button type="button" id="kvt_cal_mit_s" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
       html += '<div class="kvt-cal-add">'
         +'<label>Fecha<input type="text" id="kvt_cal_date_s" placeholder="DD/MM/YYYY"></label>'
@@ -4766,6 +4800,7 @@ function kvtInit(){
         const ds = (d<10?'0'+d:d)+'/'+(calMonth+1<10?'0'+(calMonth+1):(calMonth+1))+'/'+calYear;
         const ev = calendarEvents.map((e,idx)=>Object.assign({idx},e)).filter(e=>e.date===ds);
         let cls = 'kvt-cal-cell';
+        if(ds===todayStr) cls += ' today';
         if(ev.length) cls += ' has-event';
         html += '<div class="'+cls+'" data-date="'+ds+'"><span class="kvt-cal-day">'+d+'</span>';
         ev.forEach(e=>{
@@ -4811,9 +4846,9 @@ function kvtInit(){
         evEl.addEventListener('dragstart', e=>{ dragIdx = parseInt(evEl.dataset.idx,10); });
         evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendarSmall(); } else { openMitDetail(ev); }});
       });
-      calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
+      calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); }); });
       calendarSmall.querySelectorAll('.kvt-cal-accept').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendarSmall(); }); });
-      calendarSmall.querySelectorAll('.kvt-cal-reject').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
+      calendarSmall.querySelectorAll('.kvt-cal-reject').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); }); });
       calendarSmall.querySelectorAll('.kvt-cal-cell').forEach(cell=>{
         cell.addEventListener('dragover', e=>e.preventDefault());
         cell.addEventListener('drop', e=>{
@@ -5342,7 +5377,6 @@ function kvtInit(){
   taskProcess && taskProcess.addEventListener('change', ()=>{ populateTaskCandidates(taskProcess.value); });
   taskClose && taskClose.addEventListener('click', ()=>{ if(taskModalWrap) taskModalWrap.style.display='none'; });
   taskModalWrap && taskModalWrap.addEventListener('click', e=>{ if(e.target===taskModalWrap) taskModalWrap.style.display='none'; });
-  activeList && activeList.addEventListener('click', e=>{ const link = e.target.closest('.kvt-open-process'); if(link){ e.preventDefault(); if(selProcess) selProcess.value = link.dataset.id; showView('ats'); refresh(); } });
   btnShare && btnShare.addEventListener('click', e=>{
     e.preventDefault();
     if (!selClient || !selClient.value || !selProcess || !selProcess.value) {
@@ -5653,6 +5687,7 @@ function kvtInit(){
               window.KVT_CLIENT_MAP[idx].contact_email = c.contact_email;
               window.KVT_CLIENT_MAP[idx].contact_phone = c.contact_phone;
               window.KVT_CLIENT_MAP[idx].description = c.description;
+              window.KVT_CLIENT_MAP[idx].sector = c.sector;
               window.KVT_CLIENT_MAP[idx].meetings = c.meetings;
             } else {
               window.KVT_CLIENT_MAP.push(c);
@@ -5664,6 +5699,7 @@ function kvtInit(){
           const subs=[];
           if(c.contact_name) subs.push(esc(c.contact_name)+(c.contact_email?' ('+esc(c.contact_email)+')':''));
           if(c.contact_phone) subs.push(esc(c.contact_phone));
+          if(c.sector) subs.push(esc(c.sector));
           if(c.description) subs.push(esc(c.description));
           if(c.processes && c.processes.length) subs.push(esc(c.processes.join(', ')));
           const subHtml = subs.length?'<br><span class="kvt-sub">'+subs.join(' / ')+'</span>':'';
@@ -5673,6 +5709,7 @@ function kvtInit(){
             'data-contact-name="'+escAttr(c.contact_name||'')+'" ' +
             'data-contact-email="'+escAttr(c.contact_email||'')+'" ' +
             'data-contact-phone="'+escAttr(c.contact_phone||'')+'" ' +
+            'data-sector="'+escAttr(c.sector||'')+'" ' +
             'data-desc="'+escAttr(c.description||'')+'" ' +
             'data-meetings="'+escAttr(c.meetings||'')+'">'+
             '<div><span class="kvt-name">'+esc(c.name)+'</span>'+subHtml+'</div>'+
@@ -5880,6 +5917,7 @@ function kvtInit(){
     const clcont  = el('#kvt_client_contact');
     const clemail = el('#kvt_client_email');
     const clphone = el('#kvt_client_phone');
+    const clsector = el('#kvt_client_sector');
     const cldesc  = el('#kvt_client_desc');
     const clsigtxt = el('#kvt_client_sig_text');
     const clsigfile= el('#kvt_client_sig_file');
@@ -5927,9 +5965,9 @@ function kvtInit(){
         clmeetList.appendChild(li);
       });
     }
-    function openClModal(){ clmodal.dataset.edit=''; clname.value=''; clcont.value=''; clemail.value=''; clphone.value=''; cldesc.value=''; if(clmeet) clmeet.value=''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Crear'; activateClTab('info'); clmodal.style.display='flex'; }
-    function openEditClModal(c){ clmodal.dataset.edit=c.id; clname.value=c.name||''; clcont.value=c.contact_name||''; clemail.value=c.contact_email||''; clphone.value=c.contact_phone||''; cldesc.value=c.description||''; if(clmeet) clmeet.value=c.meetings||''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Guardar'; activateClTab('info'); clmodal.style.display='flex'; }
-    function closeClModal(){ clmodal.style.display='none'; clmodal.dataset.edit=''; clsubmit.textContent='Crear'; if(cldesc) cldesc.value=''; if(clmeet) clmeet.value=''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; activateClTab('info'); }
+    function openClModal(){ clmodal.dataset.edit=''; clname.value=''; clcont.value=''; clemail.value=''; clphone.value=''; if(clsector) clsector.value=''; cldesc.value=''; if(clmeet) clmeet.value=''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Crear'; activateClTab('info'); clmodal.style.display='flex'; }
+    function openEditClModal(c){ clmodal.dataset.edit=c.id; clname.value=c.name||''; clcont.value=c.contact_name||''; clemail.value=c.contact_email||''; clphone.value=c.contact_phone||''; if(clsector) clsector.value=c.sector||''; cldesc.value=c.description||''; if(clmeet) clmeet.value=c.meetings||''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; clsubmit.textContent='Guardar'; activateClTab('info'); clmodal.style.display='flex'; }
+    function closeClModal(){ clmodal.style.display='none'; clmodal.dataset.edit=''; clsubmit.textContent='Crear'; if(cldesc) cldesc.value=''; if(clmeet) clmeet.value=''; if(clsector) clsector.value=''; renderMeetingList(); if(clsigtxt) clsigtxt.value=''; if(clsigfile) clsigfile.value=''; activateClTab('info'); }
     clclose && clclose.addEventListener('click', closeClModal);
     clmodal && clmodal.addEventListener('click', e=>{ if(e.target===clmodal) closeClModal(); });
     clTabs.forEach(btn=>btn.addEventListener('click', ()=>activateClTab(btn.dataset.target)));
@@ -5967,6 +6005,7 @@ function kvtInit(){
       params.set('contact_name', clcont.value||'');
       params.set('contact_email', clemail.value||'');
       params.set('contact_phone', clphone.value||'');
+      params.set('sector', clsector.value||'');
       params.set('description', cldesc.value||'');
       params.set('meetings', clmeet && clmeet.value ? clmeet.value : '');
       fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
@@ -5974,7 +6013,7 @@ function kvtInit(){
           if(!j.success) return alert(j.data && j.data.msg ? j.data.msg : 'No se pudo guardar.');
           if(editing){
             alert('Cliente actualizado (#'+editing+').');
-            const cid=parseInt(editing,10); const obj=getClientById(cid); if(obj){ obj.name=clname.value||''; obj.contact_name=clcont.value||''; obj.contact_email=clemail.value||''; obj.contact_phone=clphone.value||''; obj.description=cldesc.value||''; obj.meetings=clmeet && clmeet.value?clmeet.value:''; }
+            const cid=parseInt(editing,10); const obj=getClientById(cid); if(obj){ obj.name=clname.value||''; obj.contact_name=clcont.value||''; obj.contact_email=clemail.value||''; obj.contact_phone=clphone.value||''; obj.sector=clsector.value||''; obj.description=cldesc.value||''; obj.meetings=clmeet && clmeet.value?clmeet.value:''; }
             const opt = selClient ? selClient.querySelector('option[value="'+cid+'"]') : null; if(opt) opt.textContent = clname.value||'';
             closeClModal(); listClients(); updateSelectedInfo();
           } else {
@@ -6113,6 +6152,7 @@ function kvtInit(){
           contact_email: row.dataset.contactEmail || '',
           contact_phone: row.dataset.contactPhone || '',
           description: row.dataset.desc || '',
+          sector: row.dataset.sector || '',
           meetings: row.dataset.meetings || ''
         };
       }
@@ -6452,6 +6492,7 @@ JS;
                             'client'       => $client,
                             'process'      => $process,
                             'name'         => isset($cc['name']) ? $cc['name'] : '',
+                            'date'         => isset($cc['date']) ? $this->fmt_date_ddmmyyyy($cc['date']) : '',
                             'comment'      => $cc['comment'],
                             'index'        => $idx,
                             'source'       => 'client',
@@ -6515,33 +6556,11 @@ JS;
             }
         }
 
-        $terms = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
-        $active = [];
-        foreach ($terms as $t) {
-            $status = get_term_meta($t->term_id,'kvt_process_status',true);
-            if ($status && $status !== 'active') continue;
-            $created = get_term_meta($t->term_id,'kvt_process_created',true);
-            $creator_id = (int) get_term_meta($t->term_id,'kvt_process_creator',true);
-            $creator = $creator_id ? get_user_by('id',$creator_id)->display_name : '';
-            $client_id = (int) get_term_meta($t->term_id,'kvt_process_client',true);
-            $client_name = $client_id ? get_term($client_id)->name : '';
-            $start_ts = $created ? strtotime($created) : 0;
-            $days_active = $start_ts ? floor((current_time('timestamp') - $start_ts)/DAY_IN_SECONDS) : 0;
-            $active[] = [
-                'id'      => $t->term_id,
-                'name'    => $t->name,
-                'days'    => $days_active,
-                'creator' => $creator,
-                'client'  => $client_name,
-            ];
-        }
-
         wp_send_json_success([
             'comments' => $comments,
             'upcoming' => $upcoming,
             'overdue'  => $overdue,
             'logs'     => $logs,
-            'active'   => $active,
         ]);
     }
 
@@ -7537,6 +7556,7 @@ JS;
                 'contact_email' => get_term_meta($t->term_id,'contact_email',true),
                 'contact_phone' => get_term_meta($t->term_id,'contact_phone',true),
                 'description'   => wp_strip_all_tags($t->description),
+                'sector'        => get_term_meta($t->term_id,'kvt_client_sector',true),
                 'meetings'      => get_term_meta($t->term_id,'kvt_client_meetings',true),
                 'processes'     => wp_list_pluck($procs,'name'),
                 'edit_url'      => admin_url('term.php?taxonomy=' . self::TAX_CLIENT . '&tag_ID=' . $t->term_id),
@@ -7852,6 +7872,7 @@ JS;
          $cemail= isset($_POST['contact_email']) ? sanitize_email($_POST['contact_email'])      : '';
          $cphone= isset($_POST['contact_phone']) ? sanitize_text_field($_POST['contact_phone']) : '';
          $desc  = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+         $sector= isset($_POST['sector']) ? sanitize_text_field($_POST['sector']) : '';
          $meet  = isset($_POST['meetings']) ? sanitize_textarea_field($_POST['meetings']) : '';
 
           if ($name === '') wp_send_json_error(['msg'=>'Nombre requerido'],400);
@@ -7862,6 +7883,7 @@ JS;
          update_term_meta($tid, 'contact_name', $cname);
          update_term_meta($tid, 'contact_email', $cemail);
          update_term_meta($tid, 'contact_phone', $cphone);
+         if ($sector !== '') update_term_meta($tid, 'kvt_client_sector', $sector);
          if ($meet !== '') update_term_meta($tid, 'kvt_client_meetings', $meet);
 
           wp_send_json_success(['id'=>$tid]);
@@ -7984,6 +8006,7 @@ JS;
         $cemail= isset($_POST['contact_email']) ? sanitize_email($_POST['contact_email'])      : '';
         $cphone= isset($_POST['contact_phone']) ? sanitize_text_field($_POST['contact_phone']) : '';
         $desc  = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+        $sector= isset($_POST['sector']) ? sanitize_text_field($_POST['sector']) : '';
         $meet  = isset($_POST['meetings']) ? sanitize_textarea_field($_POST['meetings']) : '';
 
         if (!$id) wp_send_json_error(['msg'=>'ID inválido'],400);
@@ -7994,6 +8017,7 @@ JS;
         update_term_meta($id, 'contact_name', $cname);
         update_term_meta($id, 'contact_email', $cemail);
         update_term_meta($id, 'contact_phone', $cphone);
+        update_term_meta($id, 'kvt_client_sector', $sector);
         update_term_meta($id, 'kvt_client_meetings', $meet);
 
         wp_send_json_success(['id'=>$id]);
