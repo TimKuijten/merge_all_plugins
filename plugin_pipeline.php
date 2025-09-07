@@ -158,9 +158,9 @@ class Kovacic_Pipeline_Visualizer {
         add_action('admin_post_kvt_delete_board',   [$this, 'handle_delete_board']);
 
         // Follow-up reminders
-        add_action('wp',                            [$this, 'schedule_followup_cron']);
+        add_action('init',                          [$this, 'schedule_followup_cron']);
         add_action('kvt_daily_followup',            [$this, 'cron_check_followups']);
-        add_action('wp',                            [$this, 'schedule_mit_report']);
+        add_action('init',                          [$this, 'schedule_mit_report']);
         add_action('kvt_mit_report',                [$this, 'cron_mit_report']);
         add_action('admin_notices',                 [$this, 'followup_admin_notice']);
         add_action('template_redirect',             [$this, 'maybe_redirect_share_link']);
@@ -195,6 +195,20 @@ cv_uploaded|Fecha de subida");
                 'post_status'  => 'publish',
                 'post_type'    => 'page',
             ]);
+        }
+        if (!wp_next_scheduled('kvt_mit_report')) {
+            $tz   = new DateTimeZone('Europe/Madrid');
+            $time = get_option(self::OPT_MIT_TIME, '07:45');
+            if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $time)) {
+                $time = '07:45';
+            }
+            list($hour, $min) = array_map('intval', explode(':', $time));
+            $next = new DateTime('now', $tz);
+            $next->setTime($hour, $min);
+            if ($next->getTimestamp() <= time()) {
+                $next->modify('+1 day');
+            }
+            wp_schedule_event($next->getTimestamp(), 'daily', 'kvt_mit_report');
         }
     }
 
@@ -1685,7 +1699,7 @@ JS;
         ]);
         if (is_wp_error($resp)) return;
         $data = json_decode(wp_remote_retrieve_body($resp), true);
-        $text = trim($data['choices'][0]['message']['content'] ?? '');
+        $text = $this->mit_strip_fences(trim($data['choices'][0]['message']['content'] ?? ''));
         if (!$text) return;
 
         $raw = get_option(self::OPT_MIT_RECIPIENTS, get_option('admin_email'));
@@ -3283,7 +3297,13 @@ function kvtInit(){
   emailPrev && emailPrev.addEventListener('click', ()=>{ if(emailPageNum>1) loadEmailCandidates(emailPageNum-1); });
   emailNext && emailNext.addEventListener('click', ()=>{ if(emailPageNum<emailPageTotal) loadEmailCandidates(emailPageNum+1); });
 
-  function formatInputDate(v){ const p=v.split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : v; }
+  function formatInputDate(v){
+    if(/^\d{4}-\d{2}-\d{2}$/.test(v)){
+      const p=v.split('-');
+      return p[2]+'/'+p[1]+'/'+p[0];
+    }
+    return v;
+  }
 
   async function loadMit(){
     if(!mitContent) return;
@@ -4529,7 +4549,7 @@ function kvtInit(){
     const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     const monthName = first.toLocaleString('default',{month:'long'});
     let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next">&gt;</button><button type="button" id="kvt_cal_mit">MIT</button></span></div>';
-    html += '<div class="kvt-cal-add"><input type="date" id="kvt_cal_date"><input type="time" id="kvt_cal_time"><input type="text" id="kvt_cal_text" placeholder="Evento"><select id="kvt_cal_process"><option value="">Proceso (opcional)</option></select><select id="kvt_cal_candidate"><option value="">Candidato (opcional)</option></select><button type="button" id="kvt_cal_add">Añadir</button></div>';
+    html += '<div class="kvt-cal-add"><input type="text" id="kvt_cal_date" placeholder="DD/MM/YYYY"><input type="time" id="kvt_cal_time"><input type="text" id="kvt_cal_text" placeholder="Evento"><select id="kvt_cal_process"><option value="">Proceso (opcional)</option></select><select id="kvt_cal_candidate"><option value="">Candidato (opcional)</option></select><button type="button" id="kvt_cal_add">Añadir</button></div>';
     html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
     for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
     for(let d=1; d<=last.getDate(); d++){
@@ -4585,7 +4605,7 @@ function kvtInit(){
       const monthName = first.toLocaleString('default',{month:'long'});
       let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next_s">&gt;</button><button type="button" id="kvt_cal_mit_s">MIT</button></span></div>';
       html += '<div class="kvt-cal-add">'
-        +'<label>Fecha<input type="date" id="kvt_cal_date_s"></label>'
+        +'<label>Fecha<input type="text" id="kvt_cal_date_s" placeholder="DD/MM/YYYY"></label>'
         +'<label>Hora<input type="time" id="kvt_cal_time_s"></label>'
         +'<label>Tarea<input type="text" id="kvt_cal_text_s" placeholder="Descripción"></label>'
         +'<label>Proceso<select id="kvt_cal_process_s"><option value="">(opcional)</option></select></label>'
@@ -6437,8 +6457,12 @@ JS;
         foreach ($cands as $c) {
             $country = get_post_meta($c->ID, 'kvt_country', true);
             $role    = $this->meta_get_compat($c->ID, 'kvt_current_role', ['current_role']);
+            $status  = $this->meta_get_compat($c->ID, 'kvt_status', ['status']);
+            $procs   = wp_get_object_terms($c->ID, self::TAX_PROCESS, ['fields' => 'names']);
             $line    = $c->post_title;
-            if ($role)    $line .= " ($role)";
+            if ($role)   $line .= " ($role)";
+            if ($status) $line .= " [$status]";
+            if ($procs) $line .= ' {' . implode(', ', $procs) . '}';
             if ($country) $line .= " - $country";
             $cand_lines[] = $line;
             $n = get_post_meta($c->ID, 'kvt_notes', true);
@@ -6578,6 +6602,14 @@ JS;
         return ['summary' => $summary, 'news' => $news];
     }
 
+    private function mit_strip_fences($text) {
+        if (strpos($text, '```') !== false) {
+            $text = preg_replace('/^```\w*\n?/', '', $text);
+            $text = preg_replace('/\n?```$/', '', $text);
+        }
+        return trim($text);
+    }
+
     private function mit_create_excel() {
         if (!class_exists('\\PhpOffice\\PhpSpreadsheet\\Spreadsheet')) {
             error_log('mit_create_excel: PhpSpreadsheet not available');
@@ -6632,7 +6664,7 @@ JS;
         $news    = $ctx['news'];
 
         $hist['summary'] = $summary;
-        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente)";
+        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos o clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente). Al final, incluye hasta 5 sugerencias de agenda, cada una en una línea independiente que comience con la fecha en formato DD/MM/YYYY, seguido de un guion y la acción a realizar.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -6652,16 +6684,23 @@ JS;
             $text = trim($data['choices'][0]['message']['content'] ?? '');
         }
         if ($text) {
-            $hist['messages'][] = ['role' => 'assistant', 'content' => wp_strip_all_tags($text), 'html' => $text];
+            $text = $this->mit_strip_fences($text);
+            $plain = preg_replace('/<\/(li|p)>/i', "\n", $text);
+            $plain = preg_replace('/<br\s*\/?\>/i', "\n", $plain);
+            $plain = wp_strip_all_tags($plain);
+            $hist['messages'][] = ['role' => 'assistant', 'content' => $plain, 'html' => $text];
             $this->mit_summarize_history($hist, $key, $model);
+        } else {
+            $plain = '';
         }
         $this->mit_save_history($uid, $hist);
         if (is_wp_error($resp)) {
             $err = $resp->get_error_message();
             $text = sprintf(__('No se pudo conectar con OpenAI: %s', 'kovacic'), $err);
+            $plain = $text;
         }
         wp_send_json_success([
-            'suggestions'       => wp_strip_all_tags($text),
+            'suggestions'       => $plain,
             'suggestions_html'  => wp_kses_post($text),
             'news'              => $news,
             'history'           => $hist['messages'],
@@ -6720,6 +6759,7 @@ JS;
             $reply = trim($data['choices'][0]['message']['content'] ?? '');
         }
         if ($reply) {
+            $reply = $this->mit_strip_fences($reply);
             // Detect request for Excel generation based on user message
             if (stripos($msg, 'excel') !== false) {
                 $autoload = __DIR__ . '/vendor/autoload.php';
