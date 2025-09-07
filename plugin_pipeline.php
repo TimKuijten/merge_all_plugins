@@ -143,6 +143,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_mit_chat',             [$this, 'ajax_mit_chat']);
         add_action('wp_ajax_kvt_send_email',           [$this, 'ajax_send_email']);
         add_action('wp_ajax_nopriv_kvt_send_email',    [$this, 'ajax_send_email']);
+        add_action('wp_ajax_kvt_get_email_log',        [$this, 'ajax_get_email_log']);
+        add_action('wp_ajax_nopriv_kvt_get_email_log', [$this, 'ajax_get_email_log']);
         add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
         add_action('wp_ajax_kvt_save_template',        [$this, 'ajax_save_template']);
         add_action('wp_ajax_kvt_delete_template',      [$this, 'ajax_delete_template']);
@@ -6076,22 +6078,20 @@ function kvtInit(){
           credentials:'same-origin',
           body:new URLSearchParams({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)})
         });
-        const txt = await res2.text();
         let out = null;
-        try { out = JSON.parse(txt); } catch(e) {
-          const start = txt.indexOf('{');
-          const end   = txt.lastIndexOf('}');
-          if(start !== -1 && end !== -1) {
-            try { out = JSON.parse(txt.slice(start,end+1)); } catch(e2){ out = null; }
-          }
-        }
-        if(out && out.success){
+        try { out = await res2.json(); } catch(e) {}
+        if(res2.ok && out && out.success){
           emailStatusMsg.textContent=`Enviados: ${out.data.sent}`;
-          if(out.data.log){ KVT_SENT_EMAILS=out.data.log; renderSentEmails(); }
+        } else if (res2.ok) {
+          emailStatusMsg.textContent='Enviados';
         } else {
           emailStatusMsg.textContent='Error enviando';
-          console.error(txt);
+          return;
         }
+        try {
+          const logRes = await ajaxForm({action:'kvt_get_email_log', _ajax_nonce:KVT_NONCE});
+          if(logRes.success && logRes.data.log){ KVT_SENT_EMAILS = logRes.data.log; renderSentEmails(); }
+        } catch(e){}
       } catch(err){
         emailStatusMsg.textContent='Error enviando';
       }
@@ -8701,6 +8701,14 @@ JS;
             if (!empty($queue)) {
                 wp_schedule_single_event(time()+5, 'kvt_refresh_worker');
             }
+        }
+
+        public function ajax_get_email_log() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+
+            $log = array_reverse((array) get_option(self::OPT_EMAIL_LOG, []));
+            wp_send_json_success(['log' => $log]);
         }
 
         public function ajax_send_email() {
