@@ -3036,7 +3036,6 @@ JS;
         wp_add_inline_script('kvt-app', 'const KVT_COUNTRIES='.wp_json_encode($countries).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_AJAX="'.esc_js(admin_url('admin-ajax.php')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/view-board/')).'";', 'before');
-        wp_add_inline_script('kvt-app', 'const KVT_CORREO="'.esc_js(home_url('/correo/')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_MIT_NONCE="'.esc_js(wp_create_nonce('kvt_mit')).'";', 'before');
         $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
@@ -4609,6 +4608,7 @@ function kvtInit(){
       const json = await resp.json();
       if(json && json.success && json.data && Array.isArray(json.data.agenda)){
         const today = new Date(); today.setHours(0,0,0,0);
+        const cands = await loadAllCandidates();
         calendarEvents = calendarEvents.filter(e=>e.manual);
         json.data.agenda.forEach(item=>{
           const parts = item.date.split('/');
@@ -4619,10 +4619,32 @@ function kvtInit(){
             if(day===0 || day===6) return; // skip weekends
             let tmpl = fixUnicode(item.template);
             const strat = fixUnicode(item.strategy);
+            let email = '';
+            let firstName = '';
+            if(item.text){
+              const m = item.text.match(/(?:a|con)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+)(?:\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+))?/i);
+              if(m){
+                firstName = m[1];
+                const first = m[1].toLowerCase();
+                const last  = m[2]?m[2].toLowerCase():'';
+                const cand = cands.find(c=>{
+                  const fn = (c.meta && (c.meta.first_name||'')).toLowerCase();
+                  const ln = (c.meta && ((c.meta.last_name||c.meta.surname)||'')).toLowerCase();
+                  if(first && last) return fn===first && ln===last;
+                  return fn===first || ln===first;
+                });
+                if(cand && cand.meta && cand.meta.email) email = cand.meta.email;
+              }
+            }
             if(tmpl){
-              const m = item.text.match(/(?:a|con)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+)/i);
-              tmpl = tmpl.replace(/{{\s*first_name\s*}}/gi, m?m[1]:'');
+              tmpl = tmpl.replace(/{{\s*first_name\s*}}/gi, firstName);
               tmpl = tmpl.replace(/Estimad[oa]\b/gi,'Hola');
+              tmpl = tmpl.replace(/(Hola\s+[A-ZÁÉÍÓÚÑ][^,]*,)/i,'$1<br><br>');
+              tmpl = tmpl.replace(/(Saludos(?:\s+cordiales)?|Un saludo|Gracias(?:\s+y\s+saludos)?)/i,'<br><br>$1');
+              tmpl = tmpl.replace(/<\/blockquote>$/,'<br><br></blockquote>');
+              if(email){
+                tmpl = tmpl.replace(/<blockquote>/,'<blockquote>'+esc(email)+'<br><br>');
+              }
             }
             calendarEvents.push({
               date:item.date,
@@ -4630,6 +4652,7 @@ function kvtInit(){
               text:fixUnicode(item.text),
               strategy:strat,
               template:tmpl,
+              email:email,
               done:false,
               manual:false
             });
@@ -4655,44 +4678,7 @@ function kvtInit(){
     }
     const body = el('#kvt_mit_detail_body');
     body.innerHTML='<h4>'+esc(ev.text)+'</h4>'+(ev.strategy?'<p>'+esc(ev.strategy)+'</p>':'')+(ev.template?'<div class="kvt-mit-template">'+ev.template+'</div>':'');
-    if(ev.template){
-      const box = body.querySelector('.kvt-mit-template');
-      if(box){
-        const btn = document.createElement('button');
-        btn.type='button';
-        btn.className='kvt-mit-email-icon';
-        btn.innerHTML='<span class="dashicons dashicons-email"></span>';
-        box.insertBefore(btn, box.firstChild);
-        btn.addEventListener('click', ()=>{ openMitEmail(ev); });
-      }
-    }
     mitDetailModal.style.display='flex';
-  }
-
-  function openMitEmail(ev){
-    const m = ev.text.match(/(?:a|con)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+)(?:\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+))?/i);
-    const first = m ? m[1].toLowerCase() : '';
-    const last  = m && m[2] ? m[2].toLowerCase() : '';
-    loadAllCandidates().then(items=>{
-      const cand = items.find(c=>{
-        const fn = (c.meta && (c.meta.first_name||'')).toLowerCase();
-        const ln = (c.meta && ((c.meta.last_name||c.meta.surname)||'')).toLowerCase();
-        if(first && last) return fn===first && ln===last;
-        return fn===first || ln===first;
-      });
-      if(!cand || !cand.meta || !cand.meta.email){
-        alert('No se encontró email para '+(first||'el candidato'));
-        return;
-      }
-      const tmp=document.createElement('div'); tmp.innerHTML=ev.template||'';
-      const body=tmp.textContent||'';
-      const correo=(typeof KVT_CORREO!=='undefined'?KVT_CORREO:'/correo/');
-      let url=correo+'?to='+encodeURIComponent(cand.meta.email||'')+'&body='+encodeURIComponent(body);
-      if(cand.id) url+='&id='+encodeURIComponent(cand.id);
-      if(cand.meta && cand.meta.first_name) url+='&first='+encodeURIComponent(cand.meta.first_name);
-      if(cand.meta && (cand.meta.last_name||cand.meta.surname)) url+='&last='+encodeURIComponent(cand.meta.last_name||cand.meta.surname);
-      window.open(url,'mit_correo','width=800,height=600');
-    });
   }
 
   function fetchProcessesList(){
