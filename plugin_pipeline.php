@@ -151,6 +151,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
         add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_nopriv_kvt_get_outlook_events', [$this, 'ajax_get_outlook_events']);
+        add_action('wp_ajax_kvt_get_calendar_ics',     [$this, 'ajax_get_calendar_ics']);
+        add_action('wp_ajax_nopriv_kvt_get_calendar_ics', [$this, 'ajax_get_calendar_ics']);
 
         add_action('kvt_refresh_worker',               [$this, 'cron_refresh_worker']);
 
@@ -2812,7 +2814,7 @@ JS;
         }
         wp_add_inline_script('kvt-app', 'const KVT_BULKREADER_URL="'.esc_url(admin_url('admin.php?page=kt-abm')).'";', 'before');
         $ics_url = (string) get_option(self::OPT_CALENDAR_ICS, '');
-        wp_add_inline_script('kvt-app', 'const KVT_CALENDAR_ICS='.wp_json_encode($ics_url).';', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_CALENDAR_ICS='.wp_json_encode(!empty($ics_url)).';', 'before');
 
             // App JS
             $js = <<<'JS'
@@ -4622,25 +4624,16 @@ function kvtInit(){
     if(!calendar2Wrap) return;
     calendar2Wrap.textContent='Cargando...';
     if(!KVT_CALENDAR_ICS){ calendar2Wrap.textContent='Sin calendario'; return; }
-    fetch(KVT_CALENDAR_ICS).then(r=>r.text()).then(txt=>{
-      const lines = txt.split(/\r?\n/);
-      const events=[]; let ev=null;
-      lines.forEach(line=>{
-        if(line.startsWith('BEGIN:VEVENT')){ ev={}; }
-        else if(line.startsWith('END:VEVENT')){ if(ev) events.push(ev); ev=null; }
-        else if(ev){
-          if(line.startsWith('DTSTART')){
-            const dt=line.split(':').pop().trim();
-            if(dt.length>=8){ ev.date=dt.slice(6,8)+'/'+dt.slice(4,6)+'/'+dt.slice(0,4); }
-          } else if(line.startsWith('SUMMARY')){
-            ev.summary=line.split(':').slice(1).join(':').trim();
-          }
-        }
-      });
-      if(!events.length){ calendar2Wrap.textContent='Sin eventos'; return; }
-      const html='<ul>'+events.map(e=>'<li>'+esc(e.date)+' - '+esc(e.summary||'')+'</li>').join('')+'</ul>';
-      calendar2Wrap.innerHTML=html;
-    }).catch(()=>{ calendar2Wrap.textContent='No se pudo cargar el calendario'; });
+    const params=new URLSearchParams({action:'kvt_get_calendar_ics', _ajax_nonce:KVT_NONCE});
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json())
+      .then(res=>{
+        const events = (res && res.success && Array.isArray(res.data)) ? res.data : [];
+        if(!events.length){ calendar2Wrap.textContent='Sin eventos'; return; }
+        const html='<ul>'+events.map(e=>'<li>'+esc(e.date)+' - '+esc(e.summary||'')+'</li>').join('')+'</ul>';
+        calendar2Wrap.innerHTML=html;
+      })
+      .catch(()=>{ calendar2Wrap.textContent='No se pudo cargar el calendario'; });
   }
 
   function renderOverview(rows){
@@ -6336,6 +6329,49 @@ JS;
                 }
             }
         }
+        wp_send_json_success($events);
+    }
+
+    public function ajax_get_calendar_ics() {
+        check_ajax_referer('kvt_nonce');
+
+        $url = (string) get_option(self::OPT_CALENDAR_ICS, '');
+        if (!$url) {
+            wp_send_json_success([]);
+        }
+
+        $resp = wp_remote_get($url);
+        if (is_wp_error($resp) || wp_remote_retrieve_response_code($resp) !== 200) {
+            wp_send_json_error(['msg' => 'fetch'], 500);
+        }
+
+        $body   = wp_remote_retrieve_body($resp);
+        $lines  = preg_split('/\r\n|\r|\n/', $body);
+        $events = [];
+        $ev     = null;
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === 'BEGIN:VEVENT') {
+                $ev = [];
+            } elseif ($line === 'END:VEVENT') {
+                if ($ev) {
+                    $events[] = $ev;
+                }
+                $ev = null;
+            } elseif ($ev) {
+                if (strpos($line, 'DTSTART') === 0) {
+                    $parts = explode(':', $line);
+                    $dt    = end($parts);
+                    if (preg_match('/^(\d{4})(\d{2})(\d{2})/', $dt, $m)) {
+                        $ev['date'] = $m[3] . '/' . $m[2] . '/' . $m[1];
+                    }
+                } elseif (strpos($line, 'SUMMARY') === 0) {
+                    $ev['summary'] = trim(substr($line, strpos($line, ':') + 1));
+                }
+            }
+        }
+
         wp_send_json_success($events);
     }
 
