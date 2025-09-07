@@ -7096,7 +7096,8 @@ JS;
 
         $notes      = [];
         $cand_lines = [];
-        $followups  = [];
+        $overdue    = [];
+        $upcoming   = [];
         $history    = [];
         foreach ($cands as $c) {
             $country = get_post_meta($c->ID, 'kvt_country', true);
@@ -7145,7 +7146,11 @@ JS;
                     $na_note = get_post_meta($c->ID, 'kvt_next_action_note', true);
                     $fline = $c->post_title . ' - ' . $next;
                     if ($na_note) $fline .= ': ' . $na_note;
-                    $followups[] = $fline;
+                    if ($ts < current_time('timestamp')) {
+                        $overdue[] = $fline;
+                    } else {
+                        $upcoming[] = $fline;
+                    }
                 }
             }
             if (is_array($log)) {
@@ -7243,8 +7248,11 @@ JS;
         $summary  = 'Candidatos: ' . implode('; ', $cand_lines) . '.';
         $summary .= ' Clientes: ' . implode('; ', $client_lines) . '.';
         $summary .= ' Procesos: ' . implode('; ', $process_lines) . '.';
-        if ($followups) {
-            $summary .= ' Seguimientos pendientes: ' . implode('; ', $followups) . '.';
+        if ($overdue) {
+            $summary .= ' Seguimientos vencidos: ' . implode('; ', $overdue) . '.';
+        }
+        if ($upcoming) {
+            $summary .= ' Seguimientos próximos: ' . implode('; ', $upcoming) . '.';
         }
         if ($notes) {
             $summary .= ' Notas: ' . implode(' | ', $notes) . '.';
