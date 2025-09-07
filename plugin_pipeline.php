@@ -34,6 +34,7 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_MIT_DAY = 'kvt_mit_day';
     const OPT_O365_TENANT = 'kvt_o365_tenant';
     const OPT_O365_CLIENT = 'kvt_o365_client';
+    const OPT_ICS_URL     = 'kvt_ics_url';
     const CPT_EMAIL_TEMPLATE = 'kvt_email_tpl';
     const MIT_HISTORY_LIMIT = 20;
     const MIT_TIMEOUT      = 60;
@@ -148,8 +149,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_delete_template',      [$this, 'ajax_delete_template']);
         add_action('wp_ajax_kvt_delete_board',        [$this, 'ajax_delete_board']);
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
-        add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
-        add_action('wp_ajax_nopriv_kvt_get_outlook_events', [$this, 'ajax_get_outlook_events']);
+        add_action('wp_ajax_kvt_get_calendar_events',   [$this, 'ajax_get_calendar_events']);
+        add_action('wp_ajax_nopriv_kvt_get_calendar_events', [$this, 'ajax_get_calendar_events']);
 
         add_action('kvt_refresh_worker',               [$this, 'cron_refresh_worker']);
 
@@ -252,6 +253,7 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_FROM_EMAIL);
         register_setting(self::OPT_GROUP, self::OPT_O365_TENANT);
         register_setting(self::OPT_GROUP, self::OPT_O365_CLIENT);
+        register_setting(self::OPT_GROUP, self::OPT_ICS_URL);
         register_setting(self::OPT_GROUP, self::OPT_EMAIL_LOG, [
             'type'    => 'array',
             'default' => [],
@@ -663,6 +665,7 @@ JS;
         $smtp_sig  = get_option(self::OPT_SMTP_SIGNATURE, "");
         $o365_tenant = get_option(self::OPT_O365_TENANT, "");
         $o365_client = get_option(self::OPT_O365_CLIENT, "");
+        $ics_url = get_option(self::OPT_ICS_URL, "");
         $from_name_def = get_option(self::OPT_FROM_NAME, "");
         $from_email_def = get_option(self::OPT_FROM_EMAIL, "");
         $mit_time = get_option(self::OPT_MIT_TIME, '09:00');
@@ -756,6 +759,13 @@ JS;
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_O365_CLIENT; ?>">Outlook Client ID</label></th>
                         <td><input type="text" name="<?php echo self::OPT_O365_CLIENT; ?>" id="<?php echo self::OPT_O365_CLIENT; ?>" class="regular-text" value="<?php echo esc_attr($o365_client); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_ICS_URL; ?>">ICS Calendar URL</label></th>
+                        <td>
+                            <input type="url" name="<?php echo self::OPT_ICS_URL; ?>" id="<?php echo self::OPT_ICS_URL; ?>" class="regular-text" value="<?php echo esc_attr($ics_url); ?>">
+                            <p class="description">Enlace .ics para mostrar eventos en el tablero.</p>
+                        </td>
                     </tr>
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_FROM_NAME; ?>">Nombre remitente por defecto</label></th>
@@ -4175,15 +4185,15 @@ function kvtInit(){
     return fetch(KVT_AJAX, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params.toString() }).then(r=>r.json());
   }
 
-  function fetchOutlookEvents(){
+  function fetchCalendarEvents(){
     const params = new URLSearchParams();
-    params.set('action','kvt_get_outlook_events');
+    params.set('action','kvt_get_calendar_events');
     params.set('_ajax_nonce', KVT_NONCE);
     return fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()}).then(r=>r.json());
   }
 
-  function loadOutlookEvents(){
-    fetchOutlookEvents().then(j=>{
+  function loadCalendarEvents(){
+    fetchCalendarEvents().then(j=>{
       if(j.success && Array.isArray(j.data)){
         j.data.forEach(e=>{ calendarEvents.push(e); });
         renderCalendarSmall();
@@ -4458,7 +4468,7 @@ function kvtInit(){
       activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+l.time+' - '+l.text+'</li>').join('') : '<li>No hay actividad</li>';
     }
     renderCalendarSmall();
-    loadOutlookEvents();
+    loadCalendarEvents();
   }
 
   function renderActivityDashboard(data){
@@ -4487,7 +4497,7 @@ function kvtInit(){
     if(activeList) activeList.innerHTML = active.join('') || '<li>No hay procesos activos</li>';
     if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(l.time)+' - '+esc(l.text)+'</li>').join('') : '<li>No hay actividad</li>';
     renderCalendarSmall();
-    loadOutlookEvents();
+    loadCalendarEvents();
   }
 
   function renderCalendar(){
@@ -6239,8 +6249,47 @@ JS;
         ]);
     }
 
-    public function ajax_get_outlook_events() {
+    public function ajax_get_calendar_events() {
         check_ajax_referer('kvt_nonce');
+
+        $ics = get_option(self::OPT_ICS_URL, '');
+        if ($ics) {
+            $resp = wp_remote_get($ics);
+            if (!is_wp_error($resp)) {
+                $body = wp_remote_retrieve_body($resp);
+                $events = [];
+                $lines = preg_split('/\r\n|\n|\r/', $body);
+                $current = [];
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if ($line === 'BEGIN:VEVENT') {
+                        $current = [];
+                    } elseif ($line === 'END:VEVENT') {
+                        if (!empty($current['start']) && isset($current['summary'])) {
+                            $events[] = [
+                                'date' => date('d/m/Y', $current['start']),
+                                'time' => date('H:i', $current['start']),
+                                'text' => $current['summary'],
+                            ];
+                        }
+                        $current = [];
+                    } elseif (strpos($line, ':') !== false) {
+                        list($prop, $val) = explode(':', $line, 2);
+                        $prop_upper = strtoupper($prop);
+                        if (strpos($prop_upper, 'DTSTART') === 0) {
+                            $tz = 'UTC';
+                            if (preg_match('/TZID=([^;]+)/', $prop, $m)) {
+                                $tz = $m[1];
+                            }
+                            $current['start'] = strtotime($val . ' ' . $tz);
+                        } elseif ($prop_upper === 'SUMMARY') {
+                            $current['summary'] = $val;
+                        }
+                    }
+                }
+                wp_send_json_success($events);
+            }
+        }
 
         $tenant = get_option(self::OPT_O365_TENANT, '');
         $client = get_option(self::OPT_O365_CLIENT, '');
