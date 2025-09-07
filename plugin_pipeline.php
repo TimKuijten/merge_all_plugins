@@ -8625,3 +8625,4 @@ JS;
 
 register_activation_hook(__FILE__, ['Kovacic_Pipeline_Visualizer', 'activate']);
 new Kovacic_Pipeline_Visualizer();
+require_once __DIR__ . '/pipeline-bulkemail.php';
