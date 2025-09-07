@@ -2848,9 +2848,10 @@ JS;
         .kvt-cal-add label input,.kvt-cal-add label select{flex:0 0 auto;width:auto}
         .kvt-cal-event.done{text-decoration:line-through;color:#9ca3af}
         .kvt-cal-remove{background:none;border:0;color:#ef4444;margin-left:4px;cursor:pointer}
-        .kvt-cal-accept,.kvt-cal-reject{background:none;border:0;margin-left:4px;cursor:pointer;font-size:12px}
+        .kvt-cal-accept,.kvt-cal-reject,.kvt-cal-detail{background:none;border:0;margin-left:4px;cursor:pointer;font-size:12px}
         .kvt-cal-accept{color:#16a34a}
         .kvt-cal-reject{color:#dc2626}
+        .kvt-cal-detail{color:#2563eb}
         .kvt-mit-btn{background:#0A212E;color:#fff;border:1px solid #0A212E;border-radius:4px;padding:2px 8px;font-weight:600}
         .kvt-mit-btn.loading{opacity:.7}
         .kvt-mit-btn.loading:after{content:'';display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:kvt-spin 1s linear infinite;margin-left:6px;vertical-align:middle}
@@ -5028,10 +5029,11 @@ function kvtInit(){
         if(parts.length) lbl+=' <em>- '+parts.join(' / ')+'</em>';
         const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
         const dragAttr = e.manual?'':' draggable="true"';
+        const detailBtn = (e.strategy||e.template)?'<button class="kvt-cal-detail" data-idx="'+e.idx+'">&#128172;</button>':'';
         if(e.manual){
-          html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+          html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span>'+detailBtn+'<button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
         } else {
-          html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
+          html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span>'+detailBtn+'<button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
         }
       });
       html += '</div>';
@@ -5059,7 +5061,25 @@ function kvtInit(){
     addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; const clientName = clientSel.value?clientSel.options[clientSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, client:clientName, done:false, manual:true}); renderCalendar(); }});
     calendarWrap.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
       evEl.addEventListener('dragstart', e=>{ dragIdx = parseInt(evEl.dataset.idx,10); });
-      evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendar(); } else { openMitDetail(ev); }});
+      evEl.addEventListener('click', ()=>{
+        const idx=parseInt(evEl.dataset.idx,10);
+        const ev=calendarEvents[idx];
+        if(ev.done) return;
+        ev.done=true;
+        if(ev.candidate_id){
+          const params = new URLSearchParams();
+          params.set('action','kvt_complete_task');
+          params.set('_ajax_nonce', KVT_NONCE);
+          params.set('id', ev.candidate_id);
+          params.set('author', KVT_CURRENT_USER || '');
+          fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:params.toString()}).then(r=>r.json()).then(()=>refresh());
+        }
+        renderCalendar();
+        renderCalendarSmall();
+      });
+    });
+    calendarWrap.querySelectorAll('.kvt-cal-detail').forEach(btn=>{
+      btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); openMitDetail(calendarEvents[idx]); });
     });
     calendarWrap.querySelectorAll('.kvt-cal-remove').forEach(btn=>{
       btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); });
@@ -5123,10 +5143,11 @@ function kvtInit(){
           if(parts.length) lbl += ' <em>- '+parts.join(' / ')+'</em>';
           const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
           const dragAttr = e.manual?'':' draggable="true"';
+          const detailBtn = (e.strategy||e.template)?'<button class="kvt-cal-detail" data-idx="'+e.idx+'">&#128172;</button>':'';
           if(e.manual){
-            html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+            html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span>'+detailBtn+'<button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
           } else {
-            html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span><button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
+            html += '<span class="'+evCls+'" data-idx="'+e.idx+'"'+dragAttr+'>'+lbl+'</span>'+detailBtn+'<button class="kvt-cal-accept" data-idx="'+e.idx+'">&#10003;</button><button class="kvt-cal-reject" data-idx="'+e.idx+'">&#10005;</button>';
           }
         });
         html += '</div>';
@@ -5154,7 +5175,25 @@ function kvtInit(){
       addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; const clientName = clientSel.value?clientSel.options[clientSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, client:clientName, done:false, manual:true}); renderCalendarSmall(); }});
       calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
         evEl.addEventListener('dragstart', e=>{ dragIdx = parseInt(evEl.dataset.idx,10); });
-        evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); const ev=calendarEvents[idx]; if(ev.manual){ ev.done=!ev.done; renderCalendarSmall(); } else { openMitDetail(ev); }});
+        evEl.addEventListener('click', ()=>{
+          const idx=parseInt(evEl.dataset.idx,10);
+          const ev=calendarEvents[idx];
+          if(ev.done) return;
+          ev.done=true;
+          if(ev.candidate_id){
+            const params = new URLSearchParams();
+            params.set('action','kvt_complete_task');
+            params.set('_ajax_nonce', KVT_NONCE);
+            params.set('id', ev.candidate_id);
+            params.set('author', KVT_CURRENT_USER || '');
+            fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:params.toString()}).then(r=>r.json()).then(()=>refresh());
+          }
+          renderCalendarSmall();
+          renderCalendar();
+        });
+      });
+      calendarSmall.querySelectorAll('.kvt-cal-detail').forEach(btn=>{
+        btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); openMitDetail(calendarEvents[idx]); });
       });
       calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); }); });
       calendarSmall.querySelectorAll('.kvt-cal-accept').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendarSmall(); }); });
@@ -7372,7 +7411,7 @@ JS;
         $news    = $ctx['news'];
 
         $hist['summary'] = $summary;
-        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. No inventes datos nuevos; utiliza únicamente la información disponible y, si falta algún dato, indícalo. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos y clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente). Al final, incluye hasta 5 sugerencias de agenda en una lista HTML <ul id=\"mit_agenda\">; cada <li> debe tener data-date (DD/MM/YYYY) y data-action, contener un <p class=\"strategy\"> con la estrategia o explicación y un <blockquote class=\"template\"> con una plantilla de correo breve. Evita proponer fechas en sábado o domingo o en el pasado.";
+        $prompt = "Eres MIT, el asistente personal de la empresa, con acceso a todos los datos del negocio y recordando los correos diarios enviados y su contexto. No inventes datos nuevos; utiliza únicamente la información disponible y, si falta algún dato, indícalo. Con los siguientes datos: $summary Proporciona recordatorios de seguimiento con candidatos y clientes, consejos para captar nuevos clientes y candidatos y ejemplos de correos electrónicos breves para contacto o seguimiento. Devuelve la respuesta en HTML usando <h3> para títulos de sección, <ul><li> para listas, <blockquote> para plantillas de correo, <strong> para nombres o roles importantes y separa secciones con <hr>. You can also recommend linkedin posts for engagement, when creating e-mail templates consider these variables, keep in mind these are connected to what is already set to the candidates profile. So if you recommend a new role, do not use {{role}} as it will refer to the candidates actual role. Variables disponibles: {{first_name}}, {{surname}}, {{country}}, {{city}}, {{client}}, {{role}}, {{status}}, {{board}} (enlace al tablero), {{sender}} (remitente). Cuando propongas correos usa el nombre real del candidato (solo el primer nombre) en lugar de variables como {{first_name}} y comienza con saludos neutros como 'Hola' o 'Buenas', evitando 'Estimado'. Al final, incluye hasta 5 sugerencias de agenda en una lista HTML <ul id=\"mit_agenda\">; cada <li> debe tener data-date (DD/MM/YYYY) y data-action, contener un <p class=\"strategy\"> con la estrategia o explicación y un <blockquote class=\"template\"> con una plantilla de correo breve. Evita proponer fechas en sábado o domingo o en el pasado.";
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
