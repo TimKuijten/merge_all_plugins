@@ -7413,18 +7413,8 @@ JS;
         $data = json_decode(wp_remote_retrieve_body($resp), true);
         $text = trim($data['candidates'][0]['content']['parts'][0]['text'] ?? '');
         if ($mode === 'ppt' && $text) {
-            $file = $this->mit_create_ppt($text);
-            if (is_wp_error($file)) {
-                return $file->get_error_message();
-            }
-            if ($file) {
-                $link = sprintf(
-                    '<a href="%s" download>%s</a>',
-                    esc_url($file),
-                    esc_html__('Descargar presentación', 'kovacic')
-                );
-                return $text . "\n\n" . $link;
-            }
+            $slides = array_map('trim', preg_split('/\n{2,}/', $text));
+            return wp_json_encode(['slides' => $slides]);
         }
         return $text;
     }
@@ -7470,35 +7460,6 @@ JS;
         } catch (\Throwable $e) {
             error_log('mit_create_excel: ' . $e->getMessage());
             return new \WP_Error('excel_write_failed', __('Error al guardar el Excel: ', 'kovacic') . $e->getMessage());
-        }
-
-        return trailingslashit($upload['url']) . $filename;
-    }
-
-    private function mit_create_ppt($content) {
-        if (!class_exists('\\PhpOffice\\PhpPresentation\\PhpPresentation')) {
-            error_log('mit_create_ppt: PhpPresentation not available');
-            return new \WP_Error('missing_phppresentation', __('La librería PhpPresentation no está instalada.', 'kovacic'));
-        }
-
-        $ppt   = new \PhpOffice\PhpPresentation\PhpPresentation();
-        $slide = $ppt->getActiveSlide();
-        $shape = $slide->createRichTextShape();
-        $shape->setHeight(300);
-        $shape->setWidth(600);
-        $shape->setOffsetX(50);
-        $shape->setOffsetY(50);
-        $shape->createTextRun($content);
-
-        $upload   = wp_upload_dir();
-        $filename = wp_unique_filename($upload['path'], 'mit_output.pptx');
-        $filepath = trailingslashit($upload['path']) . $filename;
-        $writer   = \PhpOffice\PhpPresentation\IOFactory::createWriter($ppt, 'PowerPoint2007');
-        try {
-            $writer->save($filepath);
-        } catch (\Throwable $e) {
-            error_log('mit_create_ppt: ' . $e->getMessage());
-            return new \WP_Error('ppt_write_failed', __('Error al guardar el PowerPoint: ', 'kovacic') . $e->getMessage());
         }
 
         return trailingslashit($upload['url']) . $filename;
@@ -7717,7 +7678,8 @@ JS;
         if ($reply === '') {
             $reply = $this->mit_gemini_chat($messages);
         }
-        $file_url = '';
+        $file_url   = '';
+        $ppt_slides = [];
         if ($reply) {
             $reply = $this->mit_strip_fences($reply);
             // Detect request for Excel generation based on user message
@@ -7737,13 +7699,11 @@ JS;
                 }
             }
             if (stripos($msg, 'powerpoint') !== false || stripos($msg, 'ppt') !== false) {
-                $autoload = __DIR__ . '/vendor/autoload.php';
-                if (file_exists($autoload)) {
-                    require_once $autoload;
-                }
                 $ppt_result = $this->mit_use_gemini($msg, 'ppt');
-                if ($ppt_result) {
-                    $reply .= "\n\n" . $ppt_result;
+                $decoded    = json_decode($ppt_result, true);
+                if (!empty($decoded['slides'])) {
+                    $ppt_slides = $decoded['slides'];
+                    $reply .= "\n\n" . __('Se generó una presentación de PowerPoint.', 'kovacic');
                 }
             }
 
@@ -7770,6 +7730,7 @@ JS;
                 'reply'   => wp_kses_post($reply),
                 'history' => $hist['messages'],
                 'file'    => $file_url,
+                'ppt'     => $ppt_slides,
             ]);
         }
 
