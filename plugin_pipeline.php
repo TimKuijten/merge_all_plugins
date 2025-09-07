@@ -2103,7 +2103,7 @@ JS;
                   </div>
                   <div id="kvt_email_tab_sent" class="kvt-tab-panel">
                     <table class="kvt-table">
-                      <thead><tr><th>Fecha</th><th>Asunto</th><th>Destinatarios</th></tr></thead>
+                      <thead><tr><th>Fecha</th><th>Asunto</th><th>Destinatarios</th><th>Mensaje</th></tr></thead>
                       <tbody id="kvt_email_sent_tbody"></tbody>
                     </table>
                   </div>
@@ -3257,8 +3257,10 @@ function kvtInit(){
     sentTbody.innerHTML='';
     KVT_SENT_EMAILS.forEach(l=>{
       const tr=document.createElement('tr');
-      const count=l.recipients?l.recipients.length:0;
-      tr.innerHTML=`<td>${l.time||''}</td><td>${l.subject||''}</td><td>${count}</td>`;
+      const recips = Array.isArray(l.recipients) ? l.recipients.join(', ') : '';
+      const txt = l.body ? String(l.body).replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').trim() : '';
+      const snippet = txt.length > 120 ? txt.slice(0,120)+'…' : txt;
+      tr.innerHTML=`<td>${l.time||''}</td><td>${l.subject||''}</td><td>${recips}</td><td>${snippet}</td>`;
       sentTbody.appendChild(tr);
     });
   }
@@ -8973,10 +8975,15 @@ JS;
                     $result['errors'][] = $email;
                 }
 
+                $recipient_meta = compact('email','first_name','surname','country','city','role','status','client','board');
                 $log[] = [
                     'time'       => current_time('mysql'),
+                    'from_name'  => $from_name,
+                    'from_email' => $from_email,
                     'subject'    => $subject,
-                    'recipients' => [$email]
+                    'body'       => $body,
+                    'recipients' => [$email],
+                    'meta'       => $recipient_meta
                 ];
                 if (count($log) > 100) $log = array_slice($log, -100);
             }
@@ -9004,8 +9011,12 @@ JS;
                 if (wp_mail($from_email, $subject, $body, $headers)) {
                     $log[] = [
                         'time'       => current_time('mysql'),
+                        'from_name'  => $from_name,
+                        'from_email' => $from_email,
                         'subject'    => $subject,
-                        'recipients' => [$from_email]
+                        'body'       => $body,
+                        'recipients' => [$from_email],
+                        'meta'       => $data
                     ];
                     if (count($log) > 100) $log = array_slice($log, -100);
                 }
