@@ -7418,7 +7418,12 @@ JS;
                 return $file->get_error_message();
             }
             if ($file) {
-                return $text . "\n\n" . esc_url($file);
+                $link = sprintf(
+                    '<a href="%s" download>%s</a>',
+                    esc_url($file),
+                    esc_html__('Descargar presentación', 'kovacic')
+                );
+                return $text . "\n\n" . $link;
             }
         }
         return $text;
