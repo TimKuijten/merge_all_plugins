@@ -34,6 +34,8 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_MIT_DAY = 'kvt_mit_day';
     const OPT_O365_TENANT = 'kvt_o365_tenant';
     const OPT_O365_CLIENT = 'kvt_o365_client';
+    const OPT_O365_SECRET = 'kvt_o365_secret';
+    const OPT_O365_REDIRECT = 'kvt_o365_redirect';
     const CPT_EMAIL_TEMPLATE = 'kvt_email_tpl';
     const MIT_HISTORY_LIMIT = 20;
     const MIT_TIMEOUT      = 60;
@@ -68,6 +70,7 @@ class Kovacic_Pipeline_Visualizer {
         // Frontend UI
         add_shortcode('kovacic_pipeline',        [$this, 'shortcode']);
         add_shortcode('kvt_pipeline',            [$this, 'shortcode']);
+        add_shortcode('kvt_calendar',            [$this, 'calendar_shortcode']);
         add_action('wp_enqueue_scripts',         [$this, 'enqueue_assets']);
 
         // AJAX
@@ -150,6 +153,11 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
         add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_nopriv_kvt_get_outlook_events', [$this, 'ajax_get_outlook_events']);
+
+        add_action('admin_post_kvt_ms_oauth_start',    [$this, 'ms_oauth_start']);
+        add_action('admin_post_kvt_ms_oauth_callback', [$this, 'ms_oauth_callback']);
+        add_action('admin_post_kvt_ms_create_event',   [$this, 'ms_create_event']);
+        add_action('admin_notices',                    [$this, 'ms_settings_notice']);
 
         add_action('kvt_refresh_worker',               [$this, 'cron_refresh_worker']);
 
@@ -252,6 +260,8 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_FROM_EMAIL);
         register_setting(self::OPT_GROUP, self::OPT_O365_TENANT);
         register_setting(self::OPT_GROUP, self::OPT_O365_CLIENT);
+        register_setting(self::OPT_GROUP, self::OPT_O365_SECRET);
+        register_setting(self::OPT_GROUP, self::OPT_O365_REDIRECT);
         register_setting(self::OPT_GROUP, self::OPT_EMAIL_LOG, [
             'type'    => 'array',
             'default' => [],
@@ -663,6 +673,8 @@ JS;
         $smtp_sig  = get_option(self::OPT_SMTP_SIGNATURE, "");
         $o365_tenant = get_option(self::OPT_O365_TENANT, "");
         $o365_client = get_option(self::OPT_O365_CLIENT, "");
+        $o365_secret = get_option(self::OPT_O365_SECRET, "");
+        $o365_redirect = get_option(self::OPT_O365_REDIRECT, "");
         $from_name_def = get_option(self::OPT_FROM_NAME, "");
         $from_email_def = get_option(self::OPT_FROM_EMAIL, "");
         $mit_time = get_option(self::OPT_MIT_TIME, '09:00');
@@ -756,6 +768,18 @@ JS;
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_O365_CLIENT; ?>">Outlook Client ID</label></th>
                         <td><input type="text" name="<?php echo self::OPT_O365_CLIENT; ?>" id="<?php echo self::OPT_O365_CLIENT; ?>" class="regular-text" value="<?php echo esc_attr($o365_client); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_O365_SECRET; ?>">Outlook Client Secret</label></th>
+                        <td><input type="password" name="<?php echo self::OPT_O365_SECRET; ?>" id="<?php echo self::OPT_O365_SECRET; ?>" class="regular-text" value="<?php echo esc_attr($o365_secret); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_O365_REDIRECT; ?>">Redirect URI</label></th>
+                        <td><input type="text" name="<?php echo self::OPT_O365_REDIRECT; ?>" id="<?php echo self::OPT_O365_REDIRECT; ?>" class="regular-text" value="<?php echo esc_attr($o365_redirect); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"></th>
+                        <td><?php if ($o365_tenant && $o365_client && $o365_secret && $o365_redirect): ?><a href="<?php echo esc_url($this->ms_connect_url()); ?>" class="button">Connect Outlook</a><?php endif; ?></td>
                     </tr>
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_FROM_NAME; ?>">Nombre remitente por defecto</label></th>
@@ -1767,11 +1791,20 @@ JS;
         ]);
         $recent_candidates = $recent_q->found_posts;
 
+        $o365_tenant   = get_option(self::OPT_O365_TENANT, '');
+        $o365_client   = get_option(self::OPT_O365_CLIENT, '');
+        $o365_secret   = get_option(self::OPT_O365_SECRET, '');
+        $o365_redirect = get_option(self::OPT_O365_REDIRECT, '');
+        $has_outlook   = $o365_tenant && $o365_client && $o365_secret && $o365_redirect;
+
         ob_start(); ?>
         <div class="kvt-wrapper">
             <nav class="kvt-nav" aria-label="Navegación principal">
                 <a href="#" class="active" data-view="detalles"><span class="dashicons dashicons-dashboard"></span> Panel</a>
                 <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendario</a>
+                <?php if ($has_outlook): ?>
+                <a href="#" data-view="calendar2"><span class="dashicons dashicons-calendar-alt"></span> Calendar 2</a>
+                <?php endif; ?>
                 <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidatos</a>
                 <a href="#" data-view="base" id="kvt_open_clients"><span class="dashicons dashicons-businessman"></span> Clientes</a>
                 <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
@@ -2085,6 +2118,34 @@ JS;
                   </div>
                 </div>
                 <div id="kvt_calendar" class="kvt-calendar" style="display:none;"></div>
+                <?php if ($has_outlook): ?>
+                <div id="kvt_calendar2" class="kvt-calendar" style="display:none;">
+                    <?php $events = $this->ms_fetch_events(get_current_user_id()); ?>
+                    <?php if ($events === false): ?>
+                        <p><a class="kvt-btn" href="<?php echo esc_url($this->ms_connect_url()); ?>">Connect Outlook</a></p>
+                    <?php else: ?>
+                        <?php $notice = isset($_GET['kvt_ms_event']) ? sanitize_text_field($_GET['kvt_ms_event']) : ''; ?>
+                        <?php if ($notice === 'ok'): ?><p><?php esc_html_e('Evento creado.', 'kovacic'); ?></p><?php elseif ($notice === 'err'): ?><p><?php esc_html_e('No se pudo crear el evento.', 'kovacic'); ?></p><?php endif; ?>
+                        <ul>
+                            <?php foreach ($events as $ev): ?>
+                                <li><a href="<?php echo esc_url($ev['link']); ?>" target="_blank"><?php echo esc_html($ev['subject']); ?></a> <small><?php echo esc_html($ev['start']); ?> - <?php echo esc_html($ev['end']); ?> (<?php echo esc_html($ev['attendees']); ?>)</small></li>
+                            <?php endforeach; ?>
+                        </ul>
+                        <?php $prefill = (isset($_GET['cand']) && isset($_GET['role'])) ? 'Interview: '.sanitize_text_field($_GET['cand']).' – '.sanitize_text_field($_GET['role']) : ''; ?>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="kvt-outlook-form">
+                            <?php wp_nonce_field('kvt_ms_create_event'); ?>
+                            <input type="hidden" name="action" value="kvt_ms_create_event">
+                            <p><label><?php esc_html_e('Asunto', 'kovacic'); ?> <input type="text" name="subject" class="kvt-input" value="<?php echo esc_attr($prefill); ?>"></label></p>
+                            <p><label><?php esc_html_e('Inicio', 'kovacic'); ?> <input type="datetime-local" name="start" class="kvt-input"></label></p>
+                            <p><label><?php esc_html_e('Fin', 'kovacic'); ?> <input type="datetime-local" name="end" class="kvt-input"></label></p>
+                            <p><label><?php esc_html_e('Lugar/Teams', 'kovacic'); ?> <input type="text" name="location" class="kvt-input"></label></p>
+                            <p><label><?php esc_html_e('Notas', 'kovacic'); ?> <textarea name="notes" class="kvt-textarea" rows="2"></textarea></label></p>
+                            <p><label><?php esc_html_e('Asistente', 'kovacic'); ?> <input type="email" name="attendee" class="kvt-input"></label></p>
+                            <p><button type="submit" class="kvt-btn"><?php esc_html_e('Crear evento', 'kovacic'); ?></button></p>
+                        </form>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
                 <div id="kvt_mit_view" class="kvt-mit" style="display:none;">
                     <h4>Asistente MIT</h4>
                     <p id="kvt_mit_content"></p>
@@ -2776,6 +2837,7 @@ JS;
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($has_share_link?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_STEPS='.wp_json_encode($sel_steps).';', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_HAS_OUTLOOK='.($has_outlook?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOW_COMMENTS='.(!empty($link_cfg['comments'])?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_SLUG="'.esc_js($slug).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_IS_ADMIN='.((is_user_logged_in() && current_user_can('edit_posts'))?'true':'false').';', 'before');
@@ -2949,6 +3011,7 @@ function kvtInit(){
 
   const filtersBar = el('#kvt_filters_bar');
   const calendarWrap = el('#kvt_calendar');
+  const calendarOutlookWrap = el('#kvt_calendar2');
   const mitWrap = el('#kvt_mit_view');
   const keywordBoard = el('#kvt_keyword_view');
   const aiBoard = el('#kvt_ai_view');
@@ -3027,6 +3090,7 @@ function kvtInit(){
   let totalPages = 1;
   let allRows = [];
   let calendarEvents = [];
+  let calendarOutlookEvents = [];
   let calMonth = (new Date()).getMonth();
   let calYear  = (new Date()).getFullYear();
   let shareMode = 'client';
@@ -3351,6 +3415,7 @@ function kvtInit(){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
     if(activeWrap) activeWrap.style.display='none';
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
+    if(calendarOutlookWrap) calendarOutlookWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
     if(mitChatWrap) mitChatWrap.style.display='none';
     if(keywordBoard) keywordBoard.style.display='none';
@@ -3379,6 +3444,14 @@ function kvtInit(){
       if(boardWrap) boardWrap.style.display='none';
       if(toggleKanban) toggleKanban.style.display='none';
       renderCalendar();
+    } else if(view==='calendar2'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(calendarOutlookWrap){ calendarOutlookWrap.style.display='block'; loadOutlookCalendar(); }
     } else if(view==='base'){
       filtersBar.style.display='none';
       tableWrap.style.display='block';
@@ -4192,6 +4265,39 @@ function kvtInit(){
     });
   }
 
+  function loadOutlookCalendar(){
+    fetchOutlookEvents().then(j=>{
+      calendarOutlookEvents = (j.success && Array.isArray(j.data)) ? j.data : [];
+      renderCalendar2();
+    });
+  }
+
+  function renderCalendar2(){
+    if(!calendarOutlookWrap) return;
+    const first = new Date(calYear, calMonth, 1);
+    const last = new Date(calYear, calMonth+1, 0);
+    const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    const monthName = first.toLocaleString('default',{month:'long'});
+    let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal2_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><button type="button" id="kvt_cal2_next">&gt;</button></div>';
+    html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
+    for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
+    for(let d=1; d<=last.getDate(); d++){
+      const ds = (d<10?'0'+d:d)+'/'+(calMonth+1<10?'0'+(calMonth+1):(calMonth+1))+'/'+calYear;
+      const ev = calendarOutlookEvents.filter(e=>e.date===ds);
+      let cell = '<div class="kvt-cal-cell">';
+      cell += '<div class="kvt-cal-day">'+d+'</div>';
+      ev.forEach(e=>{ cell += '<div class="kvt-cal-event">'+esc(e.time?e.time+' ':'')+esc(e.text)+'</div>'; });
+      cell += '</div>';
+      html += cell;
+    }
+    html += '</div>';
+    calendarOutlookWrap.innerHTML = html;
+    const prevBtn = el('#kvt_cal2_prev', calendarOutlookWrap);
+    const nextBtn = el('#kvt_cal2_next', calendarOutlookWrap);
+    prevBtn && prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendar2(); });
+    nextBtn && nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendar2(); });
+  }
+
   function fetchProcessesList(){
     const params = new URLSearchParams();
     params.set('action','kvt_list_processes');
@@ -4458,7 +4564,7 @@ function kvtInit(){
       activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+l.time+' - '+l.text+'</li>').join('') : '<li>No hay actividad</li>';
     }
     renderCalendarSmall();
-    loadOutlookEvents();
+    if (KVT_HAS_OUTLOOK) loadOutlookEvents();
   }
 
   function renderActivityDashboard(data){
@@ -4487,7 +4593,7 @@ function kvtInit(){
     if(activeList) activeList.innerHTML = active.join('') || '<li>No hay procesos activos</li>';
     if(activityLog) activityLog.innerHTML = logs.length ? logs.map(l=>'<li>'+esc(l.time)+' - '+esc(l.text)+'</li>').join('') : '<li>No hay actividad</li>';
     renderCalendarSmall();
-    loadOutlookEvents();
+    if (KVT_HAS_OUTLOOK) loadOutlookEvents();
   }
 
   function renderCalendar(){
@@ -6241,55 +6347,261 @@ JS;
 
     public function ajax_get_outlook_events() {
         check_ajax_referer('kvt_nonce');
-
-        $tenant = get_option(self::OPT_O365_TENANT, '');
-        $client = get_option(self::OPT_O365_CLIENT, '');
-        $user   = get_option(self::OPT_SMTP_USER, '');
-        $pass   = get_option(self::OPT_SMTP_PASS, '');
-        if (!$tenant || !$client || !$user || !$pass) {
+        if (!current_user_can('read')) {
+            wp_send_json_error(['msg' => 'forbidden'], 403);
+        }
+        $events = $this->ms_fetch_events(get_current_user_id());
+        if ($events === false) {
             wp_send_json_success([]);
         }
+        wp_send_json_success($events);
+    }
 
-        $token_resp = wp_remote_post("https://login.microsoftonline.com/{$tenant}/oauth2/v2.0/token", [
-            'headers' => ['Content-Type' => 'application/x-www-form-urlencoded'],
-            'body'    => [
+    private function ms_connect_url() {
+        return wp_nonce_url(admin_url('admin-post.php?action=kvt_ms_oauth_start'), 'kvt_ms_oauth');
+    }
+
+    /**
+     * Start the Microsoft OAuth Authorization Code flow.
+     * Flow summary:
+     * 1. User clicks the connect link generated by ms_connect_url().
+     * 2. ms_oauth_start() redirects to Microsoft's authorize endpoint.
+     * 3. After consent Microsoft calls ms_oauth_callback() with a code.
+     * 4. ms_oauth_callback() exchanges the code for access/refresh tokens and
+     *    stores them in user meta so requests can be authenticated.
+     */
+    public function ms_oauth_start() {
+        if (!current_user_can('read') || !isset($_GET['_wpnonce']) || !wp_verify_nonce($_GET['_wpnonce'], 'kvt_ms_oauth')) {
+            wp_die('Unauthorized');
+        }
+        $tenant   = get_option(self::OPT_O365_TENANT, '');
+        $client   = get_option(self::OPT_O365_CLIENT, '');
+        $secret   = get_option(self::OPT_O365_SECRET, '');
+        $redirect = get_option(self::OPT_O365_REDIRECT, '');
+        if (!$tenant || !$client || !$secret || !$redirect) {
+            wp_die('Missing settings');
+        }
+        $state = wp_create_nonce('kvt_ms_state');
+        $auth = 'https://login.microsoftonline.com/' . rawurlencode($tenant) . '/oauth2/v2.0/authorize';
+        $auth = add_query_arg([
+            'client_id' => $client,
+            'response_type' => 'code',
+            'redirect_uri' => $redirect,
+            'response_mode' => 'query',
+            'scope' => 'offline_access Calendars.Read Calendars.ReadWrite',
+            'state' => $state,
+        ], $auth);
+        wp_redirect($auth);
+        exit;
+    }
+
+    public function ms_oauth_callback() {
+        $state = isset($_GET['state']) ? sanitize_text_field($_GET['state']) : '';
+        if (!$state || !wp_verify_nonce($state, 'kvt_ms_state')) {
+            wp_die('Invalid state');
+        }
+        $code = isset($_GET['code']) ? sanitize_text_field($_GET['code']) : '';
+        $tenant   = get_option(self::OPT_O365_TENANT, '');
+        $client   = get_option(self::OPT_O365_CLIENT, '');
+        $secret   = get_option(self::OPT_O365_SECRET, '');
+        $redirect = get_option(self::OPT_O365_REDIRECT, '');
+        if (!$code || !$tenant || !$client || !$secret || !$redirect) {
+            wp_die('Missing data');
+        }
+        // Exchange authorization code for tokens. Scope is repeated to ensure
+        // the offline_access refresh token is issued for calendar permissions.
+        $resp = wp_remote_post("https://login.microsoftonline.com/{$tenant}/oauth2/v2.0/token", [
+            'body' => [
                 'client_id' => $client,
-                'scope'     => 'https://graph.microsoft.com/.default',
-                'grant_type'=> 'password',
-                'username'  => $user,
-                'password'  => $pass,
+                'client_secret' => $secret,
+                'redirect_uri' => $redirect,
+                'code' => $code,
+                'grant_type' => 'authorization_code',
+                'scope' => 'offline_access Calendars.Read Calendars.ReadWrite',
             ],
         ]);
-        if (is_wp_error($token_resp)) {
-            wp_send_json_error(['msg' => 'token'], 500);
+        if (is_wp_error($resp)) {
+            error_log('[KVT-Graph] token error');
+            wp_die('Token error');
         }
-        $token_data = json_decode(wp_remote_retrieve_body($token_resp), true);
-        if (empty($token_data['access_token'])) {
-            wp_send_json_error(['msg' => 'token'], 500);
+        $data = json_decode(wp_remote_retrieve_body($resp), true);
+        if (empty($data['access_token'])) {
+            error_log('[KVT-Graph] token empty');
+            wp_die('Token missing');
         }
-        $access = $token_data['access_token'];
+        $token = [
+            'access_token'  => sanitize_text_field($data['access_token']),
+            'refresh_token' => sanitize_text_field($data['refresh_token'] ?? ''),
+            'expires_at'    => time() + intval($data['expires_in'] ?? 0),
+        ];
+        update_user_meta(get_current_user_id(), 'kvt_ms_token', $token);
+        wp_redirect(admin_url('admin.php?page=kvt-tracker&kvt_ms=1'));
+        exit;
+    }
 
-        $events_resp = wp_remote_get('https://graph.microsoft.com/v1.0/me/events?$select=subject,start,end&$top=50', [
-            'headers' => ['Authorization' => 'Bearer ' . $access],
-        ]);
-        if (is_wp_error($events_resp)) {
-            wp_send_json_error(['msg' => 'events'], 500);
+    private function ms_get_access_token($user_id) {
+        $token = get_user_meta($user_id, 'kvt_ms_token', true);
+        if (empty($token['access_token'])) return false;
+        if (time() > intval($token['expires_at']) - 60 && !empty($token['refresh_token'])) {
+            $token = $this->ms_refresh_token($user_id, $token['refresh_token']);
         }
-        $body = json_decode(wp_remote_retrieve_body($events_resp), true);
+        return $token ? $token['access_token'] : false;
+    }
+
+    private function ms_refresh_token($user_id, $refresh) {
+        $tenant   = get_option(self::OPT_O365_TENANT, '');
+        $client   = get_option(self::OPT_O365_CLIENT, '');
+        $secret   = get_option(self::OPT_O365_SECRET, '');
+        $redirect = get_option(self::OPT_O365_REDIRECT, '');
+        // Refresh an expired access token using the stored refresh token.
+        $resp = wp_remote_post("https://login.microsoftonline.com/{$tenant}/oauth2/v2.0/token", [
+            'body' => [
+                'client_id' => $client,
+                'client_secret' => $secret,
+                'redirect_uri' => $redirect,
+                'refresh_token' => $refresh,
+                'grant_type' => 'refresh_token',
+                'scope' => 'offline_access Calendars.Read Calendars.ReadWrite',
+            ],
+        ]);
+        if (is_wp_error($resp)) {
+            error_log('[KVT-Graph] refresh error');
+            return false;
+        }
+        $data = json_decode(wp_remote_retrieve_body($resp), true);
+        if (empty($data['access_token'])) {
+            error_log('[KVT-Graph] refresh empty');
+            return false;
+        }
+        $token = [
+            'access_token'  => sanitize_text_field($data['access_token']),
+            'refresh_token' => sanitize_text_field($data['refresh_token'] ?? $refresh),
+            'expires_at'    => time() + intval($data['expires_in'] ?? 0),
+        ];
+        update_user_meta($user_id, 'kvt_ms_token', $token);
+        return $token;
+    }
+
+    private function ms_fetch_events($user_id) {
+        $access = $this->ms_get_access_token($user_id);
+        if (!$access) return false;
+        $token = get_user_meta($user_id, 'kvt_ms_token', true);
+        $resp = wp_remote_get('https://graph.microsoft.com/v1.0/me/events?$top=10&$orderby=start/dateTime', [
+            'headers' => ['Authorization' => 'Bearer '.$access],
+        ]);
+        $code = wp_remote_retrieve_response_code($resp);
+        if ($code == 401 && !empty($token['refresh_token'])) {
+            $token = $this->ms_refresh_token($user_id, $token['refresh_token']);
+            if ($token && !empty($token['access_token'])) {
+                $access = $token['access_token'];
+                $resp = wp_remote_get('https://graph.microsoft.com/v1.0/me/events?$top=10&$orderby=start/dateTime', [
+                    'headers' => ['Authorization' => 'Bearer '.$access],
+                ]);
+                $code = wp_remote_retrieve_response_code($resp);
+            }
+        }
+        if (is_wp_error($resp) || $code >= 300) {
+            error_log('[KVT-Graph] events error');
+            return [];
+        }
+        $body = json_decode(wp_remote_retrieve_body($resp), true);
         $events = [];
         if (!empty($body['value'])) {
             foreach ($body['value'] as $ev) {
                 $start = isset($ev['start']['dateTime']) ? strtotime($ev['start']['dateTime']) : 0;
-                if ($start) {
-                    $events[] = [
-                        'date' => date('d/m/Y', $start),
-                        'time' => date('H:i', $start),
-                        'text' => $ev['subject'] ?? '',
-                    ];
-                }
+                $end   = isset($ev['end']['dateTime']) ? strtotime($ev['end']['dateTime']) : 0;
+                $events[] = [
+                    'subject'   => $ev['subject'] ?? '',
+                    'start'     => $start ? date_i18n('d/m H:i', $start) : '',
+                    'end'       => $end ? date_i18n('d/m H:i', $end) : '',
+                    'location'  => $ev['location']['displayName'] ?? '',
+                    'attendees' => isset($ev['attendees']) ? count($ev['attendees']) : 0,
+                    'link'      => $ev['webLink'] ?? '#',
+                ];
             }
         }
-        wp_send_json_success($events);
+        return $events;
+    }
+
+    public function ms_create_event() {
+        if (!current_user_can('read') || !check_admin_referer('kvt_ms_create_event')) {
+            wp_die('Unauthorized');
+        }
+        $user_id = get_current_user_id();
+        $access = $this->ms_get_access_token($user_id);
+        if (!$access) {
+            wp_redirect(add_query_arg('kvt_ms_event','err', wp_get_referer()));
+            exit;
+        }
+        $token = get_user_meta($user_id, 'kvt_ms_token', true);
+        $payload = [
+            'subject' => sanitize_text_field($_POST['subject'] ?? ''),
+            'start' => ['dateTime' => sanitize_text_field($_POST['start'] ?? ''), 'timeZone' => wp_timezone_string()],
+            'end'   => ['dateTime' => sanitize_text_field($_POST['end'] ?? ''), 'timeZone' => wp_timezone_string()],
+            'location' => ['displayName' => sanitize_text_field($_POST['location'] ?? '')],
+            'body' => ['contentType' => 'text', 'content' => sanitize_textarea_field($_POST['notes'] ?? '')],
+        ];
+        $att = sanitize_email($_POST['attendee'] ?? '');
+        if ($att) {
+            $payload['attendees'] = [[
+                'emailAddress' => ['address' => $att],
+                'type' => 'required',
+            ]];
+        }
+        $resp = wp_remote_post('https://graph.microsoft.com/v1.0/me/events', [
+            'headers' => [
+                'Authorization' => 'Bearer '.$access,
+                'Content-Type' => 'application/json',
+            ],
+            'body' => wp_json_encode($payload),
+        ]);
+        $code = wp_remote_retrieve_response_code($resp);
+        if ($code == 401 && !empty($token['refresh_token'])) {
+            $token = $this->ms_refresh_token($user_id, $token['refresh_token']);
+            if ($token && !empty($token['access_token'])) {
+                $access = $token['access_token'];
+                $resp = wp_remote_post('https://graph.microsoft.com/v1.0/me/events', [
+                    'headers' => [
+                        'Authorization' => 'Bearer '.$access,
+                        'Content-Type' => 'application/json',
+                    ],
+                    'body' => wp_json_encode($payload),
+                ]);
+                $code = wp_remote_retrieve_response_code($resp);
+            }
+        }
+        if (is_wp_error($resp) || $code >= 300) {
+            error_log('[KVT-Graph] create error');
+            wp_redirect(add_query_arg('kvt_ms_event','err', wp_get_referer()));
+            exit;
+        }
+        wp_redirect(add_query_arg('kvt_ms_event','ok', wp_get_referer()));
+        exit;
+    }
+
+    public function ms_settings_notice() {
+        if (!current_user_can('manage_options')) return;
+        $tenant   = get_option(self::OPT_O365_TENANT, '');
+        $client   = get_option(self::OPT_O365_CLIENT, '');
+        $secret   = get_option(self::OPT_O365_SECRET, '');
+        $redirect = get_option(self::OPT_O365_REDIRECT, '');
+        if (!$tenant || !$client || !$secret || !$redirect) {
+            echo '<div class="notice notice-warning is-dismissible"><p>'.esc_html__('Complete Microsoft 365 settings to enable Outlook integration.', 'kovacic').'</p></div>';
+        }
+    }
+
+    public function calendar_shortcode($atts = []) {
+        if (!is_user_logged_in()) return '';
+        $events = $this->ms_fetch_events(get_current_user_id());
+        if ($events === false) {
+            return '<p><a href="'.esc_url($this->ms_connect_url()).'">Connect Outlook</a></p>';
+        }
+        $out = '<ul class="kvt-event-list">';
+        foreach ($events as $ev) {
+            $out .= '<li>'.esc_html($ev['subject']).' ('.esc_html($ev['start']).')</li>';
+        }
+        $out .= '</ul>';
+        return $out;
     }
 
     public function ajax_dismiss_comment() {
