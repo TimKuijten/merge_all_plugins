@@ -3222,7 +3222,15 @@ function kvtInit(){
 
   if(window.jQuery){
     [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
-      if(sel) jQuery(sel).select2({width:'style', dropdownAutoWidth:true});
+      if(sel) {
+        jQuery(sel)
+          .select2({width:'style', dropdownAutoWidth:true})
+          .on('select2:select select2:unselect', () => loadEmailCandidates(1));
+      }
+    });
+  } else {
+    [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
+      sel && sel.addEventListener('change', ()=>loadEmailCandidates(1));
     });
   }
 
@@ -3303,9 +3311,6 @@ function kvtInit(){
 
   emailClear && emailClear.addEventListener('click', ()=>{ emailSelected.clear(); renderEmailTable(); });
 
-  [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
-    sel && sel.addEventListener('change', ()=>loadEmailCandidates(1));
-  });
   emailSearch && emailSearch.addEventListener('input', ()=>loadEmailCandidates(1));
 
   emailPrev && emailPrev.addEventListener('click', ()=>{ if(emailPageNum>1) loadEmailCandidates(emailPageNum-1); });
