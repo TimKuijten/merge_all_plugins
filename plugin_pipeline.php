@@ -77,6 +77,8 @@ class Kovacic_Pipeline_Visualizer {
         // AJAX
         add_action('wp_ajax_kvt_get_candidates',       [$this, 'ajax_get_candidates']);
         add_action('wp_ajax_nopriv_kvt_get_candidates',[$this, 'ajax_get_candidates']);
+        add_action('wp_ajax_kvt_get_clients',          [$this, 'ajax_get_clients']);
+        add_action('wp_ajax_nopriv_kvt_get_clients',   [$this, 'ajax_get_clients']);
         add_action('wp_ajax_kvt_update_status',        [$this, 'ajax_update_status']);
         add_action('wp_ajax_nopriv_kvt_update_status', [$this, 'ajax_update_status']);
         add_action('wp_ajax_kvt_add_task',             [$this, 'ajax_add_task']);
@@ -2183,6 +2185,13 @@ JS;
                     <button type="button" class="kvt-tab" data-target="templates">Plantillas</button>
                   </div>
                   <div id="kvt_email_tab_compose" class="kvt-tab-panel active">
+                    <div class="kvt-filter-field" style="margin-bottom:10px;">
+                      <label for="kvt_email_target">Enviar a</label>
+                      <select id="kvt_email_target">
+                        <option value="candidates">Candidatos</option>
+                        <option value="clients">Clientes</option>
+                      </select>
+                    </div>
                     <div id="kvt_email_filters" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
                       <div class="kvt-filter-field">
                         <label for="kvt_email_client">Cliente</label>
@@ -2236,7 +2245,7 @@ JS;
                     </div>
                     <div class="kvt-table-wrap">
                       <table class="kvt-table">
-                        <thead>
+                        <thead id="kvt_email_head">
                           <tr>
                             <th></th><th>Nombre</th><th>Apellido</th><th>Email</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th>
                           </tr>
@@ -2830,11 +2839,13 @@ JS;
         .kvt-cal-event.suggested{font-style:italic;color:#6b7280}
         .kvt-cal-cell.has-event{background:#f1f5f9}
         .kvt-cal-cell.today{border:2px solid #000;font-weight:700}
-        .kvt-cal-cell.today:after{content:'\2192';position:absolute;top:2px;right:4px;color:#000;font-weight:700}
         .kvt-cal-controls{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
         .kvt-cal-nav{display:flex;gap:4px}
-        .kvt-cal-add{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
-        .kvt-cal-add label{display:flex;flex-direction:column;font-size:12px}
+        .kvt-cal-add{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:flex-end}
+        .kvt-cal-add input,.kvt-cal-add select{width:auto;flex:0 0 auto}
+        #kvt_cal_date,#kvt_cal_time,#kvt_cal_date_s,#kvt_cal_time_s{width:120px}
+        .kvt-cal-add label{display:flex;align-items:center;gap:4px;font-size:12px}
+        .kvt-cal-add label input,.kvt-cal-add label select{flex:0 0 auto;width:auto}
         .kvt-cal-event.done{text-decoration:line-through;color:#9ca3af}
         .kvt-cal-remove{background:none;border:0;color:#ef4444;margin-left:4px;cursor:pointer}
         .kvt-cal-accept,.kvt-cal-reject{background:none;border:0;margin-left:4px;cursor:pointer;font-size:12px}
@@ -2896,6 +2907,14 @@ JS;
         .kvt-modal-content{background:#fff;max-width:980px;width:95%;border-radius:12px;box-shadow:0 15px 40px rgba(0,0,0,.2)}
         #kvt_modal .kvt-modal-content{width:80vw;height:80vh;max-width:80vw;max-height:80vh;resize:both;overflow:auto}
         #kvt_info_modal .kvt-modal-content{max-height:90vh;overflow:auto}
+        #kvt_create_modal .kvt-modal-body{max-height:70vh;overflow:auto}
+        #kvt_create_modal .kvt-modal-controls{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+        #kvt_create_modal .kvt-modal-controls>*{width:100%}
+        #kvt_create_modal .kvt-modal-controls button{grid-column:1/3}
+        #kvt_create_modal #kvt_new_cv_file,
+        #kvt_create_modal #kvt_new_cv_upload,
+        #kvt_create_modal #kvt_new_client,
+        #kvt_create_modal #kvt_new_process{grid-column:1/3}
         .kvt-modal-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb}
         .kvt-modal-body{padding:12px 16px}
         .kvt-modal-close{background:none;border:none;cursor:pointer}
@@ -3212,6 +3231,9 @@ function kvtInit(){
   const emailCountry = el('#kvt_email_country');
   const emailCity = el('#kvt_email_city');
   const emailSearch = el('#kvt_email_search');
+  const emailTarget = el('#kvt_email_target');
+  const emailFilters = el('#kvt_email_filters');
+  const emailHead = el('#kvt_email_head');
   const emailSelectAll = el('#kvt_email_select_all');
   const emailClear = el('#kvt_email_clear');
   const emailTbody = el('#kvt_email_tbody');
@@ -3294,6 +3316,7 @@ function kvtInit(){
   let forceSelect = false;
 
   let emailCandidates = [];
+  let emailMode = 'candidates';
   let emailSelected = new Set();
   let emailPageNum = 1;
   let emailPageTotal = 1;
@@ -3533,20 +3556,31 @@ function kvtInit(){
 
   function renderEmailTable(){
     if(!emailTbody) return;
-    emailTbody.innerHTML = emailCandidates.map(c=>{
-      const id=c.id;
-      const m=c.meta||{};
-      const chk=emailSelected.has(String(id))?'checked':'';
-      return '<tr><td><input type="checkbox" data-id="'+escAttr(id)+'" '+chk+'></td>'+
-        '<td>'+esc(m.first_name||'')+'</td>'+
-        '<td>'+esc(m.last_name||'')+'</td>'+
-        '<td>'+esc(m.email||'')+'</td>'+
-        '<td>'+esc(m.country||'')+'</td>'+
-        '<td>'+esc(m.city||'')+'</td>'+
-        '<td>'+esc(m.client||'')+'</td>'+
-        '<td>'+esc(m.process||'')+'</td>'+
-        '<td>'+esc(m.status||'')+'</td></tr>';
-    }).join('');
+    if(emailMode==='clients'){
+      if(emailHead) emailHead.innerHTML='<tr><th></th><th>Cliente</th><th>Email</th></tr>';
+      emailTbody.innerHTML = emailCandidates.map(c=>{
+        const id=c.id; const m=c.meta||{}; const chk=emailSelected.has(String(id))?'checked':'';
+        return '<tr><td><input type="checkbox" data-id="'+escAttr(id)+'" '+chk+'></td>'+
+          '<td>'+esc(m.client||'')+'</td>'+
+          '<td>'+esc(m.email||'')+'</td></tr>';
+      }).join('');
+    } else {
+      if(emailHead) emailHead.innerHTML='<tr><th></th><th>Nombre</th><th>Apellido</th><th>Email</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th></tr>';
+      emailTbody.innerHTML = emailCandidates.map(c=>{
+        const id=c.id;
+        const m=c.meta||{};
+        const chk=emailSelected.has(String(id))?'checked':'';
+        return '<tr><td><input type="checkbox" data-id="'+escAttr(id)+'" '+chk+'></td>'+
+          '<td>'+esc(m.first_name||'')+'</td>'+
+          '<td>'+esc(m.last_name||'')+'</td>'+
+          '<td>'+esc(m.email||'')+'</td>'+
+          '<td>'+esc(m.country||'')+'</td>'+
+          '<td>'+esc(m.city||'')+'</td>'+
+          '<td>'+esc(m.client||'')+'</td>'+
+          '<td>'+esc(m.process||'')+'</td>'+
+          '<td>'+esc(m.status||'')+'</td></tr>';
+      }).join('');
+    }
     updateEmailSel();
   }
 
@@ -3579,6 +3613,36 @@ function kvtInit(){
         renderEmailTable();
       });
   }
+
+  function loadEmailClients(){
+    if(!emailTbody) return;
+    const params = new URLSearchParams({action:'kvt_get_clients', _ajax_nonce:KVT_NONCE});
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+      .then(r=>r.json()).then(j=>{
+        emailCandidates = (j.success && j.data.items) ? j.data.items : [];
+        emailSelected = new Set();
+        emailPageNum = 1;
+        emailPageTotal = 1;
+        if(emailPager) emailPager.style.display='none';
+        renderEmailTable();
+      });
+  }
+
+  function renderEmailMode(){
+    if(emailMode==='clients'){
+      if(emailFilters) emailFilters.style.display='none';
+      loadEmailClients();
+    } else {
+      if(emailFilters) emailFilters.style.display='flex';
+      loadEmailCandidates();
+    }
+  }
+
+  emailTarget && emailTarget.addEventListener('change', ()=>{
+    emailMode = emailTarget.value === 'clients' ? 'clients' : 'candidates';
+    emailSelected.clear();
+    renderEmailMode();
+  });
 
   emailTbody && emailTbody.addEventListener('change', e=>{
     const cb=e.target.closest('input[type="checkbox"]');
@@ -3792,7 +3856,7 @@ function kvtInit(){
       if(boardBase) boardBase.style.display='none';
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
-      if(emailView){ emailView.style.display='block'; loadEmailCandidates(); }
+      if(emailView){ emailView.style.display='block'; renderEmailMode(); }
     } else {
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -4914,22 +4978,6 @@ function kvtInit(){
       loadOutlookEvents();
     }
 
-    function clearCalendar(){
-      const ids = calendarEvents.map(e=>e.candidate_id).filter(id=>id);
-      const requests = ids.map(id=>{
-        const params = new URLSearchParams();
-        params.set('action','kvt_delete_task');
-        params.set('id', id);
-        return fetch(ajaxurl,{method:'POST',credentials:'same-origin',body:params}).catch(()=>{});
-      });
-      Promise.all(requests).then(()=>{
-        calendarEvents = [];
-        renderCalendar();
-        renderCalendarSmall();
-        refresh();
-      });
-    }
-
     function removeCalendarEvent(idx){
     const ev = calendarEvents[idx];
     const finish = ()=>{
@@ -4958,7 +5006,7 @@ function kvtInit(){
     const todayStr = (today.getDate()<10?'0'+today.getDate():today.getDate())+'/'+(today.getMonth()+1<10?'0'+(today.getMonth()+1):(today.getMonth()+1))+'/'+today.getFullYear();
     const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     const monthName = first.toLocaleString('default',{month:'long'});
-      let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next">&gt;</button><button type="button" id="kvt_cal_clear">Vaciar</button><button type="button" id="kvt_cal_mit" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
+      let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next">&gt;</button><button type="button" id="kvt_cal_mit" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
     html += '<div class="kvt-cal-add"><input type="text" id="kvt_cal_date" placeholder="DD/MM/YYYY"><input type="time" id="kvt_cal_time"><input type="text" id="kvt_cal_text" placeholder="Evento"><select id="kvt_cal_process"><option value="">Proceso (opcional)</option></select><select id="kvt_cal_candidate"><option value="">Candidato (opcional)</option></select><select id="kvt_cal_client"><option value="">Cliente (opcional)</option></select><button type="button" id="kvt_cal_add">Añadir</button></div>';
     html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
     for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
@@ -5001,13 +5049,11 @@ function kvtInit(){
     const procSel = el('#kvt_cal_process', calendarWrap);
     const candSel = el('#kvt_cal_candidate', calendarWrap);
       const mitBtn  = el('#kvt_cal_mit', calendarWrap);
-      const clearBtn = el('#kvt_cal_clear', calendarWrap);
       const clientSel = el('#kvt_cal_client', calendarWrap);
     populateCalProcesses(procSel);
     populateCalCandidates('', candSel);
     populateCalClients(clientSel);
       procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
-      clearBtn.addEventListener('click', clearCalendar);
       prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendar(); });
     nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendar(); });
     addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; const clientName = clientSel.value?clientSel.options[clientSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, client:clientName, done:false, manual:true}); renderCalendar(); }});
@@ -5048,7 +5094,7 @@ function kvtInit(){
       const monthName = first.toLocaleString('default',{month:'long'});
       const today = new Date();
       const todayStr = (today.getDate()<10?'0'+today.getDate():today.getDate())+'/'+(today.getMonth()+1<10?'0'+(today.getMonth()+1):(today.getMonth()+1))+'/'+today.getFullYear();
-        let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next_s">&gt;</button><button type="button" id="kvt_cal_clear_s">Vaciar</button><button type="button" id="kvt_cal_mit_s" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
+        let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next_s">&gt;</button><button type="button" id="kvt_cal_mit_s" class="kvt-btn kvt-mit-btn">Sugerencias MIT</button></span></div>';
       html += '<div class="kvt-cal-add">'
         +'<label>Fecha<input type="text" id="kvt_cal_date_s" placeholder="DD/MM/YYYY"></label>'
         +'<label>Hora<input type="time" id="kvt_cal_time_s"></label>'
@@ -5098,13 +5144,11 @@ function kvtInit(){
       const procSel = el('#kvt_cal_process_s', calendarSmall);
       const candSel = el('#kvt_cal_candidate_s', calendarSmall);
         const mitBtn  = el('#kvt_cal_mit_s', calendarSmall);
-        const clearBtn = el('#kvt_cal_clear_s', calendarSmall);
         const clientSel = el('#kvt_cal_client_s', calendarSmall);
       populateCalProcesses(procSel);
       populateCalCandidates('', candSel);
       populateCalClients(clientSel);
         procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
-        clearBtn.addEventListener('click', clearCalendar);
         prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendarSmall(); });
       nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendarSmall(); });
       addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; const clientName = clientSel.value?clientSel.options[clientSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, client:clientName, done:false, manual:true}); renderCalendarSmall(); }});
@@ -6483,9 +6527,9 @@ function kvtInit(){
       const body=(emailBody.value||'').trim();
       if(!subject || !body){ alert('Completa asunto y cuerpo.'); return; }
       const firstId = emailSelected.size ? Array.from(emailSelected)[0] : null;
-      if(!firstId){ alert('Selecciona al menos un candidato.'); return; }
+      if(!firstId){ alert('Selecciona al menos un contacto.'); return; }
       const cand = emailCandidates.find(c=>String(c.id)===String(firstId));
-      if(!cand){ alert('Candidato inválido'); return; }
+      if(!cand){ alert('Destinatario inválido'); return; }
       const m=cand.meta||{};
       const meta=Object.assign({}, m, {surname:m.last_name||'', role:m.process||'', board:m.board||'', sender:(emailFromName.value||KVT_FROM_NAME||'')});
       const repl=str=>str.replace(/{{(\w+)}}/g,(match,p)=>meta[p]||'');
@@ -6509,7 +6553,7 @@ function kvtInit(){
         const m=it?it.meta:{};
         return {email:m.email||'', first_name:m.first_name||'', surname:m.last_name||'', country:m.country||'', city:m.city||'', role:m.process||'', status:m.status||'', client:m.client||'', board:m.board||''};
       }).filter(r=>r.email);
-      if(!recipients.length){ alert('No hay candidatos seleccionados con email.'); return; }
+      if(!recipients.length){ alert('No hay destinatarios seleccionados con email.'); return; }
       if(!confirm(`¿Enviar a ${recipients.length} contactos?`)) return;
       const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0, copy_sender: emailCopySender && emailCopySender.checked ? 1 : 0};
       try{
@@ -6726,6 +6770,26 @@ JS;
         }
         $pages = $per_page >= 999 ? 1 : $q->max_num_pages;
         wp_send_json_success(['items'=>$data,'pages'=>$pages]);
+    }
+
+    public function ajax_get_clients() {
+        check_ajax_referer('kvt_nonce');
+        $terms = get_terms(['taxonomy'=>self::TAX_CLIENT,'hide_empty'=>false]);
+        $items = [];
+        foreach ($terms as $t) {
+            $email = sanitize_email(get_term_meta($t->term_id, 'contact_email', true));
+            if (!$email) continue;
+            $contact = sanitize_text_field(get_term_meta($t->term_id, 'contact_name', true));
+            $items[] = [
+                'id'   => $t->term_id,
+                'meta' => [
+                    'email'  => $email,
+                    'first_name' => $contact,
+                    'client' => $t->name,
+                ]
+            ];
+        }
+        wp_send_json_success(['items'=>$items]);
     }
 
     public function ajax_get_dashboard() {
@@ -9363,7 +9427,6 @@ JS;
                     'recipients' => [$email],
                     'meta'       => $recipient_meta
                 ];
-                if (count($log) > 100) $log = array_slice($log, -100);
             }
 
             if ($copy_sender && $from_email) {
@@ -9396,7 +9459,6 @@ JS;
                         'recipients' => [$from_email],
                         'meta'       => $data
                     ];
-                    if (count($log) > 100) $log = array_slice($log, -100);
                 }
             }
 
