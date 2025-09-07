@@ -7787,6 +7787,9 @@ JS;
         if ($reply === '') {
             $reply = $this->mit_gemini_chat($messages);
         }
+        if ($reply === '') {
+            $reply = $this->mit_search_web($msg);
+        }
         $file_url = '';
         if ($reply) {
             $reply = $this->mit_strip_fences($reply);
