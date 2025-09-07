@@ -2588,6 +2588,7 @@ JS;
         .kvt-cal-event.suggested{font-style:italic;color:#6b7280}
         .kvt-cal-cell.has-event{background:#f1f5f9}
         .kvt-cal-controls{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+        .kvt-cal-nav{display:flex;gap:4px}
         .kvt-cal-add{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
         .kvt-cal-add label{display:flex;flex-direction:column;font-size:12px}
         .kvt-cal-event.done{text-decoration:line-through;color:#9ca3af}
@@ -4194,6 +4195,35 @@ function kvtInit(){
     });
   }
 
+  async function loadMitCalendar(){
+    try {
+      const resp = await fetch(KVT_AJAX, {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        credentials:'same-origin',
+        body:new URLSearchParams({action:'kvt_mit_suggestions', nonce:KVT_MIT_NONCE})
+      });
+      const json = await resp.json();
+      if(json && json.success && json.data && json.data.suggestions){
+        calendarEvents = calendarEvents.filter(e=>e.manual);
+        const lines = json.data.suggestions.split(/\r?\n/);
+        const re = /(\d{1,2}\/\d{1,2}\/\d{4})/;
+        lines.forEach(line=>{
+          const m = line.match(re);
+          if(m){
+            const dateFmt = m[1];
+            const text = line.replace(re,'').replace(/^[\s\-–—:,]+/,'').trim();
+            if(text){
+              calendarEvents.push({date:dateFmt, time:'', text:text, done:false, manual:false});
+            }
+          }
+        });
+        renderCalendar();
+        renderCalendarSmall();
+      }
+    } catch(e){}
+  }
+
   function fetchProcessesList(){
     const params = new URLSearchParams();
     params.set('action','kvt_list_processes');
@@ -4498,7 +4528,7 @@ function kvtInit(){
     const last = new Date(calYear, calMonth+1, 0);
     const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     const monthName = first.toLocaleString('default',{month:'long'});
-    let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><button type="button" id="kvt_cal_next">&gt;</button></div>';
+    let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next">&gt;</button><button type="button" id="kvt_cal_mit">MIT</button></span></div>';
     html += '<div class="kvt-cal-add"><input type="date" id="kvt_cal_date"><input type="time" id="kvt_cal_time"><input type="text" id="kvt_cal_text" placeholder="Evento"><select id="kvt_cal_process"><option value="">Proceso (opcional)</option></select><select id="kvt_cal_candidate"><option value="">Candidato (opcional)</option></select><button type="button" id="kvt_cal_add">Añadir</button></div>';
     html += '<div class="kvt-cal-head">'+dayNames.map(d=>'<div>'+d+'</div>').join('')+'</div><div class="kvt-cal-grid">';
     for(let i=0;i<first.getDay();i++) html += '<div class="kvt-cal-cell"></div>';
@@ -4531,6 +4561,7 @@ function kvtInit(){
     const textInp = el('#kvt_cal_text', calendarWrap);
     const procSel = el('#kvt_cal_process', calendarWrap);
     const candSel = el('#kvt_cal_candidate', calendarWrap);
+    const mitBtn  = el('#kvt_cal_mit', calendarWrap);
     populateCalProcesses(procSel);
     populateCalCandidates('', candSel);
     procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
@@ -4543,6 +4574,7 @@ function kvtInit(){
     calendarWrap.querySelectorAll('.kvt-cal-remove').forEach(btn=>{
       btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendar(); });
     });
+    mitBtn.addEventListener('click', loadMitCalendar);
   }
 
     function renderCalendarSmall(){
@@ -4551,7 +4583,7 @@ function kvtInit(){
       const last = new Date(calYear, calMonth+1, 0);
       const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
       const monthName = first.toLocaleString('default',{month:'long'});
-      let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><button type="button" id="kvt_cal_next_s">&gt;</button></div>';
+      let html = '<div class="kvt-cal-controls"><button type="button" id="kvt_cal_prev_s">&lt;</button><span class="kvt-cal-title">'+esc(monthName)+' '+calYear+'</span><span class="kvt-cal-nav"><button type="button" id="kvt_cal_next_s">&gt;</button><button type="button" id="kvt_cal_mit_s">MIT</button></span></div>';
       html += '<div class="kvt-cal-add">'
         +'<label>Fecha<input type="date" id="kvt_cal_date_s"></label>'
         +'<label>Hora<input type="time" id="kvt_cal_time_s"></label>'
@@ -4597,6 +4629,7 @@ function kvtInit(){
       const textInp = el('#kvt_cal_text_s', calendarSmall);
       const procSel = el('#kvt_cal_process_s', calendarSmall);
       const candSel = el('#kvt_cal_candidate_s', calendarSmall);
+      const mitBtn  = el('#kvt_cal_mit_s', calendarSmall);
       populateCalProcesses(procSel);
       populateCalCandidates('', candSel);
       procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
@@ -4605,6 +4638,7 @@ function kvtInit(){
       addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false, manual:true}); renderCalendarSmall(); }});
       calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{ evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); calendarEvents[idx].done=!calendarEvents[idx].done; renderCalendarSmall(); }); });
       calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
+      mitBtn.addEventListener('click', loadMitCalendar);
     }
 
   function renderOverview(rows){
