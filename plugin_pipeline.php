@@ -7325,7 +7325,39 @@ JS;
                         'required' => ['prompt']
                     ]
                 ]
-            ]
+            ],
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'make_pptx',
+                    'description' => 'Generar un archivo PowerPoint (.pptx) en la carpeta de subidas de WordPress y devolver su URL pública.',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'title' => [
+                                'type' => 'string',
+                                'description' => 'Título de la presentación'
+                            ],
+                            'slides' => [
+                                'type' => 'array',
+                                'description' => 'Diapositivas con título y viñetas',
+                                'items' => [
+                                    'type' => 'object',
+                                    'properties' => [
+                                        'title' => ['type' => 'string'],
+                                        'bullets' => [
+                                            'type' => 'array',
+                                            'items' => ['type' => 'string'],
+                                        ],
+                                    ],
+                                    'required' => ['title','bullets'],
+                                ],
+                            ],
+                        ],
+                        'required' => ['title','slides'],
+                    ],
+                ],
+            ],
         ];
 
         return apply_filters('kvt_mit_tools', $tools);
@@ -7346,6 +7378,11 @@ JS;
                 $prompt = is_string($args['prompt'] ?? '') ? $args['prompt'] : '';
                 $mode   = is_string($args['mode'] ?? '') ? $args['mode'] : 'text';
                 $result = $this->mit_use_gemini($prompt, $mode);
+                break;
+            case 'make_pptx':
+                $title  = is_string($args['title'] ?? '') ? $args['title'] : '';
+                $slides = is_array($args['slides'] ?? '') ? $args['slides'] : [];
+                $result = $this->mit_make_pptx($title, $slides);
                 break;
         }
         return apply_filters('kvt_mit_tool_result', $result, $name, $args);
@@ -7462,6 +7499,59 @@ JS;
             return new \WP_Error('excel_write_failed', __('Error al guardar el Excel: ', 'kovacic') . $e->getMessage());
         }
 
+        return trailingslashit($upload['url']) . $filename;
+    }
+
+    private function mit_make_pptx($title, $slides) {
+        if (empty($slides) || !is_array($slides)) {
+            return '';
+        }
+        if (!class_exists('\\PhpOffice\\PhpPresentation\\PhpPresentation')) {
+            $autoload = __DIR__ . '/vendor/autoload.php';
+            if (file_exists($autoload)) {
+                require_once $autoload;
+            }
+        }
+        if (!class_exists('\\PhpOffice\\PhpPresentation\\PhpPresentation')) {
+            error_log('mit_make_pptx: PhpPresentation not available');
+            return '';
+        }
+
+        $ppt = new \PhpOffice\PhpPresentation\PhpPresentation();
+        if ($title) {
+            $ppt->getDocumentProperties()->setTitle($title);
+        }
+        $ppt->removeSlideByIndex(0);
+        foreach ($slides as $s) {
+            if (!is_array($s)) continue;
+            $slide = $ppt->createSlide();
+            $shape = $slide->createRichTextShape()->setHeight(300)->setWidth(720)->setOffsetX(20)->setOffsetY(20);
+            $shape->getActiveParagraph()->getAlignment()->setHorizontal(\PhpOffice\PhpPresentation\Style\Alignment::HORIZONTAL_LEFT);
+            $st = wp_strip_all_tags($s['title'] ?? '');
+            if ($st) {
+                $shape->createTextRun($st)->getFont()->setBold(true)->setSize(24);
+                $shape->createParagraph();
+            }
+            foreach (($s['bullets'] ?? []) as $b) {
+                $b = wp_strip_all_tags($b);
+                $p = $shape->createParagraph();
+                $p->getBulletStyle()->setBulletType(\PhpOffice\PhpPresentation\Style\Bullet::TYPE_BULLET);
+                $p->createTextRun($b);
+            }
+        }
+
+        $upload = wp_upload_dir();
+        $base   = sanitize_file_name($title ?: 'presentacion');
+        if (!$base) $base = 'presentacion';
+        $filename = wp_unique_filename($upload['path'], $base . '.pptx');
+        $filepath = trailingslashit($upload['path']) . $filename;
+        $writer   = \PhpOffice\PhpPresentation\IOFactory::createWriter($ppt, 'PowerPoint2007');
+        try {
+            $writer->save($filepath);
+        } catch (\Throwable $e) {
+            error_log('mit_make_pptx: ' . $e->getMessage());
+            return '';
+        }
         return trailingslashit($upload['url']) . $filename;
     }
 
@@ -7640,7 +7730,8 @@ JS;
             'timeout' => self::MIT_TIMEOUT,
         ]) : new \WP_Error('missing_openai');
 
-        $reply = '';
+        $reply   = '';
+        $ppt_url = '';
         if (!is_wp_error($resp)) {
             $data    = json_decode(wp_remote_retrieve_body($resp), true);
             $message = $data['choices'][0]['message'] ?? [];
@@ -7651,8 +7742,11 @@ JS;
                     'tool_calls' => $message['tool_calls'],
                 ];
                 foreach ($message['tool_calls'] as $call) {
-                    $args = json_decode($call['function']['arguments'] ?? '', true);
+                    $args   = json_decode($call['function']['arguments'] ?? '', true);
                     $result = $this->mit_execute_tool($call['function']['name'], is_array($args) ? $args : []);
+                    if ($call['function']['name'] === 'make_pptx' && is_string($result) && filter_var($result, FILTER_VALIDATE_URL)) {
+                        $ppt_url = $result;
+                    }
                     $messages[] = [
                         'role' => 'tool',
                         'tool_call_id' => $call['id'],
@@ -7678,10 +7772,11 @@ JS;
         if ($reply === '') {
             $reply = $this->mit_gemini_chat($messages);
         }
-        $file_url   = '';
-        $ppt_slides = [];
+        $file_url = '';
         if ($reply) {
             $reply = $this->mit_strip_fences($reply);
+            $reply = preg_replace('#sandbox:/[^\s<]+#i', '', $reply);
+            $reply = make_clickable($reply);
             // Detect request for Excel generation based on user message
             if (stripos($msg, 'excel') !== false) {
                 $autoload = __DIR__ . '/vendor/autoload.php';
@@ -7698,13 +7793,8 @@ JS;
                     $reply .= "\n\n" . __('No se pudo generar el archivo Excel.', 'kovacic');
                 }
             }
-            if (stripos($msg, 'powerpoint') !== false || stripos($msg, 'ppt') !== false) {
-                $ppt_result = $this->mit_use_gemini($msg, 'ppt');
-                $decoded    = json_decode($ppt_result, true);
-                if (!empty($decoded['slides'])) {
-                    $ppt_slides = $decoded['slides'];
-                    $reply .= "\n\n" . __('Se generó una presentación de PowerPoint.', 'kovacic');
-                }
+            if ($ppt_url) {
+                $reply .= "\n\n<a href='" . esc_url($ppt_url) . "' target='_blank'>" . __('Descargar presentación', 'kovacic') . "</a>";
             }
 
             $hist['messages'][] = ['role' => 'assistant', 'content' => wp_strip_all_tags($reply), 'html' => $reply];
@@ -7730,7 +7820,7 @@ JS;
                 'reply'   => wp_kses_post($reply),
                 'history' => $hist['messages'],
                 'file'    => $file_url,
-                'ppt'     => $ppt_slides,
+                'ppt'     => $ppt_url,
             ]);
         }
 
