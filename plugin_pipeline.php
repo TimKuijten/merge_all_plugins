@@ -7393,7 +7393,7 @@ JS;
     private function mit_use_gemini($prompt, $mode = 'text') {
         $key = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '';
         if (!$key || !$prompt) return '';
-        $model = get_option(self::OPT_GEMINI_MODEL, 'gemini-1.5-pro-latest');
+        $model = get_option(self::OPT_GEMINI_MODEL, 'gemini-1.5-pro');
         $url = sprintf('https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s', $model, $key);
         $body = [
             'contents' => [
@@ -7502,7 +7502,7 @@ JS;
     private function mit_gemini_chat($messages) {
         $key = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '';
         if (!$key) return '';
-        $model = get_option(self::OPT_GEMINI_MODEL, 'gemini-1.5-pro-latest');
+        $model = get_option(self::OPT_GEMINI_MODEL, 'gemini-1.5-pro');
         $contents = [];
         foreach ($messages as $m) {
             $role = ($m['role'] === 'assistant') ? 'model' : 'user';
