@@ -6503,9 +6503,24 @@ JS;
             $role    = $this->meta_get_compat($c->ID, 'kvt_current_role', ['current_role']);
             $status  = $this->meta_get_compat($c->ID, 'kvt_status', ['status']);
             $procs   = wp_get_object_terms($c->ID, self::TAX_PROCESS, ['fields' => 'names']);
+            $log     = get_post_meta($c->ID, 'kvt_activity_log', true);
+            $days    = '';
+            if (is_array($log)) {
+                foreach (array_reverse($log) as $entry) {
+                    if (($entry['type'] ?? '') === 'status' && !empty($entry['time'])) {
+                        $ts = strtotime($entry['time']);
+                        if ($ts) $days = floor((current_time('timestamp') - $ts) / DAY_IN_SECONDS);
+                        break;
+                    }
+                }
+            }
             $line    = $c->post_title;
             if ($role)   $line .= " ($role)";
-            if ($status) $line .= " [$status]";
+            if ($status) {
+                $line .= " [$status";
+                if ($days !== '') $line .= ' ' . $days . 'd';
+                $line .= ']';
+            }
             if ($procs) $line .= ' {' . implode(', ', $procs) . '}';
             if ($country) $line .= " - $country";
             $cand_lines[] = $line;
@@ -6515,6 +6530,14 @@ JS;
             if ($pn) $notes[] = $pn;
             $desc = trim(wp_strip_all_tags($c->post_content));
             if ($desc) $notes[] = $desc;
+            $ccs = get_post_meta($c->ID, 'kvt_client_comments', true);
+            if (is_array($ccs)) {
+                foreach ($ccs as $cc) {
+                    if (!empty($cc['comment']) && empty($cc['dismissed'])) {
+                        $notes[] = $c->post_title . ' comentario cliente: ' . sanitize_text_field($cc['comment']);
+                    }
+                }
+            }
             $next = get_post_meta($c->ID, 'kvt_next_action', true);
             if ($next) {
                 $ts = strtotime(str_replace('/', '-', $next));
@@ -6525,7 +6548,6 @@ JS;
                     $followups[] = $fline;
                 }
             }
-            $log = get_post_meta($c->ID, 'kvt_activity_log', true);
             if (is_array($log)) {
                 foreach (array_slice($log, -5) as $entry) {
                     $parts = [];
