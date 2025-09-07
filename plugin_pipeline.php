@@ -1830,7 +1830,7 @@ JS;
                             <input type="hidden" name="format"         id="kvt_export_format"   value="xls">
                             <button class="kvt-btn" type="button" id="kvt_export_xls">Exportar Excel</button>
                         </form>
-                        <button type="button" class="kvt-btn kvt-add-candidate" id="kvt_add_candidate_table_btn">Añadir candidato</button>
+                        <button type="button" class="kvt-btn" id="kvt_add_candidate_table_btn">Añadir candidato</button>
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
                       <div class="kvt-tabs" id="kvt_board_tabs">
@@ -2584,6 +2584,8 @@ JS;
         .kvt-cal-cell{min-height:80px;border:1px solid #e5e7eb;padding:4px;position:relative}
         .kvt-cal-day{font-size:12px;color:#6b7280;position:absolute;top:4px;right:4px}
         .kvt-cal-event{display:block;margin-top:16px;font-size:12px;text-align:left}
+        .kvt-cal-event.manual{font-weight:700;color:#000}
+        .kvt-cal-event.suggested{font-style:italic;color:#6b7280}
         .kvt-cal-cell.has-event{background:#f1f5f9}
         .kvt-cal-controls{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
         .kvt-cal-add{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
@@ -4185,7 +4187,7 @@ function kvtInit(){
   function loadOutlookEvents(){
     fetchOutlookEvents().then(j=>{
       if(j.success && Array.isArray(j.data)){
-        j.data.forEach(e=>{ calendarEvents.push(e); });
+        j.data.forEach(e=>{ e.manual = true; calendarEvents.push(e); });
         renderCalendarSmall();
         renderCalendar();
       }
@@ -4414,7 +4416,7 @@ function kvtInit(){
           const item = '<li data-id="'+escAttr(r.id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(r.id)+'">'+nameTxt+'</a> - '+esc(r.meta.next_action)+(note?' — '+note:'')+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
           (d <= today ? due : upcoming).push(item);
           const ds = parts.join('/');
-          calendarEvents.push({date: ds, text: nameTxt, done:false});
+          calendarEvents.push({date: ds, text: nameTxt, done:false, manual:true});
         }
       }
       if(Array.isArray(r.meta.client_comments)){
@@ -4466,12 +4468,12 @@ function kvtInit(){
     calendarEvents = [];
     const due = (data.overdue||[]).map(c=>{
       const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false});
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false, manual:true});
       return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const upcoming = (data.upcoming||[]).map(c=>{
       const note = c.note ? ' — '+esc(c.note) : '';
-      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false});
+      calendarEvents.push({date:formatInputDate(c.date), time:c.time||'', text:c.note||'', candidate:c.candidate, process:c.process, client:c.client, done:false, manual:true});
       return '<li data-id="'+escAttr(c.candidate_id)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(c.candidate)+'</a> - '+esc(formatInputDate(c.date))+(c.time?' '+esc(c.time):'')+note+' <span class="kvt-task-done dashicons dashicons-yes" title="Marcar como hecha"></span><span class="kvt-task-delete dashicons dashicons-no" title="Eliminar"></span></li>';
     });
     const notifs = (data.comments||[]).map(c=>{
@@ -4506,7 +4508,15 @@ function kvtInit(){
       let cls = 'kvt-cal-cell';
       if(ev.length) cls += ' has-event';
       html += '<div class="'+cls+'"><span class="kvt-cal-day">'+d+'</span>';
-      ev.forEach(e=>{ let lbl=''; if(e.time) lbl+=esc(e.time)+' '; lbl+=esc(e.text); const tgt = e.process || e.candidate || e.client || ''; if(tgt) lbl+=' <em>- '+esc(tgt)+'</em>'; html += '<span class="kvt-cal-event'+(e.done?' done':'')+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>'; });
+      ev.forEach(e=>{
+        let lbl='';
+        if(e.time) lbl+=esc(e.time)+' ';
+        lbl+=esc(e.text);
+        const tgt = e.process || e.candidate || e.client || '';
+        if(tgt) lbl+=' <em>- '+esc(tgt)+'</em>';
+        const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
+        html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+      });
       html += '</div>';
     }
     const fill = (first.getDay()+last.getDate())%7;
@@ -4526,7 +4536,7 @@ function kvtInit(){
     procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
     prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendar(); });
     nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendar(); });
-    addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false}); renderCalendar(); }});
+    addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false, manual:true}); renderCalendar(); }});
     calendarWrap.querySelectorAll('.kvt-cal-event').forEach(evEl=>{
       evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); calendarEvents[idx].done=!calendarEvents[idx].done; renderCalendar(); });
     });
@@ -4570,7 +4580,8 @@ function kvtInit(){
             tgt = esc(e.client);
           }
           if(tgt) lbl += ' <em>- '+tgt+'</em>';
-          html += '<span class="kvt-cal-event'+(e.done?' done':'')+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
+          const evCls = 'kvt-cal-event'+(e.done?' done':'')+(e.manual?' manual':' suggested');
+          html += '<span class="'+evCls+'" data-idx="'+e.idx+'">'+lbl+'</span><button class="kvt-cal-remove" data-idx="'+e.idx+'">x</button>';
         });
         html += '</div>';
       }
@@ -4591,7 +4602,7 @@ function kvtInit(){
       procSel.addEventListener('change', ()=>{ populateCalCandidates(procSel.value, candSel); });
       prevBtn.addEventListener('click', ()=>{ calMonth--; if(calMonth<0){calMonth=11; calYear--; } renderCalendarSmall(); });
       nextBtn.addEventListener('click', ()=>{ calMonth++; if(calMonth>11){calMonth=0; calYear++; } renderCalendarSmall(); });
-      addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false}); renderCalendarSmall(); }});
+      addBtn.addEventListener('click', ()=>{ if(dateInp.value && textInp.value.trim()){ const dateFmt = formatInputDate(dateInp.value); const procName = procSel.value?procSel.options[procSel.selectedIndex].text:''; const candName = candSel.value?candSel.options[candSel.selectedIndex].text:''; calendarEvents.push({date:dateFmt, time:timeInp.value, text:textInp.value.trim(), process:procName, candidate:candName, done:false, manual:true}); renderCalendarSmall(); }});
       calendarSmall.querySelectorAll('.kvt-cal-event').forEach(evEl=>{ evEl.addEventListener('click', ()=>{ const idx=parseInt(evEl.dataset.idx,10); calendarEvents[idx].done=!calendarEvents[idx].done; renderCalendarSmall(); }); });
       calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents.splice(idx,1); renderCalendarSmall(); }); });
     }
@@ -6388,6 +6399,7 @@ JS;
         $notes      = [];
         $cand_lines = [];
         $followups  = [];
+        $history    = [];
         foreach ($cands as $c) {
             $country = get_post_meta($c->ID, 'kvt_country', true);
             $role    = $this->meta_get_compat($c->ID, 'kvt_current_role', ['current_role']);
@@ -6409,6 +6421,19 @@ JS;
                     $fline = $c->post_title . ' - ' . $next;
                     if ($na_note) $fline .= ': ' . $na_note;
                     $followups[] = $fline;
+                }
+            }
+            $log = get_post_meta($c->ID, 'kvt_activity_log', true);
+            if (is_array($log)) {
+                foreach (array_slice($log, -5) as $entry) {
+                    $parts = [];
+                    $parts[] = sanitize_text_field($entry['type'] ?? '');
+                    if (!empty($entry['status'])) $parts[] = sanitize_text_field($entry['status']);
+                    if (!empty($entry['note'])) $parts[] = sanitize_text_field($entry['note']);
+                    if (!empty($entry['comment'])) $parts[] = sanitize_text_field($entry['comment']);
+                    if (!empty($entry['date'])) $parts[] = sanitize_text_field($entry['date']);
+                    if (!empty($entry['time'])) $parts[] = sanitize_text_field($entry['time']);
+                    $history[] = $c->post_title . ': ' . implode(' ', array_filter($parts));
                 }
             }
         }
@@ -6456,6 +6481,11 @@ JS;
         }
 
         $email_lines = [];
+        $templates   = $this->get_email_templates();
+        $template_lines = [];
+        foreach ($templates as $tpl) {
+            $template_lines[] = sanitize_text_field($tpl['title']);
+        }
         foreach (array_slice($emails, 0, 5) as $em) {
             $sub = sanitize_text_field($em['subject'] ?? '');
             $to  = implode(', ', array_map('sanitize_text_field', $em['recipients'] ?? []));
@@ -6503,6 +6533,12 @@ JS;
         }
         if ($meeting_lines) {
             $summary .= ' Reuniones: ' . implode(' | ', $meeting_lines) . '.';
+        }
+        if ($history) {
+            $summary .= ' Historial: ' . implode('; ', $history) . '.';
+        }
+        if ($template_lines) {
+            $summary .= ' Plantillas: ' . implode('; ', $template_lines) . '.';
         }
 
         return ['summary' => $summary, 'news' => $news];
