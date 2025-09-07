@@ -32,6 +32,8 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_MIT_RECIPIENTS = 'kvt_mit_recipients';
     const OPT_MIT_FREQUENCY = 'kvt_mit_frequency';
     const OPT_MIT_DAY = 'kvt_mit_day';
+    const OPT_REMINDER_INTERVAL = 'kvt_reminder_interval';
+    const OPT_REMINDER_CHANNELS = 'kvt_reminder_channels';
     const OPT_O365_TENANT = 'kvt_o365_tenant';
     const OPT_O365_CLIENT = 'kvt_o365_client';
     const CPT_EMAIL_TEMPLATE = 'kvt_email_tpl';
@@ -152,6 +154,10 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
         add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_nopriv_kvt_get_outlook_events', [$this, 'ajax_get_outlook_events']);
+        add_action('wp_ajax_kvt_save_search',           [$this, 'ajax_save_search']);
+        add_action('wp_ajax_nopriv_kvt_save_search',    [$this, 'ajax_save_search']);
+        add_action('wp_ajax_kvt_list_saved_searches',   [$this, 'ajax_list_saved_searches']);
+        add_action('wp_ajax_nopriv_kvt_list_saved_searches', [$this, 'ajax_list_saved_searches']);
 
         add_action('kvt_refresh_worker',               [$this, 'cron_refresh_worker']);
 
@@ -166,6 +172,10 @@ class Kovacic_Pipeline_Visualizer {
         add_action('kvt_mit_report',                [$this, 'cron_mit_report']);
         add_action('admin_notices',                 [$this, 'followup_admin_notice']);
         add_action('template_redirect',             [$this, 'maybe_redirect_share_link']);
+        add_action('init',                          [$this, 'schedule_reminder_scan']);
+        add_action('kvt_reminder_scan',             [$this, 'cron_reminder_scan']);
+        add_action('init',                          [$this, 'schedule_smart_list_cron']);
+        add_action('kvt_smart_list_cron',           [$this, 'cron_smart_lists']);
 
         add_action('plugins_loaded',                 [$this, 'ensure_defaults']);
     }
@@ -276,6 +286,8 @@ cv_uploaded|Fecha de subida");
         register_setting(self::OPT_GROUP, self::OPT_MIT_RECIPIENTS);
         register_setting(self::OPT_GROUP, self::OPT_MIT_FREQUENCY);
         register_setting(self::OPT_GROUP, self::OPT_MIT_DAY);
+        register_setting(self::OPT_GROUP, self::OPT_REMINDER_INTERVAL);
+        register_setting(self::OPT_GROUP, self::OPT_REMINDER_CHANNELS);
     }
     public function admin_menu() {
         global $admin_page_hooks;
@@ -286,6 +298,7 @@ cv_uploaded|Fecha de subida");
         add_submenu_page('kovacic', __('Ajustes', 'kovacic'), __('Ajustes', 'kovacic'), 'manage_options', 'kvt-settings', [$this, 'settings_page']);
         add_submenu_page('kovacic', __('Tableros de candidatos/clientes', 'kovacic'), __('Tableros de candidatos/clientes', 'kovacic'), 'manage_options', 'kvt-boards', [$this, 'boards_page']);
         add_submenu_page('kovacic', __('Actualizar perfiles', 'kovacic'), __('Actualizar perfiles', 'kovacic'), 'manage_options', 'kvt-load-cv', [$this, 'load_cv_page']);
+        add_submenu_page('kovacic', __('Analytics', 'kovacic'), __('Analytics', 'kovacic'), 'manage_options', 'kvt-analytics', [$this, 'analytics_page']);
     }
 
     public function tracker_page() {
@@ -685,6 +698,8 @@ JS;
         $mit_recipients = get_option(self::OPT_MIT_RECIPIENTS, get_option('admin_email'));
         $mit_freq = get_option(self::OPT_MIT_FREQUENCY, 'weekly');
         $mit_day = get_option(self::OPT_MIT_DAY, 'monday');
+        $rem_interval = get_option(self::OPT_REMINDER_INTERVAL, 7);
+        $rem_channels = (array) get_option(self::OPT_REMINDER_CHANNELS, ['email']);
         ?>
         <div class="wrap">
             <h1>Kovacic Pipeline — Ajustes</h1>
@@ -823,6 +838,17 @@ JS;
                             <p class="description">Direcciones separadas por comas.</p>
                         </td>
                     </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_REMINDER_INTERVAL; ?>">Intervalo recordatorios (días)</label></th>
+                        <td><input type="number" min="1" name="<?php echo self::OPT_REMINDER_INTERVAL; ?>" id="<?php echo self::OPT_REMINDER_INTERVAL; ?>" value="<?php echo esc_attr($rem_interval); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Canales de recordatorio</th>
+                        <td>
+                            <label><input type="checkbox" name="<?php echo self::OPT_REMINDER_CHANNELS; ?>[]" value="email" <?php checked(in_array('email', $rem_channels, true)); ?>> Email</label><br>
+                            <label><input type="checkbox" name="<?php echo self::OPT_REMINDER_CHANNELS; ?>[]" value="calendar" <?php checked(in_array('calendar', $rem_channels, true)); ?>> Calendario</label>
+                        </td>
+                    </tr>
                 </table>
                 <?php submit_button('Guardar ajustes'); ?>
             </form>
@@ -916,6 +942,10 @@ JS;
         });
         </script>
         <?php
+    }
+
+    public function analytics_page() {
+        include __DIR__ . '/admin/analytics.php';
     }
 
     public function handle_delete_board() {
@@ -1646,6 +1676,137 @@ JS;
         update_option('kvt_followup_due', $due);
     }
 
+    public function schedule_reminder_scan() {
+        if (!wp_next_scheduled('kvt_reminder_scan')) {
+            wp_schedule_event(time(), 'daily', 'kvt_reminder_scan');
+        }
+    }
+
+    public function cron_reminder_scan() {
+        $interval = intval(get_option(self::OPT_REMINDER_INTERVAL, 7));
+        $channels = (array) get_option(self::OPT_REMINDER_CHANNELS, ['email', 'calendar']);
+        $args = [
+            'post_type'   => self::CPT,
+            'post_status' => 'any',
+            'numberposts' => -1,
+        ];
+        $posts = get_posts($args);
+        $now = current_time('timestamp');
+        $due = [];
+        $events = [];
+        foreach ($posts as $p) {
+            $next = get_post_meta($p->ID, 'kvt_next_action', true);
+            if ($next) {
+                $ts = strtotime(str_replace('/', '-', $next));
+                if ($ts && $ts <= $now + DAY_IN_SECONDS * $interval) {
+                    $due[] = $p->post_title . ' — ' . $next;
+                    $events[] = [
+                        'date' => $this->fmt_date_ddmmyyyy($next),
+                        'text' => 'Follow up: ' . $p->post_title,
+                        'candidate' => $p->post_title,
+                        'candidate_id' => $p->ID,
+                    ];
+                }
+            } else {
+                $mod = strtotime($p->post_modified_gmt ?: $p->post_modified);
+                if ($mod && $mod <= $now - DAY_IN_SECONDS * $interval) {
+                    $due[] = $p->post_title . ' — inactive';
+                    $events[] = [
+                        'date' => date('d/m/Y', $now + DAY_IN_SECONDS),
+                        'text' => 'Inactive: ' . $p->post_title,
+                        'candidate' => $p->post_title,
+                        'candidate_id' => $p->ID,
+                    ];
+                }
+            }
+        }
+        update_option('kvt_auto_followups', $due);
+        update_option('kvt_reminder_events', $events);
+        if (in_array('email', $channels, true) && $due) {
+            wp_mail(get_option('admin_email'), 'Recordatorios de seguimiento', implode("\n", $due));
+        }
+    }
+
+    public function schedule_smart_list_cron() {
+        if (!wp_next_scheduled('kvt_smart_list_cron')) {
+            wp_schedule_event(time(), 'daily', 'kvt_smart_list_cron');
+        }
+    }
+
+    public function cron_smart_lists() {
+        $users = get_users();
+        foreach ($users as $u) {
+            $lists = get_user_meta($u->ID, 'kvt_saved_searches', true);
+            if (!is_array($lists)) continue;
+            foreach ($lists as $name => $cfg) {
+                if (empty($cfg['smart'])) continue;
+                $last = isset($cfg['last_run']) ? intval($cfg['last_run']) : 0;
+                $args = [
+                    'post_type'   => self::CPT,
+                    'post_status' => 'any',
+                    'numberposts' => -1,
+                    'date_query'  => $last ? [ ['after' => date('Y-m-d', $last)] ] : [],
+                ];
+                $filters = isset($cfg['filters']) ? $cfg['filters'] : [];
+                $tax_query = [];
+                if (!empty($filters['client'])) {
+                    $tax_query[] = [
+                        'taxonomy' => self::TAX_CLIENT,
+                        'field'    => 'term_id',
+                        'terms'    => intval($filters['client']),
+                    ];
+                }
+                if (!empty($filters['process'])) {
+                    $tax_query[] = [
+                        'taxonomy' => self::TAX_PROCESS,
+                        'field'    => 'term_id',
+                        'terms'    => intval($filters['process']),
+                    ];
+                }
+                if ($tax_query) $args['tax_query'] = $tax_query;
+                $meta_query = [];
+                if (!empty($filters['stage'])) {
+                    $meta_query[] = [
+                        'key'   => 'kvt_status',
+                        'value' => sanitize_text_field($filters['stage']),
+                    ];
+                }
+                if ($meta_query) $args['meta_query'] = $meta_query;
+                $found = get_posts($args);
+                if ($found) {
+                    wp_mail($u->user_email, 'Smart list update: ' . $name, 'Hay ' . count($found) . ' nuevos candidatos.');
+                }
+                $lists[$name]['last_run'] = time();
+            }
+            update_user_meta($u->ID, 'kvt_saved_searches', $lists);
+        }
+    }
+
+    public function ajax_save_search() {
+        check_ajax_referer('kvt_nonce');
+        $name = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
+        $filters = isset($_POST['filters']) ? json_decode(stripslashes($_POST['filters']), true) : [];
+        if (!$name) wp_send_json_error(['msg' => 'Invalid'], 400);
+        $uid = get_current_user_id();
+        $saved = get_user_meta($uid, 'kvt_saved_searches', true);
+        if (!is_array($saved)) $saved = [];
+        $saved[$name] = ['filters' => $filters];
+        update_user_meta($uid, 'kvt_saved_searches', $saved);
+        wp_send_json_success(['saved' => $saved]);
+    }
+
+    public function ajax_list_saved_searches() {
+        check_ajax_referer('kvt_nonce');
+        $uid = get_current_user_id();
+        $saved = get_user_meta($uid, 'kvt_saved_searches', true);
+        if (!is_array($saved)) $saved = [];
+        $out = [];
+        foreach ($saved as $name => $cfg) {
+            $out[$name] = isset($cfg['filters']) ? $cfg['filters'] : [];
+        }
+        wp_send_json_success($out);
+    }
+
     public function schedule_mit_report() {
         $tz   = new DateTimeZone('Europe/Madrid');
         $time = get_option(self::OPT_MIT_TIME, '09:00');
@@ -1838,6 +1999,8 @@ JS;
                   <label for="kvt_stage">Etapa</label>
                   <select id="kvt_stage"><option value=""><?php esc_html_e('Etapa', 'kovacic'); ?></option></select>
               </div>
+              <button class="btn" id="kvt_save_search">Guardar búsqueda</button>
+              <div id="kvt_saved_searches" class="kvt-saved-searches"></div>
               <button class="btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
           </div>
 
@@ -2573,6 +2736,7 @@ JS;
         .kvt-filters{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;align-items:center}
         .kvt-filter-field{display:flex;gap:6px;align-items:center;font-weight:600}
         .kvt-filters input,.kvt-filters select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
+        .kvt-saved-searches{display:flex;gap:6px;flex-wrap:wrap}
         .kvt-selected-info{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;padding:8px;border:1px solid #e5e7eb;border-radius:8px;background:#f1f5f9;font-size:14px}
         .kvt-selected-info span{font-weight:600}
         .kvt-selected-info span+span:before{content:'|';margin:0 4px;color:#94a3b8;font-weight:400}
@@ -3096,6 +3260,10 @@ function kvtInit(){
     const shareComments   = el('#kvt_share_comments');
     const selInfo        = el('#kvt_selected_info');
     const boardProcInfo  = el('#kvt_board_proc_info');
+  const saveSearchBtn = el('#kvt_save_search');
+  const savedSearches = el('#kvt_saved_searches');
+  const stageSel = el('#kvt_stage');
+  let savedSearchData = {};
   const tablePager = el('#kvt_table_pager');
   const tablePrev  = el('#kvt_table_prev');
   const tableNext  = el('#kvt_table_next');
@@ -3146,6 +3314,50 @@ function kvtInit(){
       tplList.appendChild(li);
     });
   }
+
+  function loadSavedSearches(){
+    if(!savedSearches) return;
+    const params = new URLSearchParams();
+    params.set('action','kvt_list_saved_searches');
+    params.set('_ajax_nonce', KVT_NONCE);
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:params.toString()})
+      .then(r=>r.json())
+      .then(j=>{
+        if(j.success){
+          savedSearchData = j.data||{};
+          savedSearches.innerHTML = Object.keys(savedSearchData).map(n=>'<button type="button" class="btn kvt-saved-search" data-name="'+escAttr(n)+'">'+esc(n)+'</button>').join('');
+          savedSearches.querySelectorAll('.kvt-saved-search').forEach(btn=>{
+            btn.addEventListener('click',()=>{
+              const f = savedSearchData[btn.dataset.name];
+              if(!f) return;
+              if(selClient) selClient.value = f.client||'';
+              if(selProcess) selProcess.value = f.process||'';
+              if(stageSel) stageSel.value = f.stage||'';
+              currentPage = 1;
+              refresh();
+              if(typeof updateSelectedInfo==='function') updateSelectedInfo();
+            });
+          });
+        }
+      });
+  }
+
+  saveSearchBtn && saveSearchBtn.addEventListener('click', ()=>{
+    const name = prompt('Nombre de la búsqueda');
+    if(!name) return;
+    const filters = {
+      client: selClient?selClient.value:'',
+      process: selProcess?selProcess.value:'',
+      stage: stageSel?stageSel.value:''
+    };
+    const params = new URLSearchParams();
+    params.set('action','kvt_save_search');
+    params.set('_ajax_nonce', KVT_NONCE);
+    params.set('name', name);
+    params.set('filters', JSON.stringify(filters));
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:params.toString()})
+      .then(r=>r.json()).then(()=>loadSavedSearches());
+  });
 
   async function deleteTemplate(id){
     try {
@@ -4681,6 +4893,9 @@ function kvtInit(){
       return '<li data-id="'+escAttr(c.candidate_id)+'" data-index="'+escAttr(c.index)+'"><a href="#" class="kvt-row-view" data-id="'+escAttr(c.candidate_id)+'">'+esc(candTxt)+'</a> — '+(metaStr?metaStr+' — ':'')+esc(commentTxt)+' <span class="kvt-comment-dismiss dashicons dashicons-no" title="Descartar"></span></li>';
     });
     const logs = (data.logs||[]).sort((a,b)=>a.time<b.time?1:-1);
+    (data.reminders||[]).forEach(r=>{
+      calendarEvents.push({date:formatInputDate(r.date), time:r.time||'', text:fixUnicode(r.text||''), candidate:r.candidate?fixUnicode(r.candidate):'', process:r.process?fixUnicode(r.process):'', client:r.client?fixUnicode(r.client):'', candidate_id:r.candidate_id||0, done:false, manual:true});
+    });
     activityDue.innerHTML = due.join('') || '<li>No hay tareas pendientes</li>';
     activityUpcoming.innerHTML = upcoming.join('') || '<li>No hay tareas próximas</li>';
     activityNotify.innerHTML = notifs.join('') || '<li>No hay notificaciones</li>';
@@ -6307,6 +6522,7 @@ function kvtInit(){
 
   // Init
   filterProcessOptions();
+  loadSavedSearches();
   refresh();
   updateSelectedInfo();
   if (typeof KVT_EDIT_BOARD !== 'undefined' && KVT_EDIT_BOARD) {
@@ -6582,6 +6798,7 @@ JS;
             'upcoming' => $upcoming,
             'overdue'  => $overdue,
             'logs'     => $logs,
+            'reminders'=> get_option('kvt_reminder_events', []),
         ]);
     }
 
