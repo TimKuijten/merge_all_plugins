@@ -7096,7 +7096,8 @@ JS;
 
         $notes      = [];
         $cand_lines = [];
-        $followups  = [];
+        $overdue    = [];
+        $upcoming   = [];
         $history    = [];
         foreach ($cands as $c) {
             $country = get_post_meta($c->ID, 'kvt_country', true);
@@ -7145,7 +7146,11 @@ JS;
                     $na_note = get_post_meta($c->ID, 'kvt_next_action_note', true);
                     $fline = $c->post_title . ' - ' . $next;
                     if ($na_note) $fline .= ': ' . $na_note;
-                    $followups[] = $fline;
+                    if ($ts < current_time('timestamp')) {
+                        $overdue[] = $fline;
+                    } else {
+                        $upcoming[] = $fline;
+                    }
                 }
             }
             if (is_array($log)) {
@@ -7243,8 +7248,11 @@ JS;
         $summary  = 'Candidatos: ' . implode('; ', $cand_lines) . '.';
         $summary .= ' Clientes: ' . implode('; ', $client_lines) . '.';
         $summary .= ' Procesos: ' . implode('; ', $process_lines) . '.';
-        if ($followups) {
-            $summary .= ' Seguimientos pendientes: ' . implode('; ', $followups) . '.';
+        if ($overdue) {
+            $summary .= ' Seguimientos vencidos: ' . implode('; ', $overdue) . '.';
+        }
+        if ($upcoming) {
+            $summary .= ' Seguimientos próximos: ' . implode('; ', $upcoming) . '.';
         }
         if ($notes) {
             $summary .= ' Notas: ' . implode(' | ', $notes) . '.';
@@ -7462,6 +7470,39 @@ JS;
             $text = preg_replace('/\n?```$/', '', $text);
         }
         return trim($text);
+    }
+
+
+    private function mit_is_search_disclaimer($text) {
+        $text = strtolower($text);
+        $phrases = [
+            'no tengo acceso',
+            'no puedo acceder',
+            'no puedo realizar búsquedas',
+            'no puedo buscar',
+            'no dispongo de datos en tiempo real',
+            'no cuento con acceso',
+            'sin acceso a internet',
+            "i don't have access",
+            'i do not have access',
+            'i cannot access',
+            "i can't access",
+            'i cannot browse',
+            "i can't browse",
+            'i am unable to browse',
+            "i don't have real-time data",
+            'i do not have real-time data',
+            'i cannot perform searches',
+            "i can't perform searches",
+            'i cannot provide real-time',
+            "i can't provide real-time",
+        ];
+        foreach ($phrases as $phrase) {
+            if (strpos($text, $phrase) !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function mit_create_excel() {
@@ -7775,9 +7816,18 @@ JS;
                 $message = $data['choices'][0]['message'] ?? [];
             }
             $reply = trim($message['content'] ?? '');
+            if ($this->mit_is_search_disclaimer($reply)) {
+                $reply = '';
+            }
         }
         if ($reply === '') {
             $reply = $this->mit_gemini_chat($messages);
+            if ($this->mit_is_search_disclaimer($reply)) {
+                $reply = '';
+            }
+        }
+        if ($reply === '') {
+            $reply = $this->mit_search_web($msg);
         }
         $file_url = '';
         if ($reply) {
