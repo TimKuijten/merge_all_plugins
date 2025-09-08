@@ -43,7 +43,8 @@ class Kovacic_Pipeline_Visualizer {
     const CPT_EMAIL_TEMPLATE = 'kvt_email_tpl';
     const MIT_HISTORY_LIMIT = 20;
     const MIT_TIMEOUT      = 60;
-    const AI_TIMEOUT       = 0;
+    // Generous timeout for OpenAI requests so long searches don't fail prematurely
+    const AI_TIMEOUT       = 300;
 
     public function __construct() {
         add_action('init',                       [$this, 'register_types']);
@@ -8995,9 +8996,7 @@ JS;
         }
 
         usort($items, function($a, $b){ return $b['score'] <=> $a['score']; });
-        // Keep only candidates with a score of 7 or higher (scale 0-10)
-        $items = array_values(array_filter($items, function($it){ return $it['score'] >= 7; }));
-
+        // Return all candidates sorted by relevance so lower scores still appear
         wp_send_json_success(['items' => $items]);
     }
 
