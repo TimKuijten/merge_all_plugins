@@ -43,6 +43,7 @@ class Kovacic_Pipeline_Visualizer {
     const CPT_EMAIL_TEMPLATE = 'kvt_email_tpl';
     const MIT_HISTORY_LIMIT = 20;
     const MIT_TIMEOUT      = 60;
+    const AI_TIMEOUT       = 0;
 
     public function __construct() {
         add_action('init',                       [$this, 'register_types']);
@@ -8901,10 +8902,10 @@ JS;
         check_ajax_referer('kvt_nonce');
 
         // Heavy search across many CVs can exceed default PHP limits.
-        // Allow the process to run longer and use more memory so the request
+        // Allow the process to run without time limits and use more memory so the request
         // can finish instead of timing out and leaving the UI hanging.
         ignore_user_abort(true);
-        @set_time_limit(300);
+        @set_time_limit(0);
         if (function_exists('wp_raise_memory_limit')) {
             wp_raise_memory_limit('admin');
         }
@@ -9300,7 +9301,7 @@ JS;
                 'Content-Type'  => 'application/json',
             ],
             'body' => wp_json_encode($req),
-            'timeout' => 60,
+            'timeout' => self::AI_TIMEOUT,
         ]);
         if (is_wp_error($response)) return '';
         $body = json_decode(wp_remote_retrieve_body($response), true);
@@ -9344,7 +9345,7 @@ JS;
                 'Content-Type'  => 'application/json',
             ],
             'body' => wp_json_encode($req),
-            'timeout' => 60,
+            'timeout' => self::AI_TIMEOUT,
         ]);
         if (is_wp_error($response)) return [];
         $body = json_decode(wp_remote_retrieve_body($response), true);
@@ -9425,7 +9426,7 @@ JS;
                 'Content-Type'  => 'application/json',
             ],
             'body' => wp_json_encode($req),
-            'timeout' => 60,
+            'timeout' => self::AI_TIMEOUT,
         ]);
         if (is_wp_error($response)) return null;
         $body = json_decode(wp_remote_retrieve_body($response), true);
