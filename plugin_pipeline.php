@@ -8963,10 +8963,17 @@ JS;
         $candidate_ids = get_posts($args);
         $items = [];
         foreach ($candidate_ids as $cid) {
-            $cv_text = $this->get_candidate_cv_text($cid);
-            if (!$cv_text) continue;
-            $res = $this->openai_match_summary($key, $desc, $cv_text);
-            if ($res) {
+            $texts = $this->get_candidate_cv_texts($cid);
+            if (!$texts) continue;
+            $best = null;
+            foreach ($texts as $cv_text) {
+                $cv_text = mb_substr($cv_text, 0, 20000);
+                $res = $this->openai_match_summary($key, $desc, $cv_text);
+                if ($res && (!$best || $res['score'] > $best['score'])) {
+                    $best = $res;
+                }
+            }
+            if ($best) {
                 $meta = [
                     'first_name'  => $this->meta_get_compat($cid,'kvt_first_name',['first_name']),
                     'last_name'   => $this->meta_get_compat($cid,'kvt_last_name',['last_name']),
@@ -8981,8 +8988,8 @@ JS;
                 $items[] = [
                     'id'      => $cid,
                     'meta'    => $meta,
-                    'summary' => $res['summary'],
-                    'score'   => $res['score'],
+                    'summary' => $best['summary'],
+                    'score'   => $best['score'],
                 ];
             }
         }
@@ -9037,8 +9044,9 @@ JS;
         $candidates = get_posts($args);
         $items = [];
         foreach ($candidates as $c) {
-            $cv_text = strtolower($this->get_candidate_cv_text($c->ID));
-            if (!$cv_text) continue;
+            $texts = $this->get_candidate_cv_texts($c->ID);
+            if (!$texts) continue;
+            $cv_text = strtolower(implode("\n", $texts));
 
             $ok = true;
             foreach ($required as $tok) {
@@ -9236,6 +9244,31 @@ JS;
 
         if ($text) update_post_meta($post_id, 'kvt_cv_text', $text);
         return $text;
+    }
+
+    private function get_candidate_cv_texts($post_id) {
+        $texts = [];
+        $main = $this->get_candidate_cv_text($post_id);
+        if (is_string($main) && trim($main) !== '') {
+            $texts[] = $main;
+        }
+        $attachments = get_posts([
+            'post_type'      => 'attachment',
+            'posts_per_page' => -1,
+            'post_parent'    => $post_id,
+            'fields'         => 'ids',
+        ]);
+        foreach ($attachments as $aid) {
+            $path = get_attached_file($aid);
+            if (!$path || !file_exists($path)) continue;
+            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+            if (!in_array($ext, ['pdf', 'doc', 'docx', 'txt'])) continue;
+            $text = $this->extract_text_from_file($path);
+            if ($text && !in_array($text, $texts, true)) {
+                $texts[] = $text;
+            }
+        }
+        return $texts;
     }
 
     private function extract_text_from_file($file) {
