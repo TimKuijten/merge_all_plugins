@@ -7139,7 +7139,8 @@ JS;
 
         $notes      = [];
         $cand_lines = [];
-        $followups  = [];
+        $overdue    = [];
+        $upcoming   = [];
         $history    = [];
         foreach ($cands as $c) {
             $country = get_post_meta($c->ID, 'kvt_country', true);
@@ -7188,7 +7189,11 @@ JS;
                     $na_note = get_post_meta($c->ID, 'kvt_next_action_note', true);
                     $fline = $c->post_title . ' - ' . $next;
                     if ($na_note) $fline .= ': ' . $na_note;
-                    $followups[] = $fline;
+                    if ($ts < current_time('timestamp')) {
+                        $overdue[] = $fline;
+                    } else {
+                        $upcoming[] = $fline;
+                    }
                 }
             }
             if (is_array($log)) {
@@ -7286,8 +7291,11 @@ JS;
         $summary  = 'Candidatos: ' . implode('; ', $cand_lines) . '.';
         $summary .= ' Clientes: ' . implode('; ', $client_lines) . '.';
         $summary .= ' Procesos: ' . implode('; ', $process_lines) . '.';
-        if ($followups) {
-            $summary .= ' Seguimientos pendientes: ' . implode('; ', $followups) . '.';
+        if ($overdue) {
+            $summary .= ' Seguimientos vencidos: ' . implode('; ', $overdue) . '.';
+        }
+        if ($upcoming) {
+            $summary .= ' Seguimientos próximos: ' . implode('; ', $upcoming) . '.';
         }
         if ($notes) {
             $summary .= ' Notas: ' . implode(' | ', $notes) . '.';
@@ -7841,11 +7849,7 @@ JS;
                     $line = trim($line);
                     if ($line === '' || strpos($line, 'data:') !== 0) continue;
                     $payload = trim(substr($line, 5));
-                    if ($payload === '[DONE]') {
-                        echo wp_json_encode(['done' => true]) . "\n";
-                        @ob_flush(); flush();
-                        continue;
-                    }
+                    if ($payload === '[DONE]') continue;
                     $json = json_decode($payload, true);
                     $chunk = $json['choices'][0]['delta']['content'] ?? '';
                     if ($chunk !== '') {
@@ -7859,7 +7863,29 @@ JS;
             CURLOPT_TIMEOUT => self::MIT_TIMEOUT,
         ]);
         curl_exec($ch);
+        $errno = curl_errno($ch);
+        $error = curl_error($ch);
         curl_close($ch);
+
+        if ($errno) {
+            wp_send_json_error(['msg' => $error ?: 'Stream error']);
+        }
+
+        // Fall back to web search and Gemini if the OpenAI reply is empty or uncertain
+        if ($reply === '' || preg_match('/no (tengo|puedo|se|sé)/i', $reply)) {
+            $web = $this->mit_search_web($msg);
+            if ($web) {
+                $prompt = "Usa los siguientes resultados de búsqueda para responder en español:\n$web\n\nPregunta: $msg";
+                $alt = $this->mit_use_gemini($prompt);
+                if ($alt) {
+                    $reply = $alt;
+                    echo wp_json_encode(['chunk' => $alt]) . "\n";
+                }
+            }
+        }
+
+        echo wp_json_encode(['done' => true]) . "\n";
+        @ob_flush(); flush();
 
         if ($reply !== '') {
             $plain = wp_strip_all_tags($reply);
