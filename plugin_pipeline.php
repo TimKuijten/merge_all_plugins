@@ -2322,7 +2322,7 @@ JS;
                         Incluir firma
                       </label>
                       <label for="kvt_email_copy_sender" style="display:flex;align-items:center;font-weight:400;gap:4px;">
-                        <input type="checkbox" id="kvt_email_copy_sender" checked>
+                        <input type="checkbox" id="kvt_email_copy_sender">
                         Enviar copia al remitente
                       </label>
                     </div>
@@ -2335,7 +2335,7 @@ JS;
                   </div>
                   <div id="kvt_email_tab_sent" class="kvt-tab-panel">
                     <table class="kvt-table">
-                      <thead><tr><th>Fecha</th><th>Asunto</th><th>Destinatarios</th><th>Mensaje</th></tr></thead>
+                      <thead><tr><th>Fecha</th><th>Asunto</th><th>Destinatarios</th><th>Mensaje</th><th>Estado</th></tr></thead>
                       <tbody id="kvt_email_sent_tbody"></tbody>
                     </table>
                   </div>
@@ -3570,6 +3570,10 @@ function kvtInit(){
       msgTd.textContent=snippet+' ';
       msgTd.appendChild(btn);
       tr.appendChild(msgTd);
+      const statusTd=document.createElement('td');
+      statusTd.textContent = l.status === 'sent' ? 'Enviado' : 'Error';
+      if(l.status !== 'sent' && l.error) statusTd.title = l.error;
+      tr.appendChild(statusTd);
       sentTbody.appendChild(tr);
     });
   }
@@ -4697,6 +4701,8 @@ function kvtInit(){
             const strat = fixUnicode(item.strategy);
             let email = '';
             let firstName = '';
+            let candId = '';
+            let candName = '';
             if(item.text){
               const m = item.text.match(/(?:a|con)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+)(?:\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+))?/i);
               if(m){
@@ -4709,7 +4715,11 @@ function kvtInit(){
                   if(first && last) return fn===first && ln===last;
                   return fn===first || ln===first;
                 });
-                if(cand && cand.meta && cand.meta.email) email = cand.meta.email;
+                if(cand){
+                  if(cand.meta && cand.meta.email) email = cand.meta.email;
+                  candId = cand.id;
+                  candName = ((cand.meta.first_name||'')+' '+(cand.meta.last_name||'')).trim();
+                }
               }
             }
             if(tmpl){
@@ -4728,6 +4738,8 @@ function kvtInit(){
               strategy:strat,
               template:tmpl,
               email:email,
+              candidate_id:candId,
+              candidate:candName,
               done:false,
               manual:false
             });
@@ -5185,7 +5197,26 @@ function kvtInit(){
         btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); });
       });
         calendarWrap.querySelectorAll('.kvt-cal-accept').forEach(btn=>{
-          btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendar(); renderCalendarSmall(); });
+          btn.addEventListener('click', e=>{
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.idx,10);
+            const ev = calendarEvents[idx];
+            ev.manual = true;
+            if(ev.candidate_id){
+              const params = new URLSearchParams({
+                action:'kvt_add_task',
+                _ajax_nonce:KVT_NONCE,
+                id:ev.candidate_id,
+                date:ev.date,
+                time:ev.time||'',
+                note:ev.text,
+                author:KVT_CURRENT_USER||''
+              });
+              fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()});
+            }
+            renderCalendar();
+            renderCalendarSmall();
+          });
         });
         calendarWrap.querySelectorAll('.kvt-cal-reject').forEach(btn=>{
         btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); });
@@ -5279,7 +5310,28 @@ function kvtInit(){
       });
       calendarSmall.querySelectorAll('.kvt-cal-detail').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); openMitDetail(calendarEvents[idx]); }); });
       calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); }); });
-        calendarSmall.querySelectorAll('.kvt-cal-accept').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendarSmall(); renderCalendar(); }); });
+        calendarSmall.querySelectorAll('.kvt-cal-accept').forEach(btn=>{
+          btn.addEventListener('click', e=>{
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.idx,10);
+            const ev = calendarEvents[idx];
+            ev.manual = true;
+            if(ev.candidate_id){
+              const params = new URLSearchParams({
+                action:'kvt_add_task',
+                _ajax_nonce:KVT_NONCE,
+                id:ev.candidate_id,
+                date:ev.date,
+                time:ev.time||'',
+                note:ev.text,
+                author:KVT_CURRENT_USER||''
+              });
+              fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()});
+            }
+            renderCalendarSmall();
+            renderCalendar();
+          });
+        });
       calendarSmall.querySelectorAll('.kvt-cal-reject').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); }); });
       calendarSmall.querySelectorAll('.kvt-cal-cell').forEach(cell=>{
         cell.addEventListener('dragover', e=>e.preventDefault());
@@ -9820,9 +9872,20 @@ JS;
 
             $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
             $log = get_option(self::OPT_EMAIL_LOG, []);
+            $last_error = null;
+            $failed_hook = function($wp_error) use (&$last_error) {
+                if (is_wp_error($wp_error)) {
+                    $last_error = $wp_error->get_error_message();
+                } else {
+                    $last_error = is_string($wp_error) ? $wp_error : 'Unknown mail error';
+                }
+            };
+            add_action('wp_mail_failed', $failed_hook);
 
             foreach ($recipients as $r) {
-                $email      = isset($r['email']) ? sanitize_email($r['email']) : '';
+                $email_raw  = isset($r['email']) ? $r['email'] : '';
+                $email      = sanitize_email($email_raw);
+                $display_email = $email ? $email : sanitize_text_field($email_raw);
                 $first_name = isset($r['first_name']) ? sanitize_text_field($r['first_name']) : '';
                 $surname    = isset($r['surname']) ? sanitize_text_field($r['surname']) : '';
                 $country    = isset($r['country']) ? sanitize_text_field($r['country']) : '';
@@ -9831,7 +9894,6 @@ JS;
                 $status     = isset($r['status']) ? sanitize_text_field($r['status']) : '';
                 $client     = isset($r['client']) ? sanitize_text_field($r['client']) : '';
                 $board      = isset($r['board']) ? esc_url_raw($r['board']) : '';
-                if (!$email) continue;
 
                 $data = compact('first_name','surname','country','city','role','board','status','client');
                 $data['sender'] = $from_name ?: $from_email ?: get_bloginfo('name');
@@ -9845,22 +9907,31 @@ JS;
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
 
-                if (wp_mail($email, $subject, $body, $headers)) {
+                $last_error = null;
+                $ok = wp_mail($email, $subject, $body, $headers);
+                $status = $last_error ? 'failed' : 'sent';
+                if ($status === 'sent') {
                     $result['sent']++;
                 } else {
-                    $result['errors'][] = $email;
+                    $result['errors'][] = ['email'=>$display_email, 'error'=>$last_error];
                 }
 
-                $recipient_meta = compact('email','first_name','surname','country','city','role','status','client','board');
-                $log[] = [
+                $recipient_meta = compact('first_name','surname','country','city','role','status','client','board');
+                $recipient_meta['email'] = $display_email;
+                $entry = [
                     'time'       => current_time('mysql'),
                     'from_name'  => $from_name,
                     'from_email' => $from_email,
                     'subject'    => $subject,
                     'body'       => $body,
-                    'recipients' => [$email],
-                    'meta'       => $recipient_meta
+                    'recipients' => [$display_email],
+                    'meta'       => $recipient_meta,
+                    'status'     => $status,
                 ];
+                if ($status !== 'sent') {
+                    $entry['error'] = $last_error;
+                }
+                $log[] = $entry;
             }
 
             if ($copy_sender && $from_email) {
@@ -9883,18 +9954,26 @@ JS;
                 }
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
-                if (wp_mail($from_email, $subject, $body, $headers)) {
-                    $log[] = [
-                        'time'       => current_time('mysql'),
-                        'from_name'  => $from_name,
-                        'from_email' => $from_email,
-                        'subject'    => $subject,
-                        'body'       => $body,
-                        'recipients' => [$from_email],
-                        'meta'       => $data
-                    ];
+                $last_error = null;
+                $ok = wp_mail($from_email, $subject, $body, $headers);
+                $status = $last_error ? 'failed' : 'sent';
+                $entry = [
+                    'time'       => current_time('mysql'),
+                    'from_name'  => $from_name,
+                    'from_email' => $from_email,
+                    'subject'    => $subject,
+                    'body'       => $body,
+                    'recipients' => [$from_email],
+                    'meta'       => $data,
+                    'status'     => $status,
+                ];
+                if ($status !== 'sent') {
+                    $entry['error'] = $last_error;
                 }
+                $log[] = $entry;
             }
+
+            remove_action('wp_mail_failed', $failed_hook);
 
             update_option(self::OPT_EMAIL_LOG, $log);
 
