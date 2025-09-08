@@ -8904,9 +8904,14 @@ JS;
         // Allow the process to run longer and use more memory so the request
         // can finish instead of timing out and leaving the UI hanging.
         ignore_user_abort(true);
-        @set_time_limit(300);
+        // Remove execution time limits so the search can finish even for large datasets.
+        @set_time_limit(0);
+        @ini_set('max_execution_time', '0');
         if (function_exists('wp_raise_memory_limit')) {
             wp_raise_memory_limit('admin');
+        } else {
+            // Fallback in case the helper isn't available.
+            @ini_set('memory_limit', '-1');
         }
 
         $desc = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
@@ -9300,7 +9305,8 @@ JS;
                 'Content-Type'  => 'application/json',
             ],
             'body' => wp_json_encode($req),
-            'timeout' => 60,
+            // Use a generous timeout to avoid prematurely aborting the request
+            'timeout' => 120,
         ]);
         if (is_wp_error($response)) return '';
         $body = json_decode(wp_remote_retrieve_body($response), true);
@@ -9344,7 +9350,8 @@ JS;
                 'Content-Type'  => 'application/json',
             ],
             'body' => wp_json_encode($req),
-            'timeout' => 60,
+            // Use a generous timeout to avoid prematurely aborting the request
+            'timeout' => 120,
         ]);
         if (is_wp_error($response)) return [];
         $body = json_decode(wp_remote_retrieve_body($response), true);
@@ -9425,7 +9432,8 @@ JS;
                 'Content-Type'  => 'application/json',
             ],
             'body' => wp_json_encode($req),
-            'timeout' => 60,
+            // Use a generous timeout to avoid prematurely aborting the request
+            'timeout' => 120,
         ]);
         if (is_wp_error($response)) return null;
         $body = json_decode(wp_remote_retrieve_body($response), true);
