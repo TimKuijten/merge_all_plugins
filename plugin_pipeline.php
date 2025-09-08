@@ -4701,6 +4701,8 @@ function kvtInit(){
             const strat = fixUnicode(item.strategy);
             let email = '';
             let firstName = '';
+            let candId = '';
+            let candName = '';
             if(item.text){
               const m = item.text.match(/(?:a|con)\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+)(?:\s+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+))?/i);
               if(m){
@@ -4713,7 +4715,11 @@ function kvtInit(){
                   if(first && last) return fn===first && ln===last;
                   return fn===first || ln===first;
                 });
-                if(cand && cand.meta && cand.meta.email) email = cand.meta.email;
+                if(cand){
+                  if(cand.meta && cand.meta.email) email = cand.meta.email;
+                  candId = cand.id;
+                  candName = ((cand.meta.first_name||'')+' '+(cand.meta.last_name||'')).trim();
+                }
               }
             }
             if(tmpl){
@@ -4732,6 +4738,8 @@ function kvtInit(){
               strategy:strat,
               template:tmpl,
               email:email,
+              candidate_id:candId,
+              candidate:candName,
               done:false,
               manual:false
             });
@@ -5189,7 +5197,26 @@ function kvtInit(){
         btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); });
       });
         calendarWrap.querySelectorAll('.kvt-cal-accept').forEach(btn=>{
-          btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendar(); renderCalendarSmall(); });
+          btn.addEventListener('click', e=>{
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.idx,10);
+            const ev = calendarEvents[idx];
+            ev.manual = true;
+            if(ev.candidate_id){
+              const params = new URLSearchParams({
+                action:'kvt_add_task',
+                _ajax_nonce:KVT_NONCE,
+                id:ev.candidate_id,
+                date:ev.date,
+                time:ev.time||'',
+                note:ev.text,
+                author:KVT_CURRENT_USER||''
+              });
+              fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()});
+            }
+            renderCalendar();
+            renderCalendarSmall();
+          });
         });
         calendarWrap.querySelectorAll('.kvt-cal-reject').forEach(btn=>{
         btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); });
@@ -5283,7 +5310,28 @@ function kvtInit(){
       });
       calendarSmall.querySelectorAll('.kvt-cal-detail').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); openMitDetail(calendarEvents[idx]); }); });
       calendarSmall.querySelectorAll('.kvt-cal-remove').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); }); });
-        calendarSmall.querySelectorAll('.kvt-cal-accept').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); calendarEvents[idx].manual=true; renderCalendarSmall(); renderCalendar(); }); });
+        calendarSmall.querySelectorAll('.kvt-cal-accept').forEach(btn=>{
+          btn.addEventListener('click', e=>{
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.idx,10);
+            const ev = calendarEvents[idx];
+            ev.manual = true;
+            if(ev.candidate_id){
+              const params = new URLSearchParams({
+                action:'kvt_add_task',
+                _ajax_nonce:KVT_NONCE,
+                id:ev.candidate_id,
+                date:ev.date,
+                time:ev.time||'',
+                note:ev.text,
+                author:KVT_CURRENT_USER||''
+              });
+              fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()});
+            }
+            renderCalendarSmall();
+            renderCalendar();
+          });
+        });
       calendarSmall.querySelectorAll('.kvt-cal-reject').forEach(btn=>{ btn.addEventListener('click', e=>{ e.stopPropagation(); const idx=parseInt(btn.dataset.idx,10); removeCalendarEvent(idx); }); });
       calendarSmall.querySelectorAll('.kvt-cal-cell').forEach(cell=>{
         cell.addEventListener('dragover', e=>e.preventDefault());
