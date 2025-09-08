@@ -140,3 +140,6 @@
   .kcvf tbody td{border:none;padding:6px 0}
   .kcvf .checkbox{position:absolute;right:12px;top:12px}
 }
+
+/* MIT calendar template container */
+.kvt-mit-template{position:relative;}
