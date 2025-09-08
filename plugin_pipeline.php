@@ -7472,6 +7472,39 @@ JS;
         return trim($text);
     }
 
+
+    private function mit_is_search_disclaimer($text) {
+        $text = strtolower($text);
+        $phrases = [
+            'no tengo acceso',
+            'no puedo acceder',
+            'no puedo realizar búsquedas',
+            'no puedo buscar',
+            'no dispongo de datos en tiempo real',
+            'no cuento con acceso',
+            'sin acceso a internet',
+            "i don't have access",
+            'i do not have access',
+            'i cannot access',
+            "i can't access",
+            'i cannot browse',
+            "i can't browse",
+            'i am unable to browse',
+            "i don't have real-time data",
+            'i do not have real-time data',
+            'i cannot perform searches',
+            "i can't perform searches",
+            'i cannot provide real-time',
+            "i can't provide real-time",
+        ];
+        foreach ($phrases as $phrase) {
+            if (strpos($text, $phrase) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private function mit_create_excel() {
         if (!class_exists('\\PhpOffice\\PhpSpreadsheet\\Spreadsheet')) {
             error_log('mit_create_excel: PhpSpreadsheet not available');
@@ -7783,9 +7816,15 @@ JS;
                 $message = $data['choices'][0]['message'] ?? [];
             }
             $reply = trim($message['content'] ?? '');
+            if ($this->mit_is_search_disclaimer($reply)) {
+                $reply = '';
+            }
         }
         if ($reply === '') {
             $reply = $this->mit_gemini_chat($messages);
+            if ($this->mit_is_search_disclaimer($reply)) {
+                $reply = '';
+            }
         }
         if ($reply === '') {
             $reply = $this->mit_search_web($msg);
