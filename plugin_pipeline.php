@@ -9883,7 +9883,9 @@ JS;
             add_action('wp_mail_failed', $failed_hook);
 
             foreach ($recipients as $r) {
-                $email      = isset($r['email']) ? sanitize_email($r['email']) : '';
+                $email_raw  = isset($r['email']) ? $r['email'] : '';
+                $email      = sanitize_email($email_raw);
+                $display_email = $email ? $email : sanitize_text_field($email_raw);
                 $first_name = isset($r['first_name']) ? sanitize_text_field($r['first_name']) : '';
                 $surname    = isset($r['surname']) ? sanitize_text_field($r['surname']) : '';
                 $country    = isset($r['country']) ? sanitize_text_field($r['country']) : '';
@@ -9892,7 +9894,6 @@ JS;
                 $status     = isset($r['status']) ? sanitize_text_field($r['status']) : '';
                 $client     = isset($r['client']) ? sanitize_text_field($r['client']) : '';
                 $board      = isset($r['board']) ? esc_url_raw($r['board']) : '';
-                if (!$email) continue;
 
                 $data = compact('first_name','surname','country','city','role','board','status','client');
                 $data['sender'] = $from_name ?: $from_email ?: get_bloginfo('name');
@@ -9908,25 +9909,26 @@ JS;
 
                 $last_error = null;
                 $ok = wp_mail($email, $subject, $body, $headers);
-                $status = $ok ? 'sent' : 'failed';
-                if ($ok) {
+                $status = $last_error ? 'failed' : 'sent';
+                if ($status === 'sent') {
                     $result['sent']++;
                 } else {
-                    $result['errors'][] = ['email'=>$email, 'error'=>$last_error];
+                    $result['errors'][] = ['email'=>$display_email, 'error'=>$last_error];
                 }
 
-                $recipient_meta = compact('email','first_name','surname','country','city','role','status','client','board');
+                $recipient_meta = compact('first_name','surname','country','city','role','status','client','board');
+                $recipient_meta['email'] = $display_email;
                 $entry = [
                     'time'       => current_time('mysql'),
                     'from_name'  => $from_name,
                     'from_email' => $from_email,
                     'subject'    => $subject,
                     'body'       => $body,
-                    'recipients' => [$email],
+                    'recipients' => [$display_email],
                     'meta'       => $recipient_meta,
                     'status'     => $status,
                 ];
-                if (!$ok) {
+                if ($status !== 'sent') {
                     $entry['error'] = $last_error;
                 }
                 $log[] = $entry;
@@ -9954,6 +9956,7 @@ JS;
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
                 $last_error = null;
                 $ok = wp_mail($from_email, $subject, $body, $headers);
+                $status = $last_error ? 'failed' : 'sent';
                 $entry = [
                     'time'       => current_time('mysql'),
                     'from_name'  => $from_name,
@@ -9962,9 +9965,9 @@ JS;
                     'body'       => $body,
                     'recipients' => [$from_email],
                     'meta'       => $data,
-                    'status'     => $ok ? 'sent' : 'failed',
+                    'status'     => $status,
                 ];
-                if (!$ok) {
+                if ($status !== 'sent') {
                     $entry['error'] = $last_error;
                 }
                 $log[] = $entry;
