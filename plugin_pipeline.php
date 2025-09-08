@@ -2322,7 +2322,7 @@ JS;
                         Incluir firma
                       </label>
                       <label for="kvt_email_copy_sender" style="display:flex;align-items:center;font-weight:400;gap:4px;">
-                        <input type="checkbox" id="kvt_email_copy_sender" checked>
+                        <input type="checkbox" id="kvt_email_copy_sender">
                         Enviar copia al remitente
                       </label>
                     </div>
@@ -2335,7 +2335,7 @@ JS;
                   </div>
                   <div id="kvt_email_tab_sent" class="kvt-tab-panel">
                     <table class="kvt-table">
-                      <thead><tr><th>Fecha</th><th>Asunto</th><th>Destinatarios</th><th>Mensaje</th></tr></thead>
+                      <thead><tr><th>Fecha</th><th>Asunto</th><th>Destinatarios</th><th>Mensaje</th><th>Estado</th></tr></thead>
                       <tbody id="kvt_email_sent_tbody"></tbody>
                     </table>
                   </div>
@@ -3570,6 +3570,10 @@ function kvtInit(){
       msgTd.textContent=snippet+' ';
       msgTd.appendChild(btn);
       tr.appendChild(msgTd);
+      const statusTd=document.createElement('td');
+      statusTd.textContent = l.status === 'sent' ? 'Enviado' : 'Error';
+      if(l.status !== 'sent' && l.error) statusTd.title = l.error;
+      tr.appendChild(statusTd);
       sentTbody.appendChild(tr);
     });
   }
@@ -9820,6 +9824,15 @@ JS;
 
             $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
             $log = get_option(self::OPT_EMAIL_LOG, []);
+            $last_error = null;
+            $failed_hook = function($wp_error) use (&$last_error) {
+                if (is_wp_error($wp_error)) {
+                    $last_error = $wp_error->get_error_message();
+                } else {
+                    $last_error = is_string($wp_error) ? $wp_error : 'Unknown mail error';
+                }
+            };
+            add_action('wp_mail_failed', $failed_hook);
 
             foreach ($recipients as $r) {
                 $email      = isset($r['email']) ? sanitize_email($r['email']) : '';
@@ -9845,22 +9858,30 @@ JS;
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
 
-                if (wp_mail($email, $subject, $body, $headers)) {
+                $last_error = null;
+                $ok = wp_mail($email, $subject, $body, $headers);
+                $status = $ok ? 'sent' : 'failed';
+                if ($ok) {
                     $result['sent']++;
                 } else {
-                    $result['errors'][] = $email;
+                    $result['errors'][] = ['email'=>$email, 'error'=>$last_error];
                 }
 
                 $recipient_meta = compact('email','first_name','surname','country','city','role','status','client','board');
-                $log[] = [
+                $entry = [
                     'time'       => current_time('mysql'),
                     'from_name'  => $from_name,
                     'from_email' => $from_email,
                     'subject'    => $subject,
                     'body'       => $body,
                     'recipients' => [$email],
-                    'meta'       => $recipient_meta
+                    'meta'       => $recipient_meta,
+                    'status'     => $status,
                 ];
+                if (!$ok) {
+                    $entry['error'] = $last_error;
+                }
+                $log[] = $entry;
             }
 
             if ($copy_sender && $from_email) {
@@ -9883,18 +9904,25 @@ JS;
                 }
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
-                if (wp_mail($from_email, $subject, $body, $headers)) {
-                    $log[] = [
-                        'time'       => current_time('mysql'),
-                        'from_name'  => $from_name,
-                        'from_email' => $from_email,
-                        'subject'    => $subject,
-                        'body'       => $body,
-                        'recipients' => [$from_email],
-                        'meta'       => $data
-                    ];
+                $last_error = null;
+                $ok = wp_mail($from_email, $subject, $body, $headers);
+                $entry = [
+                    'time'       => current_time('mysql'),
+                    'from_name'  => $from_name,
+                    'from_email' => $from_email,
+                    'subject'    => $subject,
+                    'body'       => $body,
+                    'recipients' => [$from_email],
+                    'meta'       => $data,
+                    'status'     => $ok ? 'sent' : 'failed',
+                ];
+                if (!$ok) {
+                    $entry['error'] = $last_error;
                 }
+                $log[] = $entry;
             }
+
+            remove_action('wp_mail_failed', $failed_hook);
 
             update_option(self::OPT_EMAIL_LOG, $log);
 
