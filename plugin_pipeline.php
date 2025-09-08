@@ -335,6 +335,31 @@ cv_url|CV (URL)
             ];
             wp_add_inline_script('kvt-tracker', 'const KVT_BOARD_LINKS='.wp_json_encode($links).';const KVT_EDIT_BOARD="'.esc_js($edit_slug).'";', 'before');
         }
+        $skill_opts = [];
+        $tag_opts   = [];
+        $all_posts  = get_posts([
+            'post_type'   => self::CPT,
+            'numberposts' => -1,
+            'fields'      => 'ids',
+        ]);
+        foreach ($all_posts as $pid) {
+            $t = get_post_meta($pid, 'kvt_tags', true);
+            if ($t) {
+                foreach (array_map('trim', explode(',', $t)) as $val) {
+                    if ($val !== '') $tag_opts[$val] = true;
+                }
+            }
+            $s = get_post_meta($pid, 'kvt_skills', true);
+            if ($s) {
+                foreach (array_map('trim', explode(',', $s)) as $val) {
+                    if ($val !== '') $skill_opts[$val] = true;
+                }
+            }
+        }
+        $tag_opts   = array_keys($tag_opts);
+        sort($tag_opts);
+        $skill_opts = array_keys($skill_opts);
+        sort($skill_opts);
         ?>
         <div class="wrap kcvf">
           <header class="k-header">
@@ -362,6 +387,12 @@ cv_url|CV (URL)
               <select id="k-filter-client" class="k-select"><option value=""><?php esc_html_e('Cliente', 'kovacic'); ?></option></select>
               <select id="k-filter-process" class="k-select"><option value=""><?php esc_html_e('Proceso', 'kovacic'); ?></option></select>
               <select id="k-filter-stage" class="k-select"><option value=""><?php esc_html_e('Etapa', 'kovacic'); ?></option></select>
+              <select id="k-filter-tags" class="k-select" multiple>
+                <?php foreach ($tag_opts as $t) { echo '<option value="'.esc_attr($t).'">'.esc_html($t).'</option>'; } ?>
+              </select>
+              <select id="k-filter-skills" class="k-select" multiple>
+                <?php foreach ($skill_opts as $s) { echo '<option value="'.esc_attr($s).'">'.esc_html($s).'</option>'; } ?>
+              </select>
               <button class="btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
             </div>
             <div class="k-bulkbar" id="k-bulkbar" hidden>
@@ -566,7 +597,7 @@ CSS;
 
         $js = <<<'JS'
 (function(){
-  const state = {page:1, search:'', client:'', process:'', stage:''};
+  const state = {page:1, search:'', client:'', process:'', stage:'', tags:[], skills:[]};
   const tbody = document.getElementById('k-rows');
   const pager = document.getElementById('k-page');
 
@@ -631,6 +662,8 @@ CSS;
       client:state.client,
       process:state.process,
       stage:state.stage,
+      tags:state.tags.join(','),
+      skills:state.skills.join(','),
       page:state.page
     });
     fetch(KVT.ajaxurl,{method:'POST',body:params}).then(r=>r.json()).then(res=>{
@@ -658,11 +691,16 @@ CSS;
     state.page++;fetchData();
   });
 
-  ['k-filter-client','k-filter-process','k-filter-stage'].forEach(id=>{
+  ['k-filter-client','k-filter-process','k-filter-stage','k-filter-tags','k-filter-skills'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){
       el.addEventListener('change',e=>{
-        state[id.replace('k-filter-','')] = e.target.value;
+        const key = id.replace('k-filter-','');
+        if(e.target.multiple){
+          state[key] = Array.from(e.target.selectedOptions).map(o=>o.value);
+        } else {
+          state[key] = e.target.value;
+        }
         state.page=1;fetchData();
       });
     }
@@ -6691,6 +6729,8 @@ JS;
         $status_vals = isset($_POST['status'])  ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['status']))) : [];
         $countries   = isset($_POST['country']) ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['country']))) : [];
         $cities      = isset($_POST['city'])    ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['city']))) : [];
+        $skills      = isset($_POST['skills'])  ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['skills']))) : [];
+        $tags        = isset($_POST['tags'])    ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['tags'])))     : [];
 
         $cand_links_opt = get_option('kvt_candidate_links', []);
         $board_map = [];
@@ -6770,6 +6810,20 @@ JS;
                 ['key'=>'kvt_city','value'=>$cities,'compare'=>'IN'],
                 ['key'=>'city','value'=>$cities,'compare'=>'IN'],
             ];
+        }
+        if (!empty($skills)) {
+            $skill_meta = ['relation'=>'AND'];
+            foreach ($skills as $s) {
+                $skill_meta[] = ['key'=>'kvt_skills','value'=>$s,'compare'=>'LIKE'];
+            }
+            $meta_query[] = $skill_meta;
+        }
+        if (!empty($tags)) {
+            $tag_meta = ['relation'=>'AND'];
+            foreach ($tags as $t) {
+                $tag_meta[] = ['key'=>'kvt_tags','value'=>$t,'compare'=>'LIKE'];
+            }
+            $meta_query[] = $tag_meta;
         }
         if (!empty($meta_query)) {
             $args['meta_query'] = array_merge(['relation'=>'AND'], $meta_query);
@@ -8465,6 +8519,24 @@ JS;
         $cv_url     = isset($_POST['cv_url'])     ? esc_url_raw($_POST['cv_url'])             : '';
         $client_id  = isset($_POST['client_id'])  ? intval($_POST['client_id'])               : 0;
         $process_id = isset($_POST['process_id']) ? intval($_POST['process_id'])              : 0;
+
+        if ($email) {
+            $existing = get_posts([
+                'post_type'   => self::CPT,
+                'post_status' => 'any',
+                'meta_query'  => [
+                    'relation' => 'OR',
+                    ['key' => 'kvt_email', 'value' => $email, 'compare' => '='],
+                    ['key' => 'email',     'value' => $email, 'compare' => '='],
+                ],
+                'fields'      => 'ids',
+                'numberposts' => 1,
+            ]);
+            if (!empty($existing)) {
+                $link = get_permalink($existing[0]);
+                wp_send_json_error(['msg'=>'Candidato ya existe','id'=>$existing[0],'link'=>$link],409);
+            }
+        }
 
         $title = trim($first.' '.$last);
         if (!$title) $title = $email;
