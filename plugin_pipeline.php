@@ -43,6 +43,8 @@ class Kovacic_Pipeline_Visualizer {
     const CPT_EMAIL_TEMPLATE = 'kvt_email_tpl';
     const MIT_HISTORY_LIMIT = 20;
     const MIT_TIMEOUT      = 60;
+    // Generous timeout for OpenAI requests so long searches don't fail prematurely
+    const AI_TIMEOUT       = 300;
 
     public function __construct() {
         add_action('init',                       [$this, 'register_types']);
@@ -2005,7 +2007,7 @@ JS;
         $from_name_def  = get_option(self::OPT_FROM_NAME, '');
         $from_email_def = get_option(self::OPT_FROM_EMAIL, '');
         $templates      = $this->get_email_templates();
-        $sent_emails    = get_option(self::OPT_EMAIL_LOG, []);
+        $sent_emails    = array_reverse((array) get_option(self::OPT_EMAIL_LOG, []));
         $count_obj = wp_count_posts(self::CPT, 'readable');
         $total_candidates = array_sum((array) $count_obj);
         $recent_q = new WP_Query([
@@ -3554,10 +3556,38 @@ function kvtInit(){
       const tr=document.createElement('tr');
       const recips = Array.isArray(l.recipients) ? l.recipients.join(', ') : '';
       const txt = l.body ? String(l.body).replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').trim() : '';
-      const snippet = txt.length > 120 ? txt.slice(0,120)+'…' : txt;
-      tr.innerHTML=`<td>${l.time||''}</td><td>${l.subject||''}</td><td>${recips}</td><td>${snippet}</td>`;
+      const snippet = txt.length > 80 ? txt.slice(0,80)+'…' : txt;
+      tr.innerHTML=`<td>${l.time||''}</td><td>${l.subject||''}</td><td>${recips}</td>`;
+      const msgTd=document.createElement('td');
+      const btn=document.createElement('button');
+      btn.textContent='Ver más';
+      btn.type='button';
+      btn.addEventListener('click',()=>{
+        if(emailPrevSubject) emailPrevSubject.textContent=l.subject||'';
+        if(emailPrevBody) emailPrevBody.innerHTML=l.body||'';
+        if(emailPrevModal) emailPrevModal.style.display='flex';
+      });
+      msgTd.textContent=snippet+' ';
+      msgTd.appendChild(btn);
+      tr.appendChild(msgTd);
       sentTbody.appendChild(tr);
     });
+  }
+
+  async function fetchSentEmails(){
+    try{
+      const res=await fetch(KVT_AJAX,{
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        credentials:'same-origin',
+        body:new URLSearchParams({action:'kvt_get_email_log', _ajax_nonce:KVT_NONCE})
+      });
+      const j=await res.json();
+      if(j.success && j.data && Array.isArray(j.data.log)){
+        KVT_SENT_EMAILS=j.data.log;
+        renderSentEmails();
+      }
+    }catch(e){}
   }
 
   populateTemplateSelect();
@@ -3572,6 +3602,7 @@ function kvtInit(){
         const pane=el('#kvt_email_tab_'+k);
         if(pane) pane.classList.toggle('active', k===target);
       });
+      if(target==='sent') fetchSentEmails();
     });
   });
 
@@ -8901,10 +8932,10 @@ JS;
         check_ajax_referer('kvt_nonce');
 
         // Heavy search across many CVs can exceed default PHP limits.
-        // Allow the process to run longer and use more memory so the request
+        // Allow the process to run without time limits and use more memory so the request
         // can finish instead of timing out and leaving the UI hanging.
         ignore_user_abort(true);
-        @set_time_limit(300);
+        @set_time_limit(0);
         if (function_exists('wp_raise_memory_limit')) {
             wp_raise_memory_limit('admin');
         }
@@ -8933,10 +8964,17 @@ JS;
         $candidate_ids = get_posts($args);
         $items = [];
         foreach ($candidate_ids as $cid) {
-            $cv_text = $this->get_candidate_cv_text($cid);
-            if (!$cv_text) continue;
-            $res = $this->openai_match_summary($key, $desc, $cv_text);
-            if ($res) {
+            $texts = $this->get_candidate_cv_texts($cid);
+            if (!$texts) continue;
+            $best = null;
+            foreach ($texts as $cv_text) {
+                $cv_text = mb_substr($cv_text, 0, 20000);
+                $res = $this->openai_match_summary($key, $desc, $cv_text);
+                if ($res && (!$best || $res['score'] > $best['score'])) {
+                    $best = $res;
+                }
+            }
+            if ($best) {
                 $meta = [
                     'first_name'  => $this->meta_get_compat($cid,'kvt_first_name',['first_name']),
                     'last_name'   => $this->meta_get_compat($cid,'kvt_last_name',['last_name']),
@@ -8951,16 +8989,14 @@ JS;
                 $items[] = [
                     'id'      => $cid,
                     'meta'    => $meta,
-                    'summary' => $res['summary'],
-                    'score'   => $res['score'],
+                    'summary' => $best['summary'],
+                    'score'   => $best['score'],
                 ];
             }
         }
 
         usort($items, function($a, $b){ return $b['score'] <=> $a['score']; });
-        // Keep only candidates with a score of 7 or higher (scale 0-10)
-        $items = array_values(array_filter($items, function($it){ return $it['score'] >= 7; }));
-
+        // Return all candidates sorted by relevance so lower scores still appear
         wp_send_json_success(['items' => $items]);
     }
 
@@ -9007,8 +9043,9 @@ JS;
         $candidates = get_posts($args);
         $items = [];
         foreach ($candidates as $c) {
-            $cv_text = strtolower($this->get_candidate_cv_text($c->ID));
-            if (!$cv_text) continue;
+            $texts = $this->get_candidate_cv_texts($c->ID);
+            if (!$texts) continue;
+            $cv_text = strtolower(implode("\n", $texts));
 
             $ok = true;
             foreach ($required as $tok) {
@@ -9208,6 +9245,31 @@ JS;
         return $text;
     }
 
+    private function get_candidate_cv_texts($post_id) {
+        $texts = [];
+        $main = $this->get_candidate_cv_text($post_id);
+        if (is_string($main) && trim($main) !== '') {
+            $texts[] = $main;
+        }
+        $attachments = get_posts([
+            'post_type'      => 'attachment',
+            'posts_per_page' => -1,
+            'post_parent'    => $post_id,
+            'fields'         => 'ids',
+        ]);
+        foreach ($attachments as $aid) {
+            $path = get_attached_file($aid);
+            if (!$path || !file_exists($path)) continue;
+            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+            if (!in_array($ext, ['pdf', 'doc', 'docx', 'txt'])) continue;
+            $text = $this->extract_text_from_file($path);
+            if ($text && !in_array($text, $texts, true)) {
+                $texts[] = $text;
+            }
+        }
+        return $texts;
+    }
+
     private function extract_text_from_file($file) {
         $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
         $text = '';
@@ -9300,7 +9362,7 @@ JS;
                 'Content-Type'  => 'application/json',
             ],
             'body' => wp_json_encode($req),
-            'timeout' => 60,
+            'timeout' => self::AI_TIMEOUT,
         ]);
         if (is_wp_error($response)) return '';
         $body = json_decode(wp_remote_retrieve_body($response), true);
@@ -9344,7 +9406,7 @@ JS;
                 'Content-Type'  => 'application/json',
             ],
             'body' => wp_json_encode($req),
-            'timeout' => 60,
+            'timeout' => self::AI_TIMEOUT,
         ]);
         if (is_wp_error($response)) return [];
         $body = json_decode(wp_remote_retrieve_body($response), true);
@@ -9425,7 +9487,7 @@ JS;
                 'Content-Type'  => 'application/json',
             ],
             'body' => wp_json_encode($req),
-            'timeout' => 60,
+            'timeout' => self::AI_TIMEOUT,
         ]);
         if (is_wp_error($response)) return null;
         $body = json_decode(wp_remote_retrieve_body($response), true);
