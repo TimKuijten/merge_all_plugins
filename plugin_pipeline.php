@@ -2006,7 +2006,7 @@ JS;
         $from_name_def  = get_option(self::OPT_FROM_NAME, '');
         $from_email_def = get_option(self::OPT_FROM_EMAIL, '');
         $templates      = $this->get_email_templates();
-        $sent_emails    = get_option(self::OPT_EMAIL_LOG, []);
+        $sent_emails    = array_reverse((array) get_option(self::OPT_EMAIL_LOG, []));
         $count_obj = wp_count_posts(self::CPT, 'readable');
         $total_candidates = array_sum((array) $count_obj);
         $recent_q = new WP_Query([
@@ -3555,10 +3555,38 @@ function kvtInit(){
       const tr=document.createElement('tr');
       const recips = Array.isArray(l.recipients) ? l.recipients.join(', ') : '';
       const txt = l.body ? String(l.body).replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').trim() : '';
-      const snippet = txt.length > 120 ? txt.slice(0,120)+'…' : txt;
-      tr.innerHTML=`<td>${l.time||''}</td><td>${l.subject||''}</td><td>${recips}</td><td>${snippet}</td>`;
+      const snippet = txt.length > 80 ? txt.slice(0,80)+'…' : txt;
+      tr.innerHTML=`<td>${l.time||''}</td><td>${l.subject||''}</td><td>${recips}</td>`;
+      const msgTd=document.createElement('td');
+      const btn=document.createElement('button');
+      btn.textContent='Ver más';
+      btn.type='button';
+      btn.addEventListener('click',()=>{
+        if(emailPrevSubject) emailPrevSubject.textContent=l.subject||'';
+        if(emailPrevBody) emailPrevBody.innerHTML=l.body||'';
+        if(emailPrevModal) emailPrevModal.style.display='flex';
+      });
+      msgTd.textContent=snippet+' ';
+      msgTd.appendChild(btn);
+      tr.appendChild(msgTd);
       sentTbody.appendChild(tr);
     });
+  }
+
+  async function fetchSentEmails(){
+    try{
+      const res=await fetch(KVT_AJAX,{
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        credentials:'same-origin',
+        body:new URLSearchParams({action:'kvt_get_email_log', _ajax_nonce:KVT_NONCE})
+      });
+      const j=await res.json();
+      if(j.success && j.data && Array.isArray(j.data.log)){
+        KVT_SENT_EMAILS=j.data.log;
+        renderSentEmails();
+      }
+    }catch(e){}
   }
 
   populateTemplateSelect();
@@ -3573,6 +3601,7 @@ function kvtInit(){
         const pane=el('#kvt_email_tab_'+k);
         if(pane) pane.classList.toggle('active', k===target);
       });
+      if(target==='sent') fetchSentEmails();
     });
   });
 
