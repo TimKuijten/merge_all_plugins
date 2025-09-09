@@ -32,6 +32,7 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_FROM_EMAIL = 'kvt_from_email';
     const OPT_EMAIL_LOG = 'kvt_email_log';
     const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
+    const OPT_UPDATE_QUEUE = 'kvt_update_queue';
     const OPT_MIT_TIME = 'kvt_mit_time';
     const OPT_MIT_RECIPIENTS = 'kvt_mit_recipients';
     const OPT_MIT_FREQUENCY = 'kvt_mit_frequency';
@@ -161,6 +162,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('kvt_update_profile_from_cv',       [$this, 'update_profile_from_cv']);
         add_action('wp_ajax_kvt_delete_board',        [$this, 'ajax_delete_board']);
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
+        add_action('wp_ajax_kvt_update_missing',       [$this, 'ajax_update_missing']);
+        add_action('wp_ajax_nopriv_kvt_update_missing',[$this, 'ajax_update_missing']);
         add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_nopriv_kvt_get_outlook_events', [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_kvt_save_search',           [$this, 'ajax_save_search']);
@@ -169,6 +172,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_list_saved_searches', [$this, 'ajax_list_saved_searches']);
 
         add_action('kvt_refresh_worker',               [$this, 'cron_refresh_worker']);
+        add_action('kvt_update_worker',                [$this, 'cron_update_worker']);
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
@@ -1926,6 +1930,7 @@ JS;
                 <a href="#" data-view="ai"><span class="dashicons dashicons-search"></span> Buscador IA</a>
                 <a href="#" data-view="boards" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
                 <a href="#" data-view="chat"><span class="dashicons dashicons-format-chat"></span> Chat con MIT</a>
+                <a href="#" data-view="update"><span class="dashicons dashicons-update"></span> Update</a>
             </nav>
             <div class="kvt-content">
             <?php if ($is_client_board || $is_candidate_board): ?>
@@ -2268,6 +2273,12 @@ JS;
                         <input type="text" id="kvt_mit_chat_input" class="kvt-input" placeholder="Escribe un mensaje">
                         <button type="button" class="kvt-btn" id="kvt_mit_chat_send">Enviar</button>
                     </div>
+                </div>
+                <div id="kvt_update_view" class="kvt-update" style="display:none;">
+                    <h4>Update</h4>
+                    <p>Procesa candidatos sin sector y completa campos desde su CV.</p>
+                    <button type="button" class="kvt-btn" id="kvt_update_start">Actualizar</button>
+                    <p id="kvt_update_status"></p>
                 </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
@@ -3281,6 +3292,9 @@ function kvtInit(){
   const mitChatLog = el('#kvt_mit_chat_log');
   const mitChatInput = el('#kvt_mit_chat_input');
   const mitChatSend = el('#kvt_mit_chat_send');
+  const updateView = el('#kvt_update_view');
+  const updateBtn = el('#kvt_update_start');
+  const updateStatus = el('#kvt_update_status');
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
@@ -3794,11 +3808,31 @@ function kvtInit(){
   mitChatSend && mitChatSend.addEventListener('click', sendMitChat);
   mitChatInput && mitChatInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); sendMitChat(); }});
 
+  async function startUpdateProfiles(){
+    if(!updateBtn) return;
+    updateBtn.disabled=true;
+    updateStatus.textContent='Iniciando...';
+    try{
+      const resp=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_update_missing', _ajax_nonce:KVT_NONCE})});
+      const json=await resp.json();
+      if(json && json.success){
+        updateStatus.textContent='Procesando '+json.data.count+' candidatos en segundo plano';
+      } else {
+        updateStatus.textContent=json && json.data && json.data.msg?json.data.msg:'Error';
+      }
+    }catch(e){
+      updateStatus.textContent='Error';
+    }
+    updateBtn.disabled=false;
+  }
+  updateBtn && updateBtn.addEventListener('click', startUpdateProfiles);
+
   function showView(view){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
     if(mitChatWrap) mitChatWrap.style.display='none';
+    if(updateView) updateView.style.display='none';
     if(keywordBoard) keywordBoard.style.display='none';
     if(aiBoard) aiBoard.style.display='none';
     if(boardsView) boardsView.style.display='none';
@@ -3865,6 +3899,15 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(mitChatWrap) mitChatWrap.style.display='block';
+    } else if(view==='update'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(updateView) updateView.style.display='block';
     } else if(view==='ai'){
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -9534,6 +9577,36 @@ JS;
         return $updated;
     }
 
+    private function guess_sector_from_role($role) {
+        if (!$role) return '';
+        $r = strtolower(remove_accents($role));
+        $map = [
+            'Ingenieria' => ['ingenier'],
+            'construction' => ['constru'],
+            'operations' => ['operac'],
+            'transmisión' => ['transmis'],
+            'eólica' => ['eolica', 'wind'],
+            'solar' => ['solar', 'fotovolta', 'pv'],
+            'bess' => ['bess', 'battery', 'storage'],
+            'h2' => ['hidrogen', 'hydrogen', 'h2'],
+            'Biometano' => ['biometano', 'biomethan'],
+            'generación térmica' => ['termica', 'thermal'],
+            'equipos eléctrico' => ['equip', 'electrico', 'switchgear'],
+            'mineras' => ['miner'],
+            'forestal' => ['forest'],
+            'agro' => ['agro', 'agric'],
+            'comercialización de energía' => ['comercializacion', 'trading'],
+            'fondos' => ['fondo', 'fund'],
+            'bancos internacionales' => ['banco', 'bank'],
+        ];
+        foreach ($map as $sector => $keywords) {
+            foreach ($keywords as $kw) {
+                if (strpos($r, $kw) !== false) return $sector;
+            }
+        }
+        return 'otro';
+    }
+
     private function openai_match_summary($key, $desc, $cv_text) {
         $req = [
             'model' => 'gpt-4o-mini',
@@ -9820,6 +9893,53 @@ JS;
             }
             if (!empty($queue)) {
                 wp_schedule_single_event(time()+5, 'kvt_refresh_worker');
+            }
+        }
+
+        public function ajax_update_missing() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+            $ids = get_posts([
+                'post_type' => self::CPT,
+                'post_status' => 'any',
+                'fields' => 'ids',
+                'posts_per_page' => -1,
+                'meta_query' => [
+                    'relation' => 'OR',
+                    ['key' => 'kvt_sector', 'compare' => 'NOT EXISTS'],
+                    ['key' => 'kvt_sector', 'value' => '', 'compare' => '='],
+                ],
+            ]);
+            update_option(self::OPT_UPDATE_QUEUE, array_map('intval', $ids));
+            if (!wp_next_scheduled('kvt_update_worker')) {
+                wp_schedule_single_event(time()+5, 'kvt_update_worker');
+            }
+            wp_send_json_success(['count' => count($ids)]);
+        }
+
+        public function cron_update_worker() {
+            $queue = get_option(self::OPT_UPDATE_QUEUE, []);
+            if (empty($queue)) return;
+            $key = get_option(self::OPT_OPENAI_KEY, '');
+            $id = array_shift($queue);
+            update_option(self::OPT_UPDATE_QUEUE, $queue);
+            if ($id) {
+                $sector = $this->meta_get_compat($id, 'kvt_sector', ['sector']);
+                if (trim($sector) === '') {
+                    $role = $this->meta_get_compat($id, 'kvt_current_role', ['current_role']);
+                    $guess = $this->guess_sector_from_role($role);
+                    if ($guess) {
+                        update_post_meta($id, 'kvt_sector', $guess);
+                        update_post_meta($id, 'sector', $guess);
+                    }
+                }
+                if ($key) {
+                    $this->update_profile_from_cv($id, $key);
+                }
+                sleep(2);
+            }
+            if (!empty($queue)) {
+                wp_schedule_single_event(time()+5, 'kvt_update_worker');
             }
         }
 
