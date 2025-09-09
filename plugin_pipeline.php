@@ -9967,16 +9967,10 @@ JS;
             check_ajax_referer('kvt_nonce');
             if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
             $ids = get_posts([
-                'post_type' => self::CPT,
-                'post_status' => 'any',
-                'fields' => 'ids',
+                'post_type'      => self::CPT,
+                'post_status'    => 'any',
+                'fields'         => 'ids',
                 'posts_per_page' => -1,
-                'meta_query' => [
-                    'relation' => 'OR',
-                    ['key' => 'kvt_sector', 'compare' => 'NOT EXISTS'],
-                    ['key' => 'kvt_sector', 'value' => '', 'compare' => '='],
-                    ['key' => 'kvt_sector', 'value' => '---Sector---', 'compare' => '='],
-                ],
             ]);
             update_option(self::OPT_UPDATE_QUEUE, array_map('intval', $ids));
             if (!wp_next_scheduled('kvt_update_worker')) {
@@ -9996,30 +9990,35 @@ JS;
             $queue = get_option(self::OPT_UPDATE_QUEUE, []);
             if (empty($queue)) return;
             $key = get_option(self::OPT_OPENAI_KEY, '');
-            $id = array_shift($queue);
-            update_option(self::OPT_UPDATE_QUEUE, $queue);
-            if ($id) {
-                $sector = $this->meta_get_compat($id, 'kvt_sector', ['sector']);
-                if (trim($sector) === '' || $sector === '---Sector---') {
-                    $role = $this->meta_get_compat($id, 'kvt_current_role', ['current_role']);
-                    $cv   = $this->get_candidate_cv_text($id);
-                    $guess = '';
-                    if ($key) {
-                        $guess = $this->openai_guess_sector($key, $role, $cv);
-                    }
-                    if (!$guess) {
-                        $guess = $this->guess_sector_from_role($role);
-                    }
-                    if ($guess) {
+            $processed = 0;
+            while ($processed < 5 && !empty($queue)) {
+                $id = array_shift($queue);
+                if ($id) {
+                    $sector = $this->meta_get_compat($id, 'kvt_sector', ['sector']);
+                    if (trim($sector) === '' || $sector === '---Sector---') {
+                        $role = $this->meta_get_compat($id, 'kvt_current_role', ['current_role']);
+                        $cv   = $this->get_candidate_cv_text($id);
+                        $guess = '';
+                        if ($key) {
+                            $guess = $this->openai_guess_sector($key, $role, $cv);
+                        }
+                        if (!$guess) {
+                            $guess = $this->guess_sector_from_role($role);
+                        }
+                        if (!$guess) {
+                            $guess = 'otro';
+                        }
                         update_post_meta($id, 'kvt_sector', $guess);
                         update_post_meta($id, 'sector', $guess);
                     }
+                    if ($key) {
+                        $this->update_profile_from_cv($id, $key);
+                    }
+                    $processed++;
+                    sleep(2);
                 }
-                if ($key) {
-                    $this->update_profile_from_cv($id, $key);
-                }
-                sleep(2);
             }
+            update_option(self::OPT_UPDATE_QUEUE, $queue);
             if (!empty($queue)) {
                 wp_schedule_single_event(time()+5, 'kvt_update_worker');
             }
