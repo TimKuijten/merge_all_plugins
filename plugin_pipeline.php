@@ -364,7 +364,7 @@ cv_url|CV (URL)
         $skill_opts = array_keys($skill_opts);
         sort($skill_opts);
         ?>
-        <div class="wrap kcvf">
+        <div class="wrap kvt">
           <header class="k-header">
             <div>
               <h1 class="k-title"><?php esc_html_e('Seguimiento de Candidatos', 'kovacic'); ?></h1>
@@ -446,157 +446,7 @@ cv_url|CV (URL)
     public function admin_assets($hook) {
         if (strpos($hook, 'kvt-tracker') === false) return;
 
-        $css = <<<'CSS'
-/* Kovacic ATS UI – namespaced to avoid bleed */
-:root{
-  --brand:#0A212E;           /* ink/brand */
-  --blue:#0176D3;            /* primary action */
-  --green:#2E844A;           /* success */
-  --amber:#F5821F;           /* warning */
-  --red:#BA0517;             /* danger */
-  --bg:#F3F6F9;              /* app background */
-  --surface:#FFFFFF;         /* cards/tables */
-  --ink:#1F2937;             /* body text */
-  --ink-muted:#6B7280;       /* secondary text */
-  --divider:#E5E7EB;         /* borders */
-  --shadow:0 2px 6px rgba(0,0,0,.08);
-  --radius:8px;
-  --gap:8px;                 /* 8px spacing grid */
-}
-
-.kcvf *{box-sizing:border-box}
-.kcvf{
-  font-family: "Salesforce Sans", -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  color:var(--ink);
-  background:var(--bg);
-  line-height:1.5;
-  font-size:14px;
-}
-
-/* Page shell */
-.kcvf .wrap{
-  max-width:1200px;
-  margin:0 auto;
-  padding:calc(var(--gap)*3);
-}
-
-/* Top header */
-.kcvf .k-header{
-  background:var(--surface);
-  border:1px solid var(--divider);
-  border-radius:var(--radius);
-  box-shadow:var(--shadow);
-  padding:calc(var(--gap)*2);
-  margin-bottom:calc(var(--gap)*2);
-  display:grid;
-  grid-template-columns: 1fr auto;
-  gap:calc(var(--gap)*2);
-}
-.kcvf .k-title{font-size:18px;font-weight:600}
-.kcvf .k-badges{display:flex;flex-wrap:wrap;gap:var(--gap)}
-.kcvf .k-pill{
-  display:inline-flex;align-items:center;gap:6px;
-  padding:4px 10px;border-radius:999px;border:1px solid var(--divider);
-  background:#fafafa;font-weight:500
-}
-.kcvf .k-pill--blue{background:rgba(1,118,211,.08);border-color:rgba(1,118,211,.25);color:#045FA3}
-.kcvf .k-pill--green{background:rgba(46,132,74,.10);border-color:rgba(46,132,74,.25);color:#1E5C38}
-
-/* Tabs */
-.kcvf .k-tabs{display:flex;gap:2px;margin-bottom:calc(var(--gap)*2)}
-.kcvf .k-tab{
-  background:var(--surface);padding:10px 14px;border:1px solid var(--divider);
-  border-bottom:none;border-top-left-radius:var(--radius);border-top-right-radius:var(--radius);
-  color:var(--ink-muted);cursor:pointer
-}
-.kcvf .k-tab[aria-selected="true"]{color:var(--brand);font-weight:600;box-shadow:inset 0 -3px 0 var(--blue)}
-.kcvf .k-tabpanel{
-  background:var(--surface);border:1px solid var(--divider);border-radius:0 0 var(--radius) var(--radius);
-  box-shadow:var(--shadow);padding:calc(var(--gap)*2)
-}
-
-/* Filters */
-.kcvf .k-filters{
-  display:flex;flex-wrap:wrap;gap:var(--gap);margin-bottom:calc(var(--gap)*2)
-}
-.kcvf .k-input,.kcvf .k-select{
-  height:36px;padding:0 10px;border:1px solid var(--divider);border-radius:6px;background:#fff
-}
-
-/* Bulk bar */
-.kcvf .k-bulkbar{
-  display:flex;align-items:center;gap:var(--gap);justify-content:space-between;
-  padding:8px 12px;background:#fff;border:1px solid var(--divider);
-  border-radius:6px;margin-bottom:calc(var(--gap)*1.5)
-}
-
-/* Table */
-.kcvf .k-tablewrap{position:relative;overflow:auto;border:1px solid var(--divider);border-radius:var(--radius);box-shadow:var(--shadow)}
-.kcvf .k-client-process{font-weight:600;margin-bottom:8px}
-.kcvf .k-cv-icon{margin-left:4px;text-decoration:none}
-.kcvf table{width:100%;border-collapse:separate;border-spacing:0;background:var(--surface)}
-.kcvf thead th{
-  position:sticky;top:0;background:#f9fbfd;border-bottom:1px solid var(--divider);
-  text-align:left;font-weight:600;padding:12px
-}
-.kcvf tbody td{border-top:1px solid var(--divider);padding:12px;vertical-align:middle}
-.kcvf .sortable{cursor:pointer}
-.kcvf .checkbox{width:36px;text-align:center}
-
-/* Progress pill (3 steps) */
-.kcvf .k-progress{display:inline-flex;gap:4px;align-items:center}
-.kcvf .k-step{
-  width:18px;height:8px;border-radius:999px;background:#E5E7EB
-}
-.kcvf .k-step.is-done{background:var(--green)}
-.kcvf .k-step.is-current{background:var(--blue)}
-
-/* Buttons */
-.kcvf .btn{
-  display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 12px;border-radius:8px;border:1px solid var(--divider);
-  background:#fff;cursor:pointer;font-weight:600
-}
-.kcvf .btn--primary{background:var(--blue);border-color:transparent;color:#fff}
-.kcvf .btn--ghost{background:#fff;color:var(--brand)}
-.kcvf .btn:focus{outline:2px solid rgba(1,118,211,.35);outline-offset:2px}
-
-/* Sidebar */
-.kcvf .k-layout{display:grid;grid-template-columns:1fr;gap:calc(var(--gap)*2)}
-.kcvf .k-sidebar{
-  background:var(--surface);border:1px solid var(--divider);border-radius:var(--radius);box-shadow:var(--shadow);
-  padding:calc(var(--gap)*2)
-}
-.kcvf .k-sidehead{font-weight:700;margin-bottom:var(--gap)}
-.kcvf .k-activity{display:grid;gap:10px;max-height:520px;overflow:auto}
-.kcvf .k-activity-toggle{display:none}
-
-/* Pagination */
-.kcvf .k-pager{display:flex;justify-content:space-between;align-items:center;margin-top:calc(var(--gap)*2)}
-
-/* Chips (statuses) */
-.kcvf .chip{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--divider);gap:6px}
-.kcvf .chip--rejected{background:#F3F4F6;color:#374151}
-
-/* Modal (quick view) */
-.kcvf .k-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:1000}
-.kcvf .k-modal.is-open{display:flex}
-.kcvf .k-dialog{width:min(720px,92vw);background:#fff;border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.25);padding:20px}
-
-/* Responsive */
-@media (max-width: 960px){
-  .kcvf .k-layout{grid-template-columns:1fr}
-  .kcvf .k-activity-toggle{display:none}
-  .kcvf .k-sidebar{order:0}
-  .kcvf thead{display:none}
-  .kcvf table,.kcvf tbody,.kcvf tr,.kcvf td{display:block;width:100%}
-  .kcvf tbody tr{border-top:1px solid var(--divider);padding:8px 12px}
-  .kcvf tbody td{border:none;padding:6px 0}
-  .kcvf .checkbox{position:absolute;right:12px;top:12px}
-}
-CSS;
-        wp_register_style('kvt-tracker', false);
-        wp_enqueue_style('kvt-tracker');
-        wp_add_inline_style('kvt-tracker', $css);
+        wp_enqueue_style('kvt-tracker', plugins_url('css/tracker.css', __FILE__), [], '1.0');
 
         $js = <<<'JS'
 (function(){
@@ -719,13 +569,13 @@ CSS;
   fetchData();
 })();
 JS;
-        wp_register_script('kvt-tracker', '', [], false, true);
-        wp_enqueue_script('kvt-tracker');
-        wp_localize_script('kvt-tracker', 'KVT', [
+        wp_register_script('kvt-tracker-js', '', [], false, true);
+        wp_enqueue_script('kvt-tracker-js');
+        wp_localize_script('kvt-tracker-js', 'KVT', [
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('kvt_nonce'),
         ]);
-        wp_add_inline_script('kvt-tracker', $js);
+        wp_add_inline_script('kvt-tracker-js', $js);
     }
     public function settings_page() {
         if (isset($_POST['kvt_mit_send_now']) && check_admin_referer('kvt_mit_send_now')) {
