@@ -140,3 +140,7 @@
   .kcvf tbody td{border:none;padding:6px 0}
   .kcvf .checkbox{position:absolute;right:12px;top:12px}
 }
+
+/* Spinner */
+.kvt-spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--divider);border-top-color:var(--blue);border-radius:50%;animation:kvt-spin 1s linear infinite;margin-left:6px}
+@keyframes kvt-spin{to{transform:rotate(360deg)}}

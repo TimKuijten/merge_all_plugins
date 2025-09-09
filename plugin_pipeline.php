@@ -2280,7 +2280,7 @@ JS;
                     <h4>Update</h4>
                     <p>Procesa candidatos sin sector y completa campos desde su CV.</p>
                     <button type="button" class="kvt-btn" id="kvt_update_start">Actualizar</button>
-                    <p id="kvt_update_status"></p>
+                    <p><span id="kvt_update_status"></span><span id="kvt_update_spinner" class="kvt-spinner" style="display:none;"></span></p>
                 </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
@@ -3297,7 +3297,8 @@ function kvtInit(){
   const updateView = el('#kvt_update_view');
   const updateBtn = el('#kvt_update_start');
   const updateStatus = el('#kvt_update_status');
-  let updateTimer;
+  const updateSpinner = el('#kvt_update_spinner');
+  let updateTimer, updateTotal = 0;
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
@@ -3818,9 +3819,13 @@ function kvtInit(){
       if(json && json.success){
         const remaining=parseInt(json.data.count,10)||0;
         if(remaining>0){
-          updateStatus.textContent='Procesando '+remaining+' candidatos en segundo plano';
+          const msg = updateTotal>0? 'Quedan '+remaining+' de '+updateTotal+' candidatos por actualizar'
+                                  : 'Quedan '+remaining+' candidatos por actualizar';
+          updateStatus.textContent=msg;
+          updateSpinner.style.display='inline-block';
         }else{
           updateStatus.textContent='Actualización completada';
+          updateSpinner.style.display='none';
           clearInterval(updateTimer);
           updateTimer=null;
           updateBtn.disabled=false;
@@ -3832,21 +3837,25 @@ function kvtInit(){
   async function startUpdateProfiles(){
     if(!updateBtn) return;
     updateBtn.disabled=true;
+    updateSpinner.style.display='inline-block';
     updateStatus.textContent='Iniciando...';
     try{
       const resp=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_update_missing', _ajax_nonce:KVT_NONCE})});
       const json=await resp.json();
       if(json && json.success){
-        updateStatus.textContent='Procesando '+json.data.count+' candidatos en segundo plano';
+        updateTotal=parseInt(json.data.count,10)||0;
+        updateStatus.textContent='Quedan '+updateTotal+' candidatos por actualizar';
         clearInterval(updateTimer);
         updateTimer=setInterval(pollUpdateStatus,5000);
         pollUpdateStatus();
       } else {
         updateStatus.textContent=json && json.data && json.data.msg?json.data.msg:'Error';
+        updateSpinner.style.display='none';
         updateBtn.disabled=false;
       }
     }catch(e){
       updateStatus.textContent='Error';
+      updateSpinner.style.display='none';
       updateBtn.disabled=false;
     }
   }
