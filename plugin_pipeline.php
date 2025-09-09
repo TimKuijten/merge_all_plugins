@@ -158,6 +158,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
         add_action('wp_ajax_kvt_save_template',        [$this, 'ajax_save_template']);
         add_action('wp_ajax_kvt_delete_template',      [$this, 'ajax_delete_template']);
+        add_action('kvt_update_profile_from_cv',       [$this, 'update_profile_from_cv']);
         add_action('wp_ajax_kvt_delete_board',        [$this, 'ajax_delete_board']);
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
         add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
@@ -339,6 +340,7 @@ cv_url|CV (URL)
         }
         $skill_opts = [];
         $tag_opts   = [];
+        $sector_opts = [];
         $all_posts  = get_posts([
             'post_type'   => self::CPT,
             'numberposts' => -1,
@@ -357,13 +359,19 @@ cv_url|CV (URL)
                     if ($val !== '') $skill_opts[$val] = true;
                 }
             }
+            $sec = $this->meta_get_compat($pid, 'kvt_sector', ['sector']);
+            if ($sec) {
+                $sector_opts[$sec] = true;
+            }
         }
         $tag_opts   = array_keys($tag_opts);
         sort($tag_opts);
         $skill_opts = array_keys($skill_opts);
         sort($skill_opts);
+        $sector_opts = array_keys($sector_opts);
+        sort($sector_opts);
         ?>
-        <div class="wrap kcvf">
+        <div class="wrap kvt">
           <header class="k-header">
             <div>
               <h1 class="k-title"><?php esc_html_e('Seguimiento de Candidatos', 'kovacic'); ?></h1>
@@ -394,6 +402,9 @@ cv_url|CV (URL)
               </select>
               <select id="k-filter-skills" class="k-select" multiple>
                 <?php foreach ($skill_opts as $s) { echo '<option value="'.esc_attr($s).'">'.esc_html($s).'</option>'; } ?>
+              </select>
+              <select id="k-filter-sector" class="k-select" multiple>
+                <?php foreach ($sector_opts as $sec) { echo '<option value="'.esc_attr($sec).'">'.esc_html($sec).'</option>'; } ?>
               </select>
               <button class="btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
             </div>
@@ -445,161 +456,11 @@ cv_url|CV (URL)
     public function admin_assets($hook) {
         if (strpos($hook, 'kvt-tracker') === false) return;
 
-        $css = <<<'CSS'
-/* Kovacic ATS UI – namespaced to avoid bleed */
-:root{
-  --brand:#0A212E;           /* ink/brand */
-  --blue:#0176D3;            /* primary action */
-  --green:#2E844A;           /* success */
-  --amber:#F5821F;           /* warning */
-  --red:#BA0517;             /* danger */
-  --bg:#F3F6F9;              /* app background */
-  --surface:#FFFFFF;         /* cards/tables */
-  --ink:#1F2937;             /* body text */
-  --ink-muted:#6B7280;       /* secondary text */
-  --divider:#E5E7EB;         /* borders */
-  --shadow:0 2px 6px rgba(0,0,0,.08);
-  --radius:8px;
-  --gap:8px;                 /* 8px spacing grid */
-}
-
-.kcvf *{box-sizing:border-box}
-.kcvf{
-  font-family: "Salesforce Sans", -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  color:var(--ink);
-  background:var(--bg);
-  line-height:1.5;
-  font-size:14px;
-}
-
-/* Page shell */
-.kcvf .wrap{
-  max-width:1200px;
-  margin:0 auto;
-  padding:calc(var(--gap)*3);
-}
-
-/* Top header */
-.kcvf .k-header{
-  background:var(--surface);
-  border:1px solid var(--divider);
-  border-radius:var(--radius);
-  box-shadow:var(--shadow);
-  padding:calc(var(--gap)*2);
-  margin-bottom:calc(var(--gap)*2);
-  display:grid;
-  grid-template-columns: 1fr auto;
-  gap:calc(var(--gap)*2);
-}
-.kcvf .k-title{font-size:18px;font-weight:600}
-.kcvf .k-badges{display:flex;flex-wrap:wrap;gap:var(--gap)}
-.kcvf .k-pill{
-  display:inline-flex;align-items:center;gap:6px;
-  padding:4px 10px;border-radius:999px;border:1px solid var(--divider);
-  background:#fafafa;font-weight:500
-}
-.kcvf .k-pill--blue{background:rgba(1,118,211,.08);border-color:rgba(1,118,211,.25);color:#045FA3}
-.kcvf .k-pill--green{background:rgba(46,132,74,.10);border-color:rgba(46,132,74,.25);color:#1E5C38}
-
-/* Tabs */
-.kcvf .k-tabs{display:flex;gap:2px;margin-bottom:calc(var(--gap)*2)}
-.kcvf .k-tab{
-  background:var(--surface);padding:10px 14px;border:1px solid var(--divider);
-  border-bottom:none;border-top-left-radius:var(--radius);border-top-right-radius:var(--radius);
-  color:var(--ink-muted);cursor:pointer
-}
-.kcvf .k-tab[aria-selected="true"]{color:var(--brand);font-weight:600;box-shadow:inset 0 -3px 0 var(--blue)}
-.kcvf .k-tabpanel{
-  background:var(--surface);border:1px solid var(--divider);border-radius:0 0 var(--radius) var(--radius);
-  box-shadow:var(--shadow);padding:calc(var(--gap)*2)
-}
-
-/* Filters */
-.kcvf .k-filters{
-  display:flex;flex-wrap:wrap;gap:var(--gap);margin-bottom:calc(var(--gap)*2)
-}
-.kcvf .k-input,.kcvf .k-select{
-  height:36px;padding:0 10px;border:1px solid var(--divider);border-radius:6px;background:#fff
-}
-
-/* Bulk bar */
-.kcvf .k-bulkbar{
-  display:flex;align-items:center;gap:var(--gap);justify-content:space-between;
-  padding:8px 12px;background:#fff;border:1px solid var(--divider);
-  border-radius:6px;margin-bottom:calc(var(--gap)*1.5)
-}
-
-/* Table */
-.kcvf .k-tablewrap{position:relative;overflow:auto;border:1px solid var(--divider);border-radius:var(--radius);box-shadow:var(--shadow)}
-.kcvf .k-client-process{font-weight:600;margin-bottom:8px}
-.kcvf .k-cv-icon{margin-left:4px;text-decoration:none}
-.kcvf table{width:100%;border-collapse:separate;border-spacing:0;background:var(--surface)}
-.kcvf thead th{
-  position:sticky;top:0;background:#f9fbfd;border-bottom:1px solid var(--divider);
-  text-align:left;font-weight:600;padding:12px
-}
-.kcvf tbody td{border-top:1px solid var(--divider);padding:12px;vertical-align:middle}
-.kcvf .sortable{cursor:pointer}
-.kcvf .checkbox{width:36px;text-align:center}
-
-/* Progress pill (3 steps) */
-.kcvf .k-progress{display:inline-flex;gap:4px;align-items:center}
-.kcvf .k-step{
-  width:18px;height:8px;border-radius:999px;background:#E5E7EB
-}
-.kcvf .k-step.is-done{background:var(--green)}
-.kcvf .k-step.is-current{background:var(--blue)}
-
-/* Buttons */
-.kcvf .btn{
-  display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 12px;border-radius:8px;border:1px solid var(--divider);
-  background:#fff;cursor:pointer;font-weight:600
-}
-.kcvf .btn--primary{background:var(--blue);border-color:transparent;color:#fff}
-.kcvf .btn--ghost{background:#fff;color:var(--brand)}
-.kcvf .btn:focus{outline:2px solid rgba(1,118,211,.35);outline-offset:2px}
-
-/* Sidebar */
-.kcvf .k-layout{display:grid;grid-template-columns:1fr;gap:calc(var(--gap)*2)}
-.kcvf .k-sidebar{
-  background:var(--surface);border:1px solid var(--divider);border-radius:var(--radius);box-shadow:var(--shadow);
-  padding:calc(var(--gap)*2)
-}
-.kcvf .k-sidehead{font-weight:700;margin-bottom:var(--gap)}
-.kcvf .k-activity{display:grid;gap:10px;max-height:520px;overflow:auto}
-.kcvf .k-activity-toggle{display:none}
-
-/* Pagination */
-.kcvf .k-pager{display:flex;justify-content:space-between;align-items:center;margin-top:calc(var(--gap)*2)}
-
-/* Chips (statuses) */
-.kcvf .chip{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--divider);gap:6px}
-.kcvf .chip--rejected{background:#F3F4F6;color:#374151}
-
-/* Modal (quick view) */
-.kcvf .k-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:1000}
-.kcvf .k-modal.is-open{display:flex}
-.kcvf .k-dialog{width:min(720px,92vw);background:#fff;border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.25);padding:20px}
-
-/* Responsive */
-@media (max-width: 960px){
-  .kcvf .k-layout{grid-template-columns:1fr}
-  .kcvf .k-activity-toggle{display:none}
-  .kcvf .k-sidebar{order:0}
-  .kcvf thead{display:none}
-  .kcvf table,.kcvf tbody,.kcvf tr,.kcvf td{display:block;width:100%}
-  .kcvf tbody tr{border-top:1px solid var(--divider);padding:8px 12px}
-  .kcvf tbody td{border:none;padding:6px 0}
-  .kcvf .checkbox{position:absolute;right:12px;top:12px}
-}
-CSS;
-        wp_register_style('kvt-tracker', false);
-        wp_enqueue_style('kvt-tracker');
-        wp_add_inline_style('kvt-tracker', $css);
+        wp_enqueue_style('kvt-tracker', plugins_url('css/tracker.css', __FILE__), [], '1.0');
 
         $js = <<<'JS'
 (function(){
-  const state = {page:1, search:'', client:'', process:'', stage:'', tags:[], skills:[]};
+  const state = {page:1, search:'', client:'', process:'', stage:'', tags:[], skills:[], sector:[]};
   const tbody = document.getElementById('k-rows');
   const pager = document.getElementById('k-page');
 
@@ -666,6 +527,7 @@ CSS;
       stage:state.stage,
       tags:state.tags.join(','),
       skills:state.skills.join(','),
+      sector:state.sector.join(','),
       page:state.page
     });
     fetch(KVT.ajaxurl,{method:'POST',body:params}).then(r=>r.json()).then(res=>{
@@ -693,7 +555,7 @@ CSS;
     state.page++;fetchData();
   });
 
-  ['k-filter-client','k-filter-process','k-filter-stage','k-filter-tags','k-filter-skills'].forEach(id=>{
+  ['k-filter-client','k-filter-process','k-filter-stage','k-filter-tags','k-filter-skills','k-filter-sector'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){
       el.addEventListener('change',e=>{
@@ -718,13 +580,13 @@ CSS;
   fetchData();
 })();
 JS;
-        wp_register_script('kvt-tracker', '', [], false, true);
-        wp_enqueue_script('kvt-tracker');
-        wp_localize_script('kvt-tracker', 'KVT', [
+        wp_register_script('kvt-tracker-js', '', [], false, true);
+        wp_enqueue_script('kvt-tracker-js');
+        wp_localize_script('kvt-tracker-js', 'KVT', [
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('kvt_nonce'),
         ]);
-        wp_add_inline_script('kvt-tracker', $js);
+        wp_add_inline_script('kvt-tracker-js', $js);
     }
     public function settings_page() {
         if (isset($_POST['kvt_mit_send_now']) && check_admin_referer('kvt_mit_send_now')) {
@@ -1656,6 +1518,7 @@ JS;
                 ['key'=>'country','label'=>'País'],
                 ['key'=>'city','label'=>'Ciudad'],
                 ['key'=>'current_role','label'=>'Puesto actual'],
+                ['key'=>'sector','label'=>'Sector'],
                 ['key'=>'cv_url','label'=>'CV (URL)'],
                 ['key'=>'cv_uploaded','label'=>'Fecha de subida'],
             ];
@@ -2622,7 +2485,7 @@ JS;
                       <select id="kvt_proc_status">
                         <option value="">Todos</option>
                         <option value="active">Activo</option>
-                        <option value="completed">Cerrado</option>
+                        <option value="completed">Cancelado</option>
                         <option value="closed">Cancelado</option>
                       </select>
                     </label>
@@ -3135,10 +2998,31 @@ JS;
         }
         $columns  = $this->get_columns();
         $fields   = $has_share_link ? array_map('sanitize_text_field', (array) ($link_cfg['fields'] ?? [])) : [];
+        $sectors = [
+            'Agro',
+            'Bancos internacionales',
+            'BESS',
+            'Biometano',
+            'Comercialización de energía',
+            'Construction',
+            'Equipos eléctrico',
+            'Eólica',
+            'Fondos',
+            'Forestal',
+            'Generación térmica',
+            'H2',
+            'Ingenieria',
+            'Mineras',
+            'Operations',
+            'Solar',
+            'Transmisión',
+            'Otro',
+        ];
         wp_add_inline_script('kvt-app', 'const KVT_STATUSES='.wp_json_encode($statuses).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_COLUMNS='.wp_json_encode($columns).';',  'before');
         $countries = $this->get_candidate_countries();
         wp_add_inline_script('kvt-app', 'const KVT_COUNTRIES='.wp_json_encode($countries).';', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_SECTORS='.wp_json_encode($sectors).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_AJAX="'.esc_js(admin_url('admin-ajax.php')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/view-board/')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
@@ -4370,12 +4254,13 @@ function kvtInit(){
     const right =
       kvInp('Proceso', '<select class="kvt-assign-process"></select><button type="button" class="kvt-assign-btn">Asignar</button>') +
       kvInp('Puesto actual', input('current_role', m.current_role||'')) +
+      kvInp('Sector', '<select class="kvt-input" data-field="sector"><option value="">— Sector —</option>'+KVT_SECTORS.map(s=>'<option value="'+escAttr(s)+'"'+(m.sector===s?' selected':'')+'>'+esc(s)+'</option>').join('')+'</select>') +
       kvInp('Etiquetas',         input('tags', m.tags||'')) +
       kvInp('CV (URL)',     input('cv_url', m.cv_url||'', 'url', 'https://...')) +
       kvInp('Fecha subida', input('cv_uploaded', m.cv_uploaded||'', 'text', 'DD/MM/YYYY', 'kvt-date'));
 
     const log = Array.isArray(m.activity_log) ? m.activity_log : [];
-    const fieldLabels = {first_name:'Nombre',last_name:'Apellidos',email:'Email',phone:'Teléfono',country:'País',city:'Ciudad',current_role:'Puesto actual',tags:'Etiquetas',cv_url:'CV (URL)',cv_uploaded:'Fecha subida',next_action:'Próxima acción',next_action_note:'Comentario acción'};
+    const fieldLabels = {first_name:'Nombre',last_name:'Apellidos',email:'Email',phone:'Teléfono',country:'País',city:'Ciudad',sector:'Sector',current_role:'Puesto actual',tags:'Etiquetas',cv_url:'CV (URL)',cv_uploaded:'Fecha subida',next_action:'Próxima acción',next_action_note:'Comentario acción'};
     const logItems = log.map(it=>{
       const when = esc(it.time||'');
       const who  = esc(it.author||'');
@@ -5530,7 +5415,7 @@ function kvtInit(){
     }
     const cl = getClientById(p.client_id);
     const clientName = cl ? cl.name||'' : (p.client||'');
-    const statusMap = {active:'Activo', completed:'Cerrado', closed:'Cancelado'};
+    const statusMap = {active:'Activo', completed:'Completado', closed:'Cancelado'};
     const status = statusMap[p.status] || (p.status ? p.status.charAt(0).toUpperCase()+p.status.slice(1) : '');
     let days='';
     if(!CANDIDATE_VIEW && p.created){
@@ -6300,7 +6185,7 @@ function kvtInit(){
           });
         }
         const targets = target ? [target] : [processesList, boardProcessesList].filter(Boolean);
-        const statuses = {active:'Activo',completed:'Completado',closed:'Cerrado'};
+        const statuses = {active:'Activo',completed:'Completado',closed:'Cancelado'};
         const html = j.data.items.map(p=>{
           const subs=[];
           if(p.client) subs.push('Empresa: '+esc(p.client));
@@ -6876,6 +6761,7 @@ JS;
         $cities      = isset($_POST['city'])    ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['city']))) : [];
         $skills      = isset($_POST['skills'])  ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['skills']))) : [];
         $tags        = isset($_POST['tags'])    ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['tags'])))     : [];
+        $sectors     = isset($_POST['sector'])  ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['sector']))) : [];
 
         $cand_links_opt = get_option('kvt_candidate_links', []);
         $board_map = [];
@@ -6969,6 +6855,13 @@ JS;
                 $tag_meta[] = ['key'=>'kvt_tags','value'=>$t,'compare'=>'LIKE'];
             }
             $meta_query[] = $tag_meta;
+        }
+        if (!empty($sectors)) {
+            $meta_query[] = [
+                'relation'=>'OR',
+                ['key'=>'kvt_sector','value'=>$sectors,'compare'=>'IN'],
+                ['key'=>'sector','value'=>$sectors,'compare'=>'IN'],
+            ];
         }
         if (!empty($meta_query)) {
             $args['meta_query'] = array_merge(['relation'=>'AND'], $meta_query);
@@ -9536,7 +9429,7 @@ JS;
         return is_array($data) ? $data : [];
     }
 
-    private function update_profile_from_cv($post_id, $key = null) {
+    public function update_profile_from_cv($post_id, $key = null) {
         if (!$key) $key = get_option(self::OPT_OPENAI_KEY, '');
         if (!$key) return [];
         $cv_text = $this->get_candidate_cv_text($post_id);
