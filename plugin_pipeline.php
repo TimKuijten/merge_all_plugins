@@ -9909,9 +9909,10 @@ JS;
                     $result['errors'][] = ['email'=>$display_email, 'error'=>$last_error ?: 'wp_mail failed'];
                 }
 
-                // close SMTP connection to ensure next message is sent fresh
+                // fully reset PHPMailer so each recipient starts a new SMTP session
                 if (isset($GLOBALS['phpmailer']) && $GLOBALS['phpmailer'] instanceof \PHPMailer\PHPMailer\PHPMailer) {
                     $GLOBALS['phpmailer']->smtpClose();
+                    $GLOBALS['phpmailer'] = null;
                 }
 
                 // avoid hammering SMTP servers when sending many emails at once
@@ -9960,6 +9961,7 @@ JS;
                 $status = ($ok && !$last_error) ? 'sent' : 'failed';
                 if (isset($GLOBALS['phpmailer']) && $GLOBALS['phpmailer'] instanceof \PHPMailer\PHPMailer\PHPMailer) {
                     $GLOBALS['phpmailer']->smtpClose();
+                    $GLOBALS['phpmailer'] = null;
                 }
                 usleep(1000000);
                 $entry = [
