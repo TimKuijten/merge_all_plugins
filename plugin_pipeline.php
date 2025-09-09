@@ -340,6 +340,7 @@ cv_url|CV (URL)
         }
         $skill_opts = [];
         $tag_opts   = [];
+        $sector_opts = [];
         $all_posts  = get_posts([
             'post_type'   => self::CPT,
             'numberposts' => -1,
@@ -358,11 +359,17 @@ cv_url|CV (URL)
                     if ($val !== '') $skill_opts[$val] = true;
                 }
             }
+            $sec = $this->meta_get_compat($pid, 'kvt_sector', ['sector']);
+            if ($sec) {
+                $sector_opts[$sec] = true;
+            }
         }
         $tag_opts   = array_keys($tag_opts);
         sort($tag_opts);
         $skill_opts = array_keys($skill_opts);
         sort($skill_opts);
+        $sector_opts = array_keys($sector_opts);
+        sort($sector_opts);
         ?>
         <div class="wrap kvt">
           <header class="k-header">
@@ -395,6 +402,9 @@ cv_url|CV (URL)
               </select>
               <select id="k-filter-skills" class="k-select" multiple>
                 <?php foreach ($skill_opts as $s) { echo '<option value="'.esc_attr($s).'">'.esc_html($s).'</option>'; } ?>
+              </select>
+              <select id="k-filter-sector" class="k-select" multiple>
+                <?php foreach ($sector_opts as $sec) { echo '<option value="'.esc_attr($sec).'">'.esc_html($sec).'</option>'; } ?>
               </select>
               <button class="btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
             </div>
@@ -450,7 +460,7 @@ cv_url|CV (URL)
 
         $js = <<<'JS'
 (function(){
-  const state = {page:1, search:'', client:'', process:'', stage:'', tags:[], skills:[]};
+  const state = {page:1, search:'', client:'', process:'', stage:'', tags:[], skills:[], sector:[]};
   const tbody = document.getElementById('k-rows');
   const pager = document.getElementById('k-page');
 
@@ -517,6 +527,7 @@ cv_url|CV (URL)
       stage:state.stage,
       tags:state.tags.join(','),
       skills:state.skills.join(','),
+      sector:state.sector.join(','),
       page:state.page
     });
     fetch(KVT.ajaxurl,{method:'POST',body:params}).then(r=>r.json()).then(res=>{
@@ -544,7 +555,7 @@ cv_url|CV (URL)
     state.page++;fetchData();
   });
 
-  ['k-filter-client','k-filter-process','k-filter-stage','k-filter-tags','k-filter-skills'].forEach(id=>{
+  ['k-filter-client','k-filter-process','k-filter-stage','k-filter-tags','k-filter-skills','k-filter-sector'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){
       el.addEventListener('change',e=>{
@@ -6750,6 +6761,7 @@ JS;
         $cities      = isset($_POST['city'])    ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['city']))) : [];
         $skills      = isset($_POST['skills'])  ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['skills']))) : [];
         $tags        = isset($_POST['tags'])    ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['tags'])))     : [];
+        $sectors     = isset($_POST['sector'])  ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['sector']))) : [];
 
         $cand_links_opt = get_option('kvt_candidate_links', []);
         $board_map = [];
@@ -6843,6 +6855,13 @@ JS;
                 $tag_meta[] = ['key'=>'kvt_tags','value'=>$t,'compare'=>'LIKE'];
             }
             $meta_query[] = $tag_meta;
+        }
+        if (!empty($sectors)) {
+            $meta_query[] = [
+                'relation'=>'OR',
+                ['key'=>'kvt_sector','value'=>$sectors,'compare'=>'IN'],
+                ['key'=>'sector','value'=>$sectors,'compare'=>'IN'],
+            ];
         }
         if (!empty($meta_query)) {
             $args['meta_query'] = array_merge(['relation'=>'AND'], $meta_query);
