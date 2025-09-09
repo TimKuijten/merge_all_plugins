@@ -8408,8 +8408,20 @@ JS;
         }
 
         // Extract profile details using AI
-        $fields = $this->update_profile_from_cv($id);
-        wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url,'fields'=>$fields,'current_role'=>($fields['current_role']??'')]);
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        $fields = $key ? $this->update_profile_from_cv($id, $key) : [];
+        $sector = $this->ensure_candidate_sector($id, $key);
+        if ($sector) {
+            $fields['sector'] = $sector;
+        }
+        wp_send_json_success([
+            'url'         => $url,
+            'date'        => $today,
+            'text_url'    => $txt_url,
+            'fields'      => $fields,
+            'current_role'=> ($fields['current_role'] ?? ''),
+            'sector'      => $sector,
+        ]);
     }
 
     public function ajax_parse_cv() {
@@ -8763,7 +8775,13 @@ JS;
         }
         update_post_meta($new_id, 'kvt_activity_log', $log);
 
-        wp_send_json_success(['id'=>$new_id]);
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        if ($key) {
+            $this->update_profile_from_cv($new_id, $key);
+        }
+        $sector = $this->ensure_candidate_sector($new_id, $key);
+
+        wp_send_json_success(['id'=>$new_id, 'sector'=>$sector]);
     }
 
     public function ajax_bulk_upload_cvs() {
@@ -8837,8 +8855,16 @@ JS;
                 update_post_meta($cid, 'cv_uploaded', $today);
                 $this->save_cv_text_attachment($cid, $attach_id);
                 $fields = $this->update_profile_from_cv($cid, $key);
+                $sector = $this->ensure_candidate_sector($cid, $key);
+                if ($sector) {
+                    $fields['sector'] = $sector;
+                }
             } else {
                 $fields = [];
+                $sector = $this->ensure_candidate_sector($cid, $key);
+                if ($sector) {
+                    $fields['sector'] = $sector;
+                }
             }
 
             if (!empty($statuses)) update_post_meta($cid, 'kvt_status', $statuses[0]);
@@ -9674,6 +9700,31 @@ JS;
         return '';
     }
 
+    private function ensure_candidate_sector($post_id, $key = null) {
+        $sector = $this->meta_get_compat($post_id, 'kvt_sector', ['sector']);
+        if (trim($sector) !== '' && $sector !== '---Sector---') {
+            return $sector;
+        }
+        if (!$key) {
+            $key = get_option(self::OPT_OPENAI_KEY, '');
+        }
+        $role = $this->meta_get_compat($post_id, 'kvt_current_role', ['current_role']);
+        if (!$role) {
+            $role = $this->meta_get_compat($post_id, 'kvt_role', ['role']);
+        }
+        $cv_text = $this->get_candidate_cv_text($post_id);
+        $guess = $key ? $this->openai_guess_sector($key, $role, $cv_text) : '';
+        if (!$guess) {
+            $guess = $this->guess_sector_from_role($role);
+        }
+        if (!$guess) {
+            $guess = 'otro';
+        }
+        update_post_meta($post_id, 'kvt_sector', $guess);
+        update_post_meta($post_id, 'sector', $guess);
+        return $guess;
+    }
+
     private function openai_match_summary($key, $desc, $cv_text) {
         $req = [
             'model' => 'gpt-4o-mini',
@@ -9994,26 +10045,10 @@ JS;
             while ($processed < 5 && !empty($queue)) {
                 $id = array_shift($queue);
                 if ($id) {
-                    $sector = $this->meta_get_compat($id, 'kvt_sector', ['sector']);
-                    if (trim($sector) === '' || $sector === '---Sector---') {
-                        $role = $this->meta_get_compat($id, 'kvt_current_role', ['current_role']);
-                        $cv   = $this->get_candidate_cv_text($id);
-                        $guess = '';
-                        if ($key) {
-                            $guess = $this->openai_guess_sector($key, $role, $cv);
-                        }
-                        if (!$guess) {
-                            $guess = $this->guess_sector_from_role($role);
-                        }
-                        if (!$guess) {
-                            $guess = 'otro';
-                        }
-                        update_post_meta($id, 'kvt_sector', $guess);
-                        update_post_meta($id, 'sector', $guess);
-                    }
                     if ($key) {
                         $this->update_profile_from_cv($id, $key);
                     }
+                    $this->ensure_candidate_sector($id, $key);
                     $processed++;
                     sleep(2);
                 }
