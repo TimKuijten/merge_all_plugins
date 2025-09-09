@@ -395,19 +395,19 @@ cv_url|CV (URL)
               <select id="k-filter-skills" class="k-select" multiple>
                 <?php foreach ($skill_opts as $s) { echo '<option value="'.esc_attr($s).'">'.esc_html($s).'</option>'; } ?>
               </select>
-              <button class="btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
+              <button class="kvt-btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
             </div>
             <div class="k-bulkbar" id="k-bulkbar" hidden>
               <div class="k-bulkactions">
-                <button class="btn"><?php esc_html_e('Mover etapa', 'kovacic'); ?></button>
-                <button class="btn"><?php esc_html_e('Enviar correo', 'kovacic'); ?></button>
-                <button class="btn"><?php esc_html_e('Exportar CSV', 'kovacic'); ?></button>
-                <button class="btn"><?php esc_html_e('Eliminar', 'kovacic'); ?></button>
+                <button class="kvt-btn"><?php esc_html_e('Mover etapa', 'kovacic'); ?></button>
+                <button class="kvt-btn"><?php esc_html_e('Enviar correo', 'kovacic'); ?></button>
+                <button class="kvt-btn"><?php esc_html_e('Exportar CSV', 'kovacic'); ?></button>
+                <button class="kvt-btn"><?php esc_html_e('Eliminar', 'kovacic'); ?></button>
               </div>
             </div>
             <div class="k-layout">
               <div id="k-client-process" class="k-client-process"></div>
-              <button class="btn" id="k-add-candidate" style="display:none;"><?php esc_html_e('Añadir candidato', 'kovacic'); ?></button>
+              <button class="kvt-btn" id="k-add-candidate" style="display:none;"><?php esc_html_e('Añadir candidato', 'kovacic'); ?></button>
               <div class="k-tablewrap">
                   <table class="k-table" aria-describedby="k-page">
                     <thead>
@@ -423,22 +423,22 @@ cv_url|CV (URL)
                   </table>
                 </div>
               <div class="k-pager">
-                <button class="btn" id="k-prev"><?php esc_html_e('Anterior', 'kovacic'); ?></button>
+                <button class="kvt-btn" id="k-prev"><?php esc_html_e('Anterior', 'kovacic'); ?></button>
                 <span id="k-page"></span>
-                <button class="btn" id="k-next"><?php esc_html_e('Siguiente', 'kovacic'); ?></button>
+                <button class="kvt-btn" id="k-next"><?php esc_html_e('Siguiente', 'kovacic'); ?></button>
               </div>
               <div class="k-sidebar" id="k-sidebar">
                 <div class="k-sidehead"><?php esc_html_e('Actividad', 'kovacic'); ?></div>
                 <div class="k-activity" id="k-activity-feed"></div>
                 <div class="k-sideactions">
-                  <button class="btn btn--primary" id="k-log-call"><?php esc_html_e('Registrar llamada', 'kovacic'); ?></button>
-                  <button class="btn" id="k-new-event"><?php esc_html_e('Nuevo evento', 'kovacic'); ?></button>
-                  <button class="btn" id="k-new-task"><?php esc_html_e('Nueva tarea', 'kovacic'); ?></button>
+                  <button class="kvt-btn btn--primary" id="k-log-call"><?php esc_html_e('Registrar llamada', 'kovacic'); ?></button>
+                  <button class="kvt-btn" id="k-new-event"><?php esc_html_e('Nuevo evento', 'kovacic'); ?></button>
+                  <button class="kvt-btn" id="k-new-task"><?php esc_html_e('Nueva tarea', 'kovacic'); ?></button>
                 </div>
               </div>
             </div>
           </section>
-        </div>
+        </div></div></div></div>
         <?php
     }
 
@@ -650,7 +650,7 @@ CSS;
           +'</span>';
       }
       const actions=document.createElement('td');
-      actions.innerHTML='<button class="btn btn--ghost">Ver</button>';
+      actions.innerHTML='<button class="kvt-btn btn--ghost">Ver</button>';
       tr.append(cb,name,intNo,stage,actions);
       tbody.appendChild(tr);
     });
@@ -2015,8 +2015,16 @@ JS;
         $candidate_links = get_option('kvt_candidate_links', []);
         $is_client_board    = $slug && isset($client_links[$slug]);
         $is_candidate_board = $slug && isset($candidate_links[$slug]);
+
+        wp_enqueue_style(
+            'kvt-dark',
+            plugins_url('assets/css/kvt-dark.css', __FILE__),
+            [],
+            '1.0'
+        );
+
         if (!$is_client_board && !$is_candidate_board && (!is_user_logged_in() || !current_user_can('edit_posts'))) {
-            return '<div class="kvt-wrapper"><p>Debes iniciar sesión para ver el pipeline.</p></div>';
+            return '<div class="kvt"><div class="kvt-container"><p>Debes iniciar sesión para ver el pipeline.</p></div></div>';
         }
         $clients   = get_terms(['taxonomy'=>self::TAX_CLIENT, 'hide_empty'=>false]);
         $processes = get_terms(['taxonomy'=>self::TAX_PROCESS,'hide_empty'=>false]);
@@ -2051,20 +2059,22 @@ JS;
         $recent_candidates = $recent_q->found_posts;
 
         ob_start(); ?>
-        <div class="kvt-wrapper">
-            <nav class="kvt-nav" aria-label="Navegación principal">
-                <a href="#" class="active" data-view="detalles"><span class="dashicons dashicons-dashboard"></span> Panel</a>
-                <a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendario</a>
-                <a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidatos</a>
-                <a href="#" data-view="base" id="kvt_open_clients"><span class="dashicons dashicons-businessman"></span> Clientes</a>
-                <a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a>
-                <a href="#" data-view="email" id="kvt_nav_email"><span class="dashicons dashicons-email"></span> Correo</a>
-                <a href="#" data-view="keyword"><span class="dashicons dashicons-search"></span> <?php esc_html_e('Búsqueda de palabras', 'kovacic'); ?></a>
-                <a href="#" data-view="ai"><span class="dashicons dashicons-search"></span> Buscador IA</a>
-                <a href="#" data-view="boards" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
-                <a href="#" data-view="chat"><span class="dashicons dashicons-format-chat"></span> Chat con MIT</a>
-            </nav>
-            <div class="kvt-content">
+        <div class="kvt"><div class="kvt-container"><div class="kvt-row">
+          <aside class="kvt-sidebar">
+            <ul class="kvt-nav" aria-label="Navegación principal">
+                <li><a href="#" class="active is-active" data-view="detalles"><span class="dashicons dashicons-dashboard"></span> Panel</a></li>
+                <li><a href="#" data-view="calendario"><span class="dashicons dashicons-calendar"></span> Calendario</a></li>
+                <li><a href="#" data-view="base"><span class="dashicons dashicons-admin-users"></span> Candidatos</a></li>
+                <li><a href="#" data-view="base" id="kvt_open_clients"><span class="dashicons dashicons-businessman"></span> Clientes</a></li>
+                <li><a href="#" data-view="base" id="kvt_open_processes"><span class="dashicons dashicons-networking"></span> Procesos</a></li>
+                <li><a href="#" data-view="email" id="kvt_nav_email"><span class="dashicons dashicons-email"></span> Correo</a></li>
+                <li><a href="#" data-view="keyword"><span class="dashicons dashicons-search"></span> <?php esc_html_e('Búsqueda de palabras', 'kovacic'); ?></a></li>
+                <li><a href="#" data-view="ai"><span class="dashicons dashicons-search"></span> Buscador IA</a></li>
+                <li><a href="#" data-view="boards" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a></li>
+                <li><a href="#" data-view="chat"><span class="dashicons dashicons-format-chat"></span> Chat con MIT</a></li>
+            </ul>
+          </aside>
+          <div class="kvt-content">
             <?php if ($is_client_board || $is_candidate_board): ?>
             <img src="https://kovacictalent.com/wp-content/uploads/2025/08/Logo_Kovacic.png" alt="Kovacic Talent" class="kvt-logo">
             <?php endif; ?>
@@ -2092,15 +2102,15 @@ JS;
                   <label for="kvt_stage">Etapa</label>
                   <select id="kvt_stage"><option value=""><?php esc_html_e('Etapa', 'kovacic'); ?></option></select>
               </div>
-              <button class="btn" id="kvt_save_search">Guardar búsqueda</button>
+              <button class="kvt-btn" id="kvt_save_search">Guardar búsqueda</button>
               <div id="kvt_saved_searches" class="kvt-saved-searches"></div>
-              <button class="btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
+              <button class="kvt-btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
           </div>
 
           <div id="kvt_selected_info" class="kvt-selected-info" style="display:none;"></div>
 
           <div class="kvt-main">
-                <div id="kvt_table_wrap" class="kvt-table-wrap" style="display:none;">
+                <div id="kvt_table_wrap" class="kvt-table-wrap kvt-card" style="display:none;">
                     <div id="kvt_stage_overview" class="kvt-stage-overview"></div>
                     <div id="kvt_ats_bar" class="kvt-ats-bar">
                         <label for="kvt_search">Buscar</label>
@@ -2119,7 +2129,7 @@ JS;
                     </div>
                     <div id="kvt_board_base" class="kvt-base" style="display:none;">
                       <div class="kvt-tabs" id="kvt_board_tabs">
-                        <button type="button" class="kvt-tab active" data-target="candidates">Candidatos</button>
+                        <button type="button" class="kvt-tab active is-active" data-target="candidates">Candidatos</button>
                         <button type="button" class="kvt-tab" data-target="clients">Clientes</button>
                         <button type="button" class="kvt-tab" data-target="processes">Procesos</button>
                       </div>
@@ -2172,7 +2182,7 @@ JS;
                         <div id="kvt_board_processes_list" class="kvt-list"></div>
                       </div>
                     </div>
-                    <table id="kvt_table">
+                    <table id="kvt_table" class="kvt-table">
                         <thead><tr id="kvt_table_head"></tr></thead>
                         <tbody id="kvt_table_body"></tbody>
                     </table>
@@ -2258,7 +2268,7 @@ JS;
                 </div>
                 <div id="kvt_email_view" style="display:none;">
                   <div class="kvt-tabs" id="kvt_email_tabs">
-                    <button type="button" class="kvt-tab active" data-target="compose">Enviar</button>
+                    <button type="button" class="kvt-tab active is-active" data-target="compose">Enviar</button>
                     <button type="button" class="kvt-tab" data-target="sent">Enviados</button>
                     <button type="button" class="kvt-tab" data-target="templates">Plantillas</button>
                   </div>
@@ -2321,7 +2331,7 @@ JS;
                       <button class="kvt-btn" id="kvt_email_clear" style="margin-left:8px">Limpiar</button>
                       <span class="kvt-muted" id="kvt_email_selected" style="margin-left:8px">0 seleccionados</span>
                     </div>
-                    <div class="kvt-table-wrap">
+                    <div class="kvt-table-wrap kvt-card">
                       <table class="kvt-table">
                         <thead id="kvt_email_head">
                           <tr>
@@ -2401,8 +2411,8 @@ JS;
                 <div id="kvt_activity" class="kvt-activity">
                     <h4 class="kvt-widget-title">Actividad</h4>
                     <div class="kvt-activity-tabs">
-                        <button type="button" class="kvt-activity-tab active" data-target="tasks">Tareas</button>
-                        <button type="button" class="kvt-activity-tab" data-target="log">Registro</button>
+                        <button type="button" class="kvt-activity-tab kvt-tab active is-active" data-target="tasks">Tareas</button>
+                        <button type="button" class="kvt-activity-tab kvt-tab" data-target="log">Registro</button>
                     </div>
                     <div id="kvt_activity_tasks" class="kvt-activity-content">
                         <div class="kvt-activity-columns">
@@ -2573,7 +2583,7 @@ JS;
             </div>
             <div class="kvt-modal-body">
               <div class="kvt-tabs">
-                <button type="button" class="kvt-tab active" data-target="candidates">Candidatos</button>
+                <button type="button" class="kvt-tab active is-active" data-target="candidates">Candidatos</button>
                 <button type="button" class="kvt-tab" data-target="clients">Clientes</button>
                 <button type="button" class="kvt-tab" data-target="processes">Procesos</button>
                 <button type="button" class="kvt-tab" data-target="ai">Buscador IA</button>
@@ -2741,7 +2751,7 @@ JS;
             </div>
             <div class="kvt-modal-body">
               <div class="kvt-tabs">
-                <button type="button" class="kvt-tab active" data-target="info">Info</button>
+                <button type="button" class="kvt-tab active is-active" data-target="info">Info</button>
                 <button type="button" class="kvt-tab" data-target="meetings">Reuniones</button>
               </div>
               <div id="kvt_client_tab_info" class="kvt-tab-panel active">
@@ -2815,7 +2825,7 @@ JS;
             </div>
             <div class="kvt-modal-body">
               <div class="kvt-tabs">
-                <button type="button" class="kvt-tab active" data-target="info">Info</button>
+                <button type="button" class="kvt-tab active is-active" data-target="info">Info</button>
                 <button type="button" class="kvt-tab" data-target="meetings">Reuniones</button>
               </div>
               <div id="kvt_process_tab_info" class="kvt-tab-panel active">
@@ -2843,8 +2853,7 @@ JS;
               </div>
             </div>
           </div>
-        </div>
-</div>
+        </div></div></div></div>
         <?php
         // Make maps available to JS BEFORE app script executes
         wp_add_inline_script('kvt-app', 'window.KVT_CLIENT_MAP=' . wp_json_encode($client_map) . ';', 'before');
@@ -3225,8 +3234,8 @@ function kvtInit(){
     viewLinks.forEach(link=>{
       link.addEventListener('click',e=>{
         e.preventDefault();
-        viewLinks.forEach(n=>n.classList.remove('active'));
-        link.classList.add('active');
+          viewLinks.forEach(n=>n.classList.remove('active','is-active'));
+          link.classList.add('active','is-active');
         showView(link.dataset.view);
       });
     });
@@ -3468,7 +3477,7 @@ function kvtInit(){
       .then(j=>{
         if(j.success){
           savedSearchData = j.data||{};
-          savedSearches.innerHTML = Object.keys(savedSearchData).map(n=>'<button type="button" class="btn kvt-saved-search" data-name="'+escAttr(n)+'">'+esc(n)+'</button>').join('');
+          savedSearches.innerHTML = Object.keys(savedSearchData).map(n=>'<button type="button" class="kvt-btn kvt-saved-search" data-name="'+escAttr(n)+'">'+esc(n)+'</button>').join('');
           savedSearches.querySelectorAll('.kvt-saved-search').forEach(btn=>{
             btn.addEventListener('click',()=>{
               const f = savedSearchData[btn.dataset.name];
@@ -3659,7 +3668,11 @@ function kvtInit(){
   emailTabs.forEach(btn=>{
     btn.addEventListener('click',()=>{
       const target=btn.dataset.target;
-      emailTabs.forEach(b=>b.classList.toggle('active', b===btn));
+        emailTabs.forEach(b=>{
+          const on=b===btn;
+          b.classList.toggle('active', on);
+          b.classList.toggle('is-active', on);
+        });
       ['compose','sent','templates'].forEach(k=>{
         const pane=el('#kvt_email_tab_'+k);
         if(pane) pane.classList.toggle('active', k===target);
@@ -4124,12 +4137,36 @@ function kvtInit(){
   }
 
   function switchTab(target){
-    if(tabCandidates) tabCandidates.classList.toggle('active', target==='candidates');
-    if(tabClients) tabClients.classList.toggle('active', target==='clients');
-    if(tabProcesses) tabProcesses.classList.toggle('active', target==='processes');
-    if(tabAI) tabAI.classList.toggle('active', target==='ai');
-    if(tabKeyword) tabKeyword.classList.toggle('active', target==='keyword');
-    tabs.forEach(b=>b.classList.toggle('active', b.dataset.target===target));
+      if(tabCandidates){
+        const on=target==='candidates';
+        tabCandidates.classList.toggle('active', on);
+        tabCandidates.classList.toggle('is-active', on);
+      }
+      if(tabClients){
+        const on=target==='clients';
+        tabClients.classList.toggle('active', on);
+        tabClients.classList.toggle('is-active', on);
+      }
+      if(tabProcesses){
+        const on=target==='processes';
+        tabProcesses.classList.toggle('active', on);
+        tabProcesses.classList.toggle('is-active', on);
+      }
+      if(tabAI){
+        const on=target==='ai';
+        tabAI.classList.toggle('active', on);
+        tabAI.classList.toggle('is-active', on);
+      }
+      if(tabKeyword){
+        const on=target==='keyword';
+        tabKeyword.classList.toggle('active', on);
+        tabKeyword.classList.toggle('is-active', on);
+      }
+      tabs.forEach(b=>{
+        const on=b.dataset.target===target;
+        b.classList.toggle('active', on);
+        b.classList.toggle('is-active', on);
+      });
     if(target==='clients') listClients();
     if(target==='processes') listProcesses();
     if(target==='candidates') listProfiles(1, modalCtx);
@@ -4137,10 +4174,26 @@ function kvtInit(){
   tabs.forEach(b=>b.addEventListener('click', ()=>switchTab(b.dataset.target)));
 
   function switchBoardTab(target){
-    if(boardTabCandidates) boardTabCandidates.classList.toggle('active', target==='candidates');
-    if(boardTabClients) boardTabClients.classList.toggle('active', target==='clients');
-    if(boardTabProcesses) boardTabProcesses.classList.toggle('active', target==='processes');
-    boardTabs.forEach(b=>b.classList.toggle('active', b.dataset.target===target));
+      if(boardTabCandidates){
+        const on=target==='candidates';
+        boardTabCandidates.classList.toggle('active', on);
+        boardTabCandidates.classList.toggle('is-active', on);
+      }
+      if(boardTabClients){
+        const on=target==='clients';
+        boardTabClients.classList.toggle('active', on);
+        boardTabClients.classList.toggle('is-active', on);
+      }
+      if(boardTabProcesses){
+        const on=target==='processes';
+        boardTabProcesses.classList.toggle('active', on);
+        boardTabProcesses.classList.toggle('is-active', on);
+      }
+      boardTabs.forEach(b=>{
+        const on=b.dataset.target===target;
+        b.classList.toggle('active', on);
+        b.classList.toggle('is-active', on);
+      });
     if(target==='clients') listClients(boardClientsList);
     if(target==='processes') listProcesses(boardProcessesList);
     if(target==='candidates') listProfiles(1, boardCtx);
@@ -4419,7 +4472,7 @@ function kvtInit(){
     }).join('');
 
     const tabs = '<div class="kvt-tabs">'+
-      '<button type="button" class="kvt-tab active" data-target="info">Info</button>'+
+      '<button type="button" class="kvt-tab active is-active" data-target="info">Info</button>'+
       '<button type="button" class="kvt-tab" data-target="notes">Notas</button>'+
       '<button type="button" class="kvt-tab" data-target="next">Próxima acción</button>'+
       (showActivity?'<button type="button" class="kvt-tab" data-target="activity">Actividad</button>':'')+
@@ -4552,7 +4605,11 @@ function kvtInit(){
     tabs.forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const target = btn.dataset.target;
-        tabs.forEach(b=>b.classList.toggle('active', b===btn));
+          tabs.forEach(b=>{
+            const on=b===btn;
+            b.classList.toggle('active', on);
+            b.classList.toggle('is-active', on);
+          });
         panels.forEach(p=>p.classList.toggle('active', p.id==='kvt_profile_tab_'+target));
       });
     });
@@ -5814,9 +5871,9 @@ function kvtInit(){
   });
   activityTabs.forEach(tab=>{
     tab.addEventListener('click', ()=>{
-      activityTabs.forEach(t=>t.classList.remove('active'));
-      activityViews.forEach(v=>v.style.display='none');
-      tab.classList.add('active');
+        activityTabs.forEach(t=>t.classList.remove('active','is-active'));
+        activityViews.forEach(v=>v.style.display='none');
+        tab.classList.add('active','is-active');
       const pane = el('#kvt_activity_'+tab.dataset.target);
       if(pane) pane.style.display='block';
     });
@@ -6481,7 +6538,14 @@ function kvtInit(){
     const mtdate = el('#kvt_meeting_date');
     const mtdetails = el('#kvt_meeting_details');
     const mtsave = el('#kvt_meeting_save');
-    function activateClTab(target){ clTabs.forEach(b=>b.classList.toggle('active', b.dataset.target===target)); clPanels.forEach(p=>p.classList.toggle('active', p.id==='kvt_client_tab_'+target)); }
+    function activateClTab(target){
+      clTabs.forEach(b=>{
+        const on=b.dataset.target===target;
+        b.classList.toggle('active', on);
+        b.classList.toggle('is-active', on);
+      });
+      clPanels.forEach(p=>p.classList.toggle('active', p.id==='kvt_client_tab_'+target));
+    }
     function renderMeetingList(){
       if(!clmeetList) return;
       const lines = clmeet && clmeet.value ? clmeet.value.split('\n').filter(Boolean) : [];
@@ -6590,7 +6654,14 @@ function kvtInit(){
     const prmtdate   = el('#kvt_proc_meeting_date');
     const prmtdetails= el('#kvt_proc_meeting_details');
     const prmtsave   = el('#kvt_proc_meeting_save');
-    function activatePTab(target){ pTabs.forEach(b=>b.classList.toggle('active', b.dataset.target===target)); pPanels.forEach(p=>p.classList.toggle('active', p.id==='kvt_process_tab_'+target)); }
+    function activatePTab(target){
+      pTabs.forEach(b=>{
+        const on=b.dataset.target===target;
+        b.classList.toggle('active', on);
+        b.classList.toggle('is-active', on);
+      });
+      pPanels.forEach(p=>p.classList.toggle('active', p.id==='kvt_process_tab_'+target));
+    }
     function renderProcessMeetingList(){
       if(!prmeetList) return;
       const lines = prmeet && prmeet.value ? prmeet.value.split('\n').filter(Boolean) : [];
