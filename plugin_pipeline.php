@@ -9858,6 +9858,11 @@ JS;
                 $client     = isset($r['client']) ? sanitize_text_field($r['client']) : '';
                 $board      = isset($r['board']) ? esc_url_raw($r['board']) : '';
 
+                if (!$email) {
+                    $result['errors'][] = ['email'=>$display_email, 'error'=>'Invalid email'];
+                    continue;
+                }
+
                 $data = compact('first_name','surname','country','city','role','board','status','client');
                 $data['sender'] = $from_name ?: $from_email ?: get_bloginfo('name');
                 $subject = $this->render_template($subject_tpl, $data);
@@ -9878,6 +9883,9 @@ JS;
                 } else {
                     $result['errors'][] = ['email'=>$display_email, 'error'=>$last_error];
                 }
+
+                // avoid hammering SMTP servers when sending many emails at once
+                usleep(250000);
 
                 $recipient_meta = compact('first_name','surname','country','city','role','status','client','board');
                 $recipient_meta['email'] = $display_email;
