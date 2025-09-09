@@ -9811,7 +9811,18 @@ JS;
 
             $subject_tpl   = (string)($batch['subject_tpl'] ?? '');
             $body_tpl      = (string)($batch['body_tpl'] ?? '');
-            $recipients    = (array)($batch['recipients'] ?? []);
+            $raw_recipients = $batch['recipients'] ?? [];
+            if (is_string($raw_recipients)) {
+                $raw_recipients = preg_split('/[\s,;]+/', $raw_recipients);
+            }
+            $recipients = [];
+            foreach ((array) $raw_recipients as $r) {
+                if (is_array($r)) {
+                    $recipients[] = $r;
+                } elseif (is_string($r) && $r !== '') {
+                    $recipients[] = ['email' => trim($r)];
+                }
+            }
             $from_email    = sanitize_email($batch['from_email'] ?? '');
             $from_name     = sanitize_text_field($batch['from_name'] ?? '');
             $use_signature = !empty($batch['use_signature']);
