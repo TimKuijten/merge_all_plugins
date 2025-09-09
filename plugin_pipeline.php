@@ -9902,15 +9902,20 @@ JS;
 
                 $last_error = null;
                 $ok = wp_mail($email, $subject, $body, $headers);
-                $status = $last_error ? 'failed' : 'sent';
+                $status = ($ok && !$last_error) ? 'sent' : 'failed';
                 if ($status === 'sent') {
                     $result['sent']++;
                 } else {
-                    $result['errors'][] = ['email'=>$display_email, 'error'=>$last_error];
+                    $result['errors'][] = ['email'=>$display_email, 'error'=>$last_error ?: 'wp_mail failed'];
+                }
+
+                // close SMTP connection to ensure next message is sent fresh
+                if (isset($GLOBALS['phpmailer']) && $GLOBALS['phpmailer'] instanceof \PHPMailer\PHPMailer\PHPMailer) {
+                    $GLOBALS['phpmailer']->smtpClose();
                 }
 
                 // avoid hammering SMTP servers when sending many emails at once
-                usleep(250000);
+                usleep(1000000);
 
                 $recipient_meta = compact('first_name','surname','country','city','role','status','client','board');
                 $recipient_meta['email'] = $display_email;
@@ -9952,7 +9957,11 @@ JS;
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
                 $last_error = null;
                 $ok = wp_mail($from_email, $subject, $body, $headers);
-                $status = $last_error ? 'failed' : 'sent';
+                $status = ($ok && !$last_error) ? 'sent' : 'failed';
+                if (isset($GLOBALS['phpmailer']) && $GLOBALS['phpmailer'] instanceof \PHPMailer\PHPMailer\PHPMailer) {
+                    $GLOBALS['phpmailer']->smtpClose();
+                }
+                usleep(1000000);
                 $entry = [
                     'time'       => current_time('mysql'),
                     'from_name'  => $from_name,
