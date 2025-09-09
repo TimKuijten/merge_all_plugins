@@ -9631,6 +9631,39 @@ JS;
         }
         return 'otro';
     }
+    private function openai_guess_sector($key, $role, $cv_text) {
+        if (!$key) return '';
+        $sectors = ['Ingenieria','construction','operations','transmisión','eólica','solar','bess','h2','Biometano','generación térmica','equipos eléctrico','mineras','forestal','agro','comercialización de energía','fondos','bancos internacionales','otro'];
+        $cv_text = mb_substr((string)$cv_text, 0, 3000);
+        $prompt = "Basado en el Puesto Actual y el CV, selecciona el sector más adecuado de esta lista:\n" . implode(', ', $sectors) . ".\nPuesto Actual: $role\nCV:\n$cv_text\nResponde solo con el nombre exacto de un sector.";
+        $req = [
+            'model' => 'gpt-4o-mini',
+            'messages' => [
+                ['role' => 'system', 'content' => 'Eres un asistente de reclutamiento. Devuelve únicamente el nombre del sector de la lista.'],
+                ['role' => 'user', 'content' => $prompt],
+            ],
+            'max_tokens' => 10,
+        ];
+        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => wp_json_encode($req),
+            'timeout' => self::AI_TIMEOUT,
+        ]);
+        if (is_wp_error($response)) return '';
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (!isset($body['choices'][0]['message']['content'])) return '';
+        $sector = trim($body['choices'][0]['message']['content']);
+        $norm = strtolower(remove_accents($sector));
+        foreach ($sectors as $s) {
+            if ($norm === strtolower(remove_accents($s)) || strpos($norm, strtolower(remove_accents($s))) !== false) {
+                return $s;
+            }
+        }
+        return '';
+    }
 
     private function openai_match_summary($key, $desc, $cv_text) {
         $req = [
@@ -9933,6 +9966,7 @@ JS;
                     'relation' => 'OR',
                     ['key' => 'kvt_sector', 'compare' => 'NOT EXISTS'],
                     ['key' => 'kvt_sector', 'value' => '', 'compare' => '='],
+                    ['key' => 'kvt_sector', 'value' => '---Sector---', 'compare' => '='],
                 ],
             ]);
             update_option(self::OPT_UPDATE_QUEUE, array_map('intval', $ids));
@@ -9957,9 +9991,16 @@ JS;
             update_option(self::OPT_UPDATE_QUEUE, $queue);
             if ($id) {
                 $sector = $this->meta_get_compat($id, 'kvt_sector', ['sector']);
-                if (trim($sector) === '') {
+                if (trim($sector) === '' || $sector === '---Sector---') {
                     $role = $this->meta_get_compat($id, 'kvt_current_role', ['current_role']);
-                    $guess = $this->guess_sector_from_role($role);
+                    $cv   = $this->get_candidate_cv_text($id);
+                    $guess = '';
+                    if ($key) {
+                        $guess = $this->openai_guess_sector($key, $role, $cv);
+                    }
+                    if (!$guess) {
+                        $guess = $this->guess_sector_from_role($role);
+                    }
                     if ($guess) {
                         update_post_meta($id, 'kvt_sector', $guess);
                         update_post_meta($id, 'sector', $guess);
