@@ -412,14 +412,32 @@ JS;
                     <label for="kcvf_sector">Sector</label>
                     <select class="kcvf-select" name="kcvf_sector" id="kcvf_sector">
                         <option value="">— Seleccionar —</option>
-                        <option>Energías renovables (eólica/solar/almacenamiento)</option>
-                        <option>Red / Transmisión</option>
-                        <option>Oil & Gas</option>
-                        <option>Construcción / EPC</option>
-                        <option>Minería</option>
-                        <option>Ingeniería</option>
-                        <option>Finanzas / Inversión</option>
-                        <option>Otro</option>
+                        <?php
+                        $sectors = [
+                            'Agro',
+                            'Bancos internacionales',
+                            'BESS',
+                            'Biometano',
+                            'Comercialización de energía',
+                            'Construction',
+                            'Equipos eléctrico',
+                            'Eólica',
+                            'Fondos',
+                            'Forestal',
+                            'Generación térmica',
+                            'H2',
+                            'Ingenieria',
+                            'Mineras',
+                            'Operations',
+                            'Solar',
+                            'Transmisión',
+                            'Otro',
+                        ];
+                        $old_sector = $old['sector'] ?? '';
+                        foreach ($sectors as $sec) {
+                            printf('<option%s>%s</option>', selected($old_sector, $sec, false), esc_html($sec));
+                        }
+                        ?>
                     </select>
                 </div>
 
@@ -630,6 +648,8 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
                 update_post_meta($candidate_id, 'last_name', $last);
                 update_post_meta($candidate_id, 'kvt_email', $email);
                 update_post_meta($candidate_id, 'email', $email);
+                update_post_meta($candidate_id, 'kvt_sector', $sector);
+                update_post_meta($candidate_id, 'sector', $sector);
                 if ($cv_url) {
                     update_post_meta($candidate_id, 'kvt_cv_url', esc_url_raw($cv_url));
                     update_post_meta($candidate_id, 'cv_url', esc_url_raw($cv_url));
