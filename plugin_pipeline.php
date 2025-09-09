@@ -33,6 +33,7 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_EMAIL_LOG = 'kvt_email_log';
     const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
     const OPT_UPDATE_QUEUE = 'kvt_update_queue';
+    const OPT_UPDATE_MODE  = 'kvt_update_mode';
     const OPT_MIT_TIME = 'kvt_mit_time';
     const OPT_MIT_RECIPIENTS = 'kvt_mit_recipients';
     const OPT_MIT_FREQUENCY = 'kvt_mit_frequency';
@@ -164,6 +165,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
         add_action('wp_ajax_kvt_update_missing',       [$this, 'ajax_update_missing']);
         add_action('wp_ajax_nopriv_kvt_update_missing',[$this, 'ajax_update_missing']);
+        add_action('wp_ajax_kvt_update_sector',       [$this, 'ajax_update_sector']);
+        add_action('wp_ajax_nopriv_kvt_update_sector',[$this, 'ajax_update_sector']);
         add_action('wp_ajax_kvt_update_queue_status',        [$this, 'ajax_update_queue_status']);
         add_action('wp_ajax_nopriv_kvt_update_queue_status', [$this, 'ajax_update_queue_status']);
         add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
@@ -2280,6 +2283,7 @@ JS;
                     <h4>Update</h4>
                     <p>Procesa candidatos sin sector y completa campos desde su CV.</p>
                     <button type="button" class="kvt-btn" id="kvt_update_start">Actualizar</button>
+                    <button type="button" class="kvt-btn" id="kvt_update_sector">Update sector</button>
                     <p><span id="kvt_update_status"></span><span id="kvt_update_spinner" class="kvt-spinner" style="display:none;"></span></p>
                 </div>
                 <div class="kvt-widgets">
@@ -3296,6 +3300,7 @@ function kvtInit(){
   const mitChatSend = el('#kvt_mit_chat_send');
   const updateView = el('#kvt_update_view');
   const updateBtn = el('#kvt_update_start');
+  const updateSectorBtn = el('#kvt_update_sector');
   const updateStatus = el('#kvt_update_status');
   const updateSpinner = el('#kvt_update_spinner');
   let updateTimer, updateTotal = 0;
@@ -3829,6 +3834,7 @@ function kvtInit(){
           clearInterval(updateTimer);
           updateTimer=null;
           updateBtn.disabled=false;
+          if(updateSectorBtn) updateSectorBtn.disabled=false;
         }
       }
     }catch(e){}
@@ -3837,6 +3843,7 @@ function kvtInit(){
   async function startUpdateProfiles(){
     if(!updateBtn) return;
     updateBtn.disabled=true;
+    if(updateSectorBtn) updateSectorBtn.disabled=true;
     updateSpinner.style.display='inline-block';
     updateStatus.textContent='Iniciando...';
     try{
@@ -3852,14 +3859,46 @@ function kvtInit(){
         updateStatus.textContent=json && json.data && json.data.msg?json.data.msg:'Error';
         updateSpinner.style.display='none';
         updateBtn.disabled=false;
+        if(updateSectorBtn) updateSectorBtn.disabled=false;
       }
     }catch(e){
       updateStatus.textContent='Error';
       updateSpinner.style.display='none';
       updateBtn.disabled=false;
+      if(updateSectorBtn) updateSectorBtn.disabled=false;
     }
   }
   updateBtn && updateBtn.addEventListener('click', startUpdateProfiles);
+
+  async function startUpdateSector(){
+    if(!updateSectorBtn) return;
+    updateBtn && (updateBtn.disabled=true);
+    updateSectorBtn.disabled=true;
+    updateSpinner.style.display='inline-block';
+    updateStatus.textContent='Iniciando...';
+    try{
+      const resp=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_update_sector', _ajax_nonce:KVT_NONCE})});
+      const json=await resp.json();
+      if(json && json.success){
+        updateTotal=parseInt(json.data.count,10)||0;
+        updateStatus.textContent='Quedan '+updateTotal+' candidatos por actualizar';
+        clearInterval(updateTimer);
+        updateTimer=setInterval(pollUpdateStatus,5000);
+        pollUpdateStatus();
+      } else {
+        updateStatus.textContent=json && json.data && json.data.msg?json.data.msg:'Error';
+        updateSpinner.style.display='none';
+        updateBtn && (updateBtn.disabled=false);
+        updateSectorBtn.disabled=false;
+      }
+    }catch(e){
+      updateStatus.textContent='Error';
+      updateSpinner.style.display='none';
+      updateBtn && (updateBtn.disabled=false);
+      updateSectorBtn.disabled=false;
+    }
+  }
+  updateSectorBtn && updateSectorBtn.addEventListener('click', startUpdateSector);
 
   function showView(view){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
@@ -9666,11 +9705,18 @@ JS;
         }
         return 'otro';
     }
-    private function openai_guess_sector($key, $role, $cv_text) {
+    private function openai_guess_sector($key, $role, $cv_text, $company = '', $info = '') {
         if (!$key) return '';
         $sectors = ['Ingenieria','construction','operations','transmisión','eólica','solar','bess','h2','Biometano','generación térmica','equipos eléctrico','mineras','forestal','agro','comercialización de energía','fondos','bancos internacionales','otro'];
         $cv_text = mb_substr((string)$cv_text, 0, 3000);
-        $prompt = "Basado en el Puesto Actual y el CV, selecciona el sector más adecuado de esta lista:\n" . implode(', ', $sectors) . ".\nPuesto Actual: $role\nCV:\n$cv_text\nResponde solo con el nombre exacto de un sector.";
+        $prompt = "Basado en la información del candidato, selecciona el sector más adecuado de esta lista:\n" . implode(', ', $sectors) . ".\nPuesto Actual: $role";
+        if ($company) {
+            $prompt .= "\nEmpresa: $company";
+        }
+        if ($info) {
+            $prompt .= "\nInformación de Google:\n$info";
+        }
+        $prompt .= "\nCV:\n$cv_text\nResponde solo con el nombre exacto de un sector.";
         $req = [
             'model' => 'gpt-4o-mini',
             'messages' => [
@@ -9713,7 +9759,12 @@ JS;
             $role = $this->meta_get_compat($post_id, 'kvt_role', ['role']);
         }
         $cv_text = $this->get_candidate_cv_text($post_id);
-        $guess = $key ? $this->openai_guess_sector($key, $role, $cv_text) : '';
+        $company = $this->meta_get_compat($post_id, 'kvt_company', ['company']);
+        $info = '';
+        if ($company) {
+            $info = $this->mit_search_web($company . ' ' . $role);
+        }
+        $guess = $key ? $this->openai_guess_sector($key, $role, $cv_text, $company, $info) : '';
         if (!$guess) {
             $guess = $this->guess_sector_from_role($role);
         }
@@ -10024,6 +10075,37 @@ JS;
                 'posts_per_page' => -1,
             ]);
             update_option(self::OPT_UPDATE_QUEUE, array_map('intval', $ids));
+            update_option(self::OPT_UPDATE_MODE, 'full');
+            if (!wp_next_scheduled('kvt_update_worker')) {
+                wp_schedule_single_event(time()+5, 'kvt_update_worker');
+            }
+            wp_send_json_success(['count' => count($ids)]);
+        }
+
+        public function ajax_update_sector() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+            $ids = get_posts([
+                'post_type'      => self::CPT,
+                'post_status'    => 'any',
+                'fields'         => 'ids',
+                'posts_per_page' => -1,
+                'meta_query'     => [
+                    'relation' => 'OR',
+                    [
+                        'key'     => 'kvt_sector',
+                        'value'   => '---Sector---',
+                        'compare' => '=',
+                    ],
+                    [
+                        'key'     => 'sector',
+                        'value'   => '---Sector---',
+                        'compare' => '=',
+                    ],
+                ],
+            ]);
+            update_option(self::OPT_UPDATE_QUEUE, array_map('intval', $ids));
+            update_option(self::OPT_UPDATE_MODE, 'sector');
             if (!wp_next_scheduled('kvt_update_worker')) {
                 wp_schedule_single_event(time()+5, 'kvt_update_worker');
             }
@@ -10041,11 +10123,12 @@ JS;
             $queue = get_option(self::OPT_UPDATE_QUEUE, []);
             if (empty($queue)) return;
             $key = get_option(self::OPT_OPENAI_KEY, '');
+            $mode = get_option(self::OPT_UPDATE_MODE, 'full');
             $processed = 0;
             while ($processed < 5 && !empty($queue)) {
                 $id = array_shift($queue);
                 if ($id) {
-                    if ($key) {
+                    if ($mode !== 'sector' && $key) {
                         $this->update_profile_from_cv($id, $key);
                     }
                     $this->ensure_candidate_sector($id, $key);
@@ -10056,6 +10139,8 @@ JS;
             update_option(self::OPT_UPDATE_QUEUE, $queue);
             if (!empty($queue)) {
                 wp_schedule_single_event(time()+5, 'kvt_update_worker');
+            } else {
+                delete_option(self::OPT_UPDATE_MODE);
             }
         }
 
