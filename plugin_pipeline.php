@@ -9816,7 +9816,7 @@ JS;
                 $raw_recipients = [$raw_recipients];
             }
             $recipients = [];
-            foreach ((array) $raw_recipients as $r) {
+            foreach ((array)$raw_recipients as $r) {
                 if (is_array($r)) {
                     $emails_raw = isset($r['email']) ? $r['email'] : '';
                     if (is_string($emails_raw)) {
@@ -9833,11 +9833,10 @@ JS;
                     foreach (preg_split('/[\s,;]+/', $r) as $e) {
                         $e = trim($e);
                         if ($e === '') continue;
-                        $recipients[] = ['email' => $e];
+                        $recipients[] = ['email'=>$e];
                     }
                 }
             }
-
             $from_email    = sanitize_email($batch['from_email'] ?? '');
             $from_name     = sanitize_text_field($batch['from_name'] ?? '');
             $use_signature = !empty($batch['use_signature']);
@@ -9848,15 +9847,29 @@ JS;
             if (!$from_name)  $from_name  = get_option(self::OPT_FROM_NAME, '');
             if (!$from_name)  $from_name  = get_bloginfo('name');
 
+            $from_cb = null;
+            $from_name_cb = null;
+            if ($from_email) {
+                $from_cb = function() use ($from_email){ return $from_email; };
+                add_filter('wp_mail_from', $from_cb, 99);
+            }
+            if ($from_name) {
+                $from_name_cb = function() use ($from_name){ return $from_name; };
+                add_filter('wp_mail_from_name', $from_name_cb, 99);
+            }
+
             $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
             $log = get_option(self::OPT_EMAIL_LOG, []);
             if (!is_array($log)) $log = [];
-
-            if (!class_exists('\PHPMailer\PHPMailer\PHPMailer')) {
-                require_once ABSPATH . WPINC . '/PHPMailer/PHPMailer.php';
-                require_once ABSPATH . WPINC . '/PHPMailer/Exception.php';
-                require_once ABSPATH . WPINC . '/PHPMailer/SMTP.php';
-            }
+            $last_error = null;
+            $failed_hook = function($wp_error) use (&$last_error) {
+                if (is_wp_error($wp_error)) {
+                    $last_error = $wp_error->get_error_message();
+                } else {
+                    $last_error = is_string($wp_error) ? $wp_error : 'Unknown mail error';
+                }
+            };
+            add_action('wp_mail_failed', $failed_hook);
 
             foreach ($recipients as $r) {
                 $email_raw  = isset($r['email']) ? $r['email'] : '';
@@ -9885,29 +9898,16 @@ JS;
                     $body .= '<br><br>' . $this->normalize_br_html($signature);
                 }
 
-                $err = '';
-                try {
-                    $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
-                    $mail->CharSet = 'UTF-8';
-                    $this->apply_smtp_settings($mail);
-                    if ($from_email) {
-                        $mail->setFrom($from_email, $from_name);
-                        $mail->addReplyTo($from_email, $from_name);
-                    } else {
-                        $mail->setFrom(get_option('admin_email'), get_bloginfo('name'));
-                    }
-                    $mail->addAddress($email);
-                    $mail->Subject = $subject;
-                    $mail->isHTML(true);
-                    $mail->Body    = $body;
-                    $mail->AltBody = wp_strip_all_tags($body);
-                    $mail->send();
-                    $status = 'sent';
+                $headers = ['Content-Type: text/html; charset=UTF-8'];
+                if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
+
+                $last_error = null;
+                $ok = wp_mail($email, $subject, $body, $headers);
+                $status = $last_error ? 'failed' : 'sent';
+                if ($status === 'sent') {
                     $result['sent']++;
-                } catch (\Exception $e) {
-                    $status = 'failed';
-                    $err = $e->getMessage();
-                    $result['errors'][] = ['email'=>$display_email, 'error'=>$err];
+                } else {
+                    $result['errors'][] = ['email'=>$display_email, 'error'=>$last_error];
                 }
 
                 $recipient_meta = compact('first_name','surname','country','city','role','status','client','board');
@@ -9923,10 +9923,14 @@ JS;
                     'status'     => $status,
                 ];
                 if ($status !== 'sent') {
-                    $entry['error'] = $err;
+                    $entry['error'] = $last_error;
                 }
                 $log[] = $entry;
 
+                if (isset($GLOBALS['phpmailer']) && $GLOBALS['phpmailer'] instanceof \PHPMailer\PHPMailer\PHPMailer) {
+                    $GLOBALS['phpmailer']->smtpClose();
+                    $GLOBALS['phpmailer'] = null;
+                }
                 usleep(1000000);
             }
 
@@ -9948,26 +9952,11 @@ JS;
                 if ($signature && $use_signature) {
                     $body .= '<br><br>' . $this->normalize_br_html($signature);
                 }
-
-                $err = '';
-                try {
-                    $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
-                    $mail->CharSet = 'UTF-8';
-                    $this->apply_smtp_settings($mail);
-                    $mail->setFrom($from_email, $from_name);
-                    $mail->addReplyTo($from_email, $from_name);
-                    $mail->addAddress($from_email);
-                    $mail->Subject = $subject;
-                    $mail->isHTML(true);
-                    $mail->Body    = $body;
-                    $mail->AltBody = wp_strip_all_tags($body);
-                    $mail->send();
-                    $status = 'sent';
-                } catch (\Exception $e) {
-                    $status = 'failed';
-                    $err = $e->getMessage();
-                    $result['errors'][] = ['email'=>$from_email, 'error'=>$err];
-                }
+                $headers = ['Content-Type: text/html; charset=UTF-8'];
+                if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
+                $last_error = null;
+                $ok = wp_mail($from_email, $subject, $body, $headers);
+                $status = $last_error ? 'failed' : 'sent';
                 $entry = [
                     'time'       => current_time('mysql'),
                     'from_name'  => $from_name,
@@ -9979,14 +9968,23 @@ JS;
                     'status'     => $status,
                 ];
                 if ($status !== 'sent') {
-                    $entry['error'] = $err;
+                    $entry['error'] = $last_error;
                 }
                 $log[] = $entry;
-
+                if (isset($GLOBALS['phpmailer']) && $GLOBALS['phpmailer'] instanceof \PHPMailer\PHPMailer\PHPMailer) {
+                    $GLOBALS['phpmailer']->smtpClose();
+                    $GLOBALS['phpmailer'] = null;
+                }
                 usleep(1000000);
             }
 
+            remove_action('wp_mail_failed', $failed_hook);
+
             update_option(self::OPT_EMAIL_LOG, $log);
+
+            if ($from_cb) remove_filter('wp_mail_from', $from_cb, 99);
+            if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
+
             $result['log'] = array_reverse($log);
             return $result;
         }
