@@ -2175,6 +2175,14 @@ JS;
                         </select>
                       </div>
                       <div class="kvt-filter-field">
+                        <label for="kvt_email_sector">Sector</label>
+                        <select id="kvt_email_sector" multiple size="4">
+                          <?php foreach ($sectors as $s): ?>
+                            <option value="<?php echo esc_attr($s); ?>"><?php echo esc_html($s); ?></option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+                      <div class="kvt-filter-field">
                         <label for="kvt_email_search">Buscar</label>
                         <input type="text" id="kvt_email_search" placeholder="Buscar...">
                       </div>
@@ -2219,6 +2227,7 @@ JS;
                         <input type="checkbox" id="kvt_email_copy_sender">
                         Enviar copia al remitente
                       </label>
+                      <input type="file" id="kvt_email_attachment">
                     </div>
                     <div class="kvt-row" style="margin-top:8px;">
                       <button type="button" class="kvt-btn" id="kvt_email_preview">Vista previa</button>
@@ -3220,6 +3229,7 @@ function kvtInit(){
   const emailStatusSel = el('#kvt_email_status');
   const emailCountry = el('#kvt_email_country');
   const emailCity = el('#kvt_email_city');
+  const emailSector = el('#kvt_email_sector');
   const emailSearch = el('#kvt_email_search');
   const emailTarget = el('#kvt_email_target');
   const emailFilters = el('#kvt_email_filters');
@@ -3236,6 +3246,7 @@ function kvtInit(){
   const emailFromEmail = el('#kvt_email_from_email');
   const emailUseSig = el('#kvt_email_use_signature');
   const emailCopySender = el('#kvt_email_copy_sender');
+  const emailAttachment = el('#kvt_email_attachment');
   const emailSend = el('#kvt_email_send');
   const emailSaveTplBtn = el('#kvt_email_save_tpl');
   const emailStatusMsg = el('#kvt_email_status_msg');
@@ -3553,7 +3564,7 @@ function kvtInit(){
   });
 
   if(window.jQuery){
-    [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
+    [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity,emailSector].forEach(sel=>{
       if(sel) {
         jQuery(sel)
           .select2({width:'style', dropdownAutoWidth:true})
@@ -3561,7 +3572,7 @@ function kvtInit(){
       }
     });
   } else {
-    [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
+    [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity,emailSector].forEach(sel=>{
       sel && sel.addEventListener('change', ()=>loadEmailCandidates(1));
     });
   }
@@ -3589,7 +3600,7 @@ function kvtInit(){
           '<td>'+esc(m.email||'')+'</td></tr>';
       }).join('');
     } else {
-      if(emailHead) emailHead.innerHTML='<tr><th></th><th>Nombre</th><th>Apellido</th><th>Email</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th></tr>';
+      if(emailHead) emailHead.innerHTML='<tr><th></th><th>Nombre</th><th>Apellido</th><th>Email</th><th>País</th><th>Ciudad</th><th>Sector</th><th>Cliente</th><th>Proceso</th><th>Estado</th></tr>';
       emailTbody.innerHTML = emailCandidates.map(c=>{
         const id=c.id;
         const m=c.meta||{};
@@ -3600,6 +3611,7 @@ function kvtInit(){
           '<td>'+esc(m.email||'')+'</td>'+
           '<td>'+esc(m.country||'')+'</td>'+
           '<td>'+esc(m.city||'')+'</td>'+
+          '<td>'+esc(m.sector||'')+'</td>'+
           '<td>'+esc(m.client||'')+'</td>'+
           '<td>'+esc(m.process||'')+'</td>'+
           '<td>'+esc(m.status||'')+'</td></tr>';
@@ -3617,8 +3629,9 @@ function kvtInit(){
     const s=getVals(emailStatusSel); if(s.length) params.set('status', s.join(','));
     const co=getVals(emailCountry); if(co.length) params.set('country', co.join(','));
     const ci=getVals(emailCity); if(ci.length) params.set('city', ci.join(','));
+    const se=getVals(emailSector); if(se.length) params.set('sector', se.join(','));
     const q=emailSearch?emailSearch.value.trim():''; if(q) params.set('search', q);
-    const hasFilter = c.length || p.length || s.length || co.length || ci.length || q.length;
+    const hasFilter = c.length || p.length || s.length || co.length || ci.length || se.length || q.length;
     if(!hasFilter){ params.set('per_page',15); params.set('page',pg); }
     else { params.set('all','1'); }
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
@@ -6678,7 +6691,15 @@ function kvtInit(){
       if(!confirm(`¿Enviar a ${recipients.length} contactos?`)) return;
       const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0, copy_sender: emailCopySender && emailCopySender.checked ? 1 : 0};
       try{
-        const out = await ajaxForm({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)});
+        const fd = new FormData();
+        fd.append('action','kvt_send_email');
+        fd.append('_ajax_nonce', KVT_NONCE);
+        fd.append('payload', JSON.stringify(payload));
+        if(emailAttachment && emailAttachment.files.length){
+          fd.append('attachment', emailAttachment.files[0]);
+        }
+        const res = await fetch(KVT_AJAX,{method:'POST', body: fd});
+        const out = await res.json();
         emailStatusMsg.textContent = out && out.success ? `Enviados: ${out.data.sent}` : 'Enviados';
         if(out && out.success && out.data && out.data.log){
           KVT_SENT_EMAILS = out.data.log;
@@ -9798,9 +9819,19 @@ JS;
             $from_name     = sanitize_text_field($payload['from_name'] ?? '');
             $use_signature = !empty($payload['use_signature']);
             $copy_sender   = !empty($payload['copy_sender']);
+            $attachment = '';
+            if (!empty($_FILES['attachment']) && is_array($_FILES['attachment']) && !empty($_FILES['attachment']['tmp_name'])) {
+                require_once ABSPATH . 'wp-admin/includes/file.php';
+                $upload = wp_handle_upload($_FILES['attachment'], ['test_form' => false]);
+                if (empty($upload['error']) && !empty($upload['file'])) {
+                    $attachment = $upload['file'];
+                }
+            }
 
-            $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature','copy_sender');
+            $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature','copy_sender','attachment');
             $result = $this->send_email_batch($batch);
+
+            if ($attachment) wp_delete_file($attachment);
 
             wp_send_json_success($result);
         }
@@ -9841,6 +9872,7 @@ JS;
             $from_name     = sanitize_text_field($batch['from_name'] ?? '');
             $use_signature = !empty($batch['use_signature']);
             $copy_sender   = !empty($batch['copy_sender']);
+            $attachment    = isset($batch['attachment']) ? $batch['attachment'] : '';
 
             if (!$from_email) $from_email = get_option(self::OPT_FROM_EMAIL, '');
             if (!$from_email) $from_email = get_option('admin_email');
@@ -9902,7 +9934,8 @@ JS;
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
 
                 $last_error = null;
-                $ok = wp_mail($email, $subject, $body, $headers);
+                $att = $attachment ? [$attachment] : [];
+                $ok = wp_mail($email, $subject, $body, $headers, $att);
                 $status = $last_error ? 'failed' : 'sent';
                 if ($status === 'sent') {
                     $result['sent']++;
@@ -9955,7 +9988,8 @@ JS;
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
                 $last_error = null;
-                $ok = wp_mail($from_email, $subject, $body, $headers);
+                $att = $attachment ? [$attachment] : [];
+                $ok = wp_mail($from_email, $subject, $body, $headers, $att);
                 $status = $last_error ? 'failed' : 'sent';
                 $entry = [
                     'time'       => current_time('mysql'),
