@@ -158,6 +158,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_generate_email',       [$this, 'ajax_generate_email']);
         add_action('wp_ajax_kvt_save_template',        [$this, 'ajax_save_template']);
         add_action('wp_ajax_kvt_delete_template',      [$this, 'ajax_delete_template']);
+        add_action('kvt_update_profile_from_cv',       [$this, 'update_profile_from_cv']);
         add_action('wp_ajax_kvt_delete_board',        [$this, 'ajax_delete_board']);
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
         add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
@@ -1656,6 +1657,7 @@ JS;
                 ['key'=>'country','label'=>'País'],
                 ['key'=>'city','label'=>'Ciudad'],
                 ['key'=>'current_role','label'=>'Puesto actual'],
+                ['key'=>'sector','label'=>'Sector'],
                 ['key'=>'cv_url','label'=>'CV (URL)'],
                 ['key'=>'cv_uploaded','label'=>'Fecha de subida'],
             ];
@@ -3135,10 +3137,31 @@ JS;
         }
         $columns  = $this->get_columns();
         $fields   = $has_share_link ? array_map('sanitize_text_field', (array) ($link_cfg['fields'] ?? [])) : [];
+        $sectors = [
+            'Agro',
+            'Bancos internacionales',
+            'BESS',
+            'Biometano',
+            'Comercialización de energía',
+            'Construction',
+            'Equipos eléctrico',
+            'Eólica',
+            'Fondos',
+            'Forestal',
+            'Generación térmica',
+            'H2',
+            'Ingenieria',
+            'Mineras',
+            'Operations',
+            'Solar',
+            'Transmisión',
+            'Otro',
+        ];
         wp_add_inline_script('kvt-app', 'const KVT_STATUSES='.wp_json_encode($statuses).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_COLUMNS='.wp_json_encode($columns).';',  'before');
         $countries = $this->get_candidate_countries();
         wp_add_inline_script('kvt-app', 'const KVT_COUNTRIES='.wp_json_encode($countries).';', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_SECTORS='.wp_json_encode($sectors).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_AJAX="'.esc_js(admin_url('admin-ajax.php')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/view-board/')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
@@ -4370,12 +4393,13 @@ function kvtInit(){
     const right =
       kvInp('Proceso', '<select class="kvt-assign-process"></select><button type="button" class="kvt-assign-btn">Asignar</button>') +
       kvInp('Puesto actual', input('current_role', m.current_role||'')) +
+      kvInp('Sector', '<select class="kvt-input" data-field="sector"><option value="">— Sector —</option>'+KVT_SECTORS.map(s=>'<option value="'+escAttr(s)+'"'+(m.sector===s?' selected':'')+'>'+esc(s)+'</option>').join('')+'</select>') +
       kvInp('Etiquetas',         input('tags', m.tags||'')) +
       kvInp('CV (URL)',     input('cv_url', m.cv_url||'', 'url', 'https://...')) +
       kvInp('Fecha subida', input('cv_uploaded', m.cv_uploaded||'', 'text', 'DD/MM/YYYY', 'kvt-date'));
 
     const log = Array.isArray(m.activity_log) ? m.activity_log : [];
-    const fieldLabels = {first_name:'Nombre',last_name:'Apellidos',email:'Email',phone:'Teléfono',country:'País',city:'Ciudad',current_role:'Puesto actual',tags:'Etiquetas',cv_url:'CV (URL)',cv_uploaded:'Fecha subida',next_action:'Próxima acción',next_action_note:'Comentario acción'};
+    const fieldLabels = {first_name:'Nombre',last_name:'Apellidos',email:'Email',phone:'Teléfono',country:'País',city:'Ciudad',sector:'Sector',current_role:'Puesto actual',tags:'Etiquetas',cv_url:'CV (URL)',cv_uploaded:'Fecha subida',next_action:'Próxima acción',next_action_note:'Comentario acción'};
     const logItems = log.map(it=>{
       const when = esc(it.time||'');
       const who  = esc(it.author||'');
@@ -9536,7 +9560,7 @@ JS;
         return is_array($data) ? $data : [];
     }
 
-    private function update_profile_from_cv($post_id, $key = null) {
+    public function update_profile_from_cv($post_id, $key = null) {
         if (!$key) $key = get_option(self::OPT_OPENAI_KEY, '');
         if (!$key) return [];
         $cv_text = $this->get_candidate_cv_text($post_id);
