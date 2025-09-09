@@ -9813,14 +9813,28 @@ JS;
             $body_tpl      = (string)($batch['body_tpl'] ?? '');
             $raw_recipients = $batch['recipients'] ?? [];
             if (is_string($raw_recipients)) {
-                $raw_recipients = preg_split('/[\s,;]+/', $raw_recipients);
+                $raw_recipients = [$raw_recipients];
             }
             $recipients = [];
             foreach ((array) $raw_recipients as $r) {
                 if (is_array($r)) {
-                    $recipients[] = $r;
+                    $emails_raw = isset($r['email']) ? $r['email'] : '';
+                    if (is_string($emails_raw)) {
+                        $emails = preg_split('/[\s,;]+/', $emails_raw);
+                        foreach ($emails as $e) {
+                            $e = trim($e);
+                            if ($e === '') continue;
+                            $copy = $r;
+                            $copy['email'] = $e;
+                            $recipients[] = $copy;
+                        }
+                    }
                 } elseif (is_string($r) && $r !== '') {
-                    $recipients[] = ['email' => trim($r)];
+                    foreach (preg_split('/[\s,;]+/', $r) as $e) {
+                        $e = trim($e);
+                        if ($e === '') continue;
+                        $recipients[] = ['email' => $e];
+                    }
                 }
             }
             $from_email    = sanitize_email($batch['from_email'] ?? '');
