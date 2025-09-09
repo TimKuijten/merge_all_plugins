@@ -10090,20 +10090,14 @@ JS;
                 'post_status'    => 'any',
                 'fields'         => 'ids',
                 'posts_per_page' => -1,
-                'meta_query'     => [
-                    'relation' => 'OR',
-                    [
-                        'key'     => 'kvt_sector',
-                        'value'   => '---Sector---',
-                        'compare' => '=',
-                    ],
-                    [
-                        'key'     => 'sector',
-                        'value'   => '---Sector---',
-                        'compare' => '=',
-                    ],
-                ],
             ]);
+            $ids = array_filter($ids, function($id){
+                $sector = trim((string) get_post_meta($id, 'kvt_sector', true));
+                if ($sector === '') {
+                    $sector = trim((string) get_post_meta($id, 'sector', true));
+                }
+                return $sector === '' || $sector === '---Sector---';
+            });
             update_option(self::OPT_UPDATE_QUEUE, array_map('intval', $ids));
             update_option(self::OPT_UPDATE_MODE, 'sector');
             if (!wp_next_scheduled('kvt_update_worker')) {
