@@ -1323,6 +1323,27 @@ JS;
         $country = $this->meta_get_compat($post->ID, 'kvt_country',     ['country']);
         $city    = $this->meta_get_compat($post->ID, 'kvt_city',        ['city']);
         $current_role = $this->meta_get_compat($post->ID, 'kvt_current_role', ['current_role']);
+        $sector  = $this->meta_get_compat($post->ID, 'kvt_sector', ['sector']);
+        $sectors = [
+            'Agro',
+            'Bancos internacionales',
+            'BESS',
+            'Biometano',
+            'Comercialización de energía',
+            'Construction',
+            'Equipos eléctrico',
+            'Eólica',
+            'Fondos',
+            'Forestal',
+            'Generación térmica',
+            'H2',
+            'Ingenieria',
+            'Mineras',
+            'Operations',
+            'Solar',
+            'Transmisión',
+            'Otro',
+        ];
         $cv_url  = $this->meta_get_compat($post->ID, 'kvt_cv_url',      ['cv_url']);
         $cv_date_raw = $this->meta_get_compat($post->ID, 'kvt_cv_uploaded', ['cv_uploaded']);
         $cv_date = $this->fmt_date_ddmmyyyy($cv_date_raw);
@@ -1341,6 +1362,14 @@ JS;
             <tr><th><label>País</label></th><td><input type="text" name="kvt_country" value="<?php echo esc_attr($country); ?>" class="regular-text"></td></tr>
             <tr><th><label>Ciudad</label></th><td><input type="text" name="kvt_city" value="<?php echo esc_attr($city); ?>" class="regular-text"></td></tr>
             <tr><th><label>Puesto actual</label></th><td><input type="text" name="kvt_current_role" value="<?php echo esc_attr($current_role); ?>" class="regular-text"></td></tr>
+            <tr><th><label>Sector</label></th><td>
+                <select name="kvt_sector">
+                    <option value="">— Seleccionar —</option>
+                    <?php foreach ($sectors as $sec): ?>
+                        <option value="<?php echo esc_attr($sec); ?>" <?php selected($sector, $sec); ?>><?php echo esc_html($sec); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </td></tr>
 
             <tr><th><label>CV (URL)</label></th>
                 <td>
@@ -1434,6 +1463,7 @@ JS;
                                     country: document.querySelector('input[name="kvt_country"]'),
                                     city: document.querySelector('input[name="kvt_city"]'),
                                     current_role: document.querySelector('input[name="kvt_current_role"]'),
+                                    sector: document.querySelector('select[name="kvt_sector"]'),
                                 };
                                 Object.keys(map).forEach(k=>{ if(map[k] && f[k]) map[k].value = f[k]; });
                             }
@@ -1543,6 +1573,7 @@ JS;
             'kvt_country'    => ['country'],
             'kvt_city'       => ['city'],
             'kvt_current_role'=> ['current_role'],
+            'kvt_sector'    => ['sector'],
             'kvt_cv_url'     => ['cv_url'],
             'kvt_cv_uploaded'=> ['cv_uploaded'],
             'kvt_next_action'=> ['next_action'],
@@ -2652,6 +2683,33 @@ JS;
                 <input type="text" id="kvt_new_country" placeholder="País">
                 <input type="text" id="kvt_new_city" placeholder="Ciudad">
                 <input type="text" id="kvt_new_role" placeholder="Puesto actual">
+                <select id="kvt_new_sector">
+                  <option value="">— Sector —</option>
+                  <?php
+                  $sectors = [
+                    'Agro',
+                    'Bancos internacionales',
+                    'BESS',
+                    'Biometano',
+                    'Comercialización de energía',
+                    'Construction',
+                    'Equipos eléctrico',
+                    'Eólica',
+                    'Fondos',
+                    'Forestal',
+                    'Generación térmica',
+                    'H2',
+                    'Ingenieria',
+                    'Mineras',
+                    'Operations',
+                    'Solar',
+                    'Transmisión',
+                    'Otro',
+                  ];
+                  foreach ($sectors as $sec): ?>
+                    <option value="<?php echo esc_attr($sec); ?>"><?php echo esc_html($sec); ?></option>
+                  <?php endforeach; ?>
+                </select>
                 <input type="text" id="kvt_new_company" placeholder="Empresa actual">
                 <input type="text" id="kvt_new_tags" placeholder="Etiquetas">
                 <input type="url" id="kvt_new_cv_url" placeholder="CV (URL)">
@@ -6286,6 +6344,7 @@ function kvtInit(){
   const ccountry = el('#kvt_new_country');
   const ccity    = el('#kvt_new_city');
   const crole    = el('#kvt_new_role');
+  const csector  = el('#kvt_new_sector');
   const ccompany = el('#kvt_new_company');
   const ctags    = el('#kvt_new_tags');
   const ccvurl   = el('#kvt_new_cv_url');
@@ -6314,6 +6373,7 @@ function kvtInit(){
     if (ccountry) ccountry.value='';
     if (ccity)    ccity.value='';
     if (crole)    crole.value='';
+    if (csector)  csector.value='';
     if (ccompany) ccompany.value='';
     if (ctags)    ctags.value='';
     if (ccvurl)   ccvurl.value='';
@@ -6355,6 +6415,7 @@ function kvtInit(){
       if(ccountry && j.data.fields.country) ccountry.value = j.data.fields.country;
       if(ccity && j.data.fields.city) ccity.value = j.data.fields.city;
       if(crole && j.data.fields.role) crole.value = j.data.fields.role;
+      if(csector && j.data.fields.sector) csector.value = j.data.fields.sector;
       if(ccompany && j.data.fields.company) ccompany.value = j.data.fields.company;
     }
     alert('Datos del CV cargados.');
@@ -6370,6 +6431,7 @@ function kvtInit(){
     params.set('country',    ccountry && ccountry.value ? ccountry.value : '');
     params.set('city',       ccity && ccity.value ? ccity.value : '');
     params.set('current_role', crole && crole.value ? crole.value : '');
+    params.set('sector',     csector && csector.value ? csector.value : '');
     params.set('company',    ccompany && ccompany.value ? ccompany.value : '');
     params.set('tags',       ctags && ctags.value ? ctags.value : '');
     params.set('cv_url',     ccvurl && ccvurl.value ? ccvurl.value : '');
@@ -6932,6 +6994,7 @@ JS;
                 'country'     => $this->meta_get_compat($p->ID,'kvt_country',['country']),
                 'city'        => $this->meta_get_compat($p->ID,'kvt_city',['city']),
                 'current_role'=> $this->meta_get_compat($p->ID,'kvt_current_role',['current_role']),
+                'sector'      => $this->meta_get_compat($p->ID,'kvt_sector',['sector']),
                 'cv_url'      => $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']),
                 'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
                 'next_action' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_next_action',['next_action'])),
@@ -8229,6 +8292,7 @@ JS;
             'kvt_country'    => isset($_POST['country'])    ? sanitize_text_field($_POST['country'])    : '',
             'kvt_city'       => isset($_POST['city'])       ? sanitize_text_field($_POST['city'])       : '',
             'kvt_current_role'=> isset($_POST['current_role']) ? sanitize_text_field($_POST['current_role']) : '',
+            'kvt_sector'     => isset($_POST['sector'])     ? sanitize_text_field($_POST['sector'])     : '',
             'kvt_role'       => isset($_POST['role']) ? sanitize_text_field($_POST['role']) : '',
             'kvt_company'    => isset($_POST['company']) ? sanitize_text_field($_POST['company']) : '',
             'kvt_tags'       => isset($_POST['tags'])       ? sanitize_text_field($_POST['tags'])       : '',
@@ -8426,6 +8490,7 @@ JS;
                     'country'     => $this->meta_get_compat($p->ID,'kvt_country',['country']),
                     'city'        => $this->meta_get_compat($p->ID,'kvt_city',['city']),
                     'current_role'=> $this->meta_get_compat($p->ID,'kvt_current_role',['current_role']),
+                    'sector'      => $this->meta_get_compat($p->ID,'kvt_sector',['sector']),
                     'tags'        => $this->meta_get_compat($p->ID,'kvt_tags',['tags']),
                     'cv_url'      => $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']),
                     'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_cv_uploaded',['cv_uploaded'])),
@@ -8597,6 +8662,7 @@ JS;
         $country    = isset($_POST['country'])    ? sanitize_text_field($_POST['country'])    : '';
         $city       = isset($_POST['city'])       ? sanitize_text_field($_POST['city'])       : '';
         $role       = isset($_POST['current_role']) ? sanitize_text_field($_POST['current_role']) : '';
+        $sector     = isset($_POST['sector'])      ? sanitize_text_field($_POST['sector'])      : '';
         $company    = isset($_POST['company'])    ? sanitize_text_field($_POST['company'])    : '';
         $tags       = isset($_POST['tags'])       ? sanitize_text_field($_POST['tags'])       : '';
         $cv_url     = isset($_POST['cv_url'])     ? esc_url_raw($_POST['cv_url'])             : '';
@@ -8641,6 +8707,7 @@ JS;
             'kvt_country'    => $country,
             'kvt_city'       => $city,
             'kvt_role'       => $role,
+            'kvt_sector'     => $sector,
             'kvt_company'    => $company,
             'kvt_tags'       => $tags,
             'kvt_cv_url'     => $cv_url,
@@ -9034,6 +9101,7 @@ JS;
                     'phone'       => $this->meta_get_compat($cid,'kvt_phone',['phone']),
                     'country'     => $this->meta_get_compat($cid,'kvt_country',['country']),
                     'city'        => $this->meta_get_compat($cid,'kvt_city',['city']),
+                    'sector'      => $this->meta_get_compat($cid,'kvt_sector',['sector']),
                     'cv_url'      => $this->meta_get_compat($cid,'kvt_cv_url',['cv_url']),
                     'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($cid,'kvt_cv_uploaded',['cv_uploaded'])),
                     'tags'        => $this->meta_get_compat($cid,'kvt_tags',['tags']),
@@ -9120,6 +9188,7 @@ JS;
                 'phone'       => $this->meta_get_compat($c->ID,'kvt_phone',['phone']),
                 'country'     => $this->meta_get_compat($c->ID,'kvt_country',['country']),
                 'city'        => $this->meta_get_compat($c->ID,'kvt_city',['city']),
+                'sector'      => $this->meta_get_compat($c->ID,'kvt_sector',['sector']),
                 'cv_url'      => $this->meta_get_compat($c->ID,'kvt_cv_url',['cv_url']),
                 'cv_uploaded' => $this->fmt_date_ddmmyyyy($this->meta_get_compat($c->ID,'kvt_cv_uploaded',['cv_uploaded'])),
                 'tags'        => $this->meta_get_compat($c->ID,'kvt_tags',['tags']),
@@ -9483,6 +9552,7 @@ JS;
             'phone'      => 'kvt_phone',
             'country'    => 'kvt_country',
             'city'       => 'kvt_city',
+            'sector'     => 'kvt_sector',
         ];
         foreach ($map as $field => $meta) {
             $val = isset($data[$field]) ? trim($data[$field]) : '';
@@ -10046,7 +10116,7 @@ JS;
         $q = new WP_Query($args);
 
         // Fixed order export
-        $headers = ['email','first_name','surname','country','city','current_role','proceso','cliente','phone','cv_url','next_action','next_action_note'];
+        $headers = ['email','first_name','surname','country','city','sector','current_role','proceso','cliente','phone','cv_url','next_action','next_action_note'];
         $filename = 'pipeline_export_' . date('Ymd_His');
 
         if ($format === 'xls') {
@@ -10068,6 +10138,7 @@ JS;
             $lname   = $this->meta_get_compat($p->ID,'kvt_last_name',['last_name']);
             $country = $this->meta_get_compat($p->ID,'kvt_country',['country']);
             $city    = $this->meta_get_compat($p->ID,'kvt_city',['city']);
+            $sector  = $this->meta_get_compat($p->ID,'kvt_sector',['sector']);
             $current_role = $this->meta_get_compat($p->ID,'kvt_current_role',['current_role']);
             $proc    = $this->get_term_name($p->ID, self::TAX_PROCESS);
             $client  = $this->get_term_name($p->ID, self::TAX_CLIENT);
@@ -10075,7 +10146,7 @@ JS;
             $cv      = $this->meta_get_compat($p->ID,'kvt_cv_url',['cv_url']);
             $next    = $this->fmt_date_ddmmyyyy($this->meta_get_compat($p->ID,'kvt_next_action',['next_action']));
             $note    = $this->meta_get_compat($p->ID,'kvt_next_action_note',['next_action_note']);
-            fputcsv($out, [$email,$fname,$lname,$country,$city,$current_role,$proc,$client,$phone,$cv,$next,$note]);
+            fputcsv($out, [$email,$fname,$lname,$country,$city,$sector,$current_role,$proc,$client,$phone,$cv,$next,$note]);
         }
         fclose($out);
         exit;
