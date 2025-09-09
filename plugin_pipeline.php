@@ -3233,6 +3233,13 @@ function kvtInit(){
   const emailSearch = el('#kvt_email_search');
   const emailTarget = el('#kvt_email_target');
   const emailFilters = el('#kvt_email_filters');
+  const emailClientWrap  = emailClient  ? emailClient.parentElement  : null;
+  const emailProcessWrap = emailProcess ? emailProcess.parentElement : null;
+  const emailStatusWrap  = emailStatusSel? emailStatusSel.parentElement: null;
+  const emailCountryWrap = emailCountry ? emailCountry.parentElement : null;
+  const emailCityWrap    = emailCity    ? emailCity.parentElement    : null;
+  const emailSectorWrap  = emailSector  ? emailSector.parentElement  : null;
+  const emailSearchWrap  = emailSearch  ? emailSearch.parentElement  : null;
   const emailHead = el('#kvt_email_head');
   const emailSelectAll = el('#kvt_email_select_all');
   const emailClear = el('#kvt_email_clear');
@@ -3568,12 +3575,18 @@ function kvtInit(){
       if(sel) {
         jQuery(sel)
           .select2({width:'style', dropdownAutoWidth:true})
-          .on('select2:select select2:unselect', () => loadEmailCandidates(1));
+          .on('select2:select select2:unselect', () => {
+            if(emailMode==='clients') loadEmailClients();
+            else loadEmailCandidates(1);
+          });
       }
     });
   } else {
     [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity,emailSector].forEach(sel=>{
-      sel && sel.addEventListener('change', ()=>loadEmailCandidates(1));
+      sel && sel.addEventListener('change', ()=>{
+        if(emailMode==='clients') loadEmailClients();
+        else loadEmailCandidates(1);
+      });
     });
   }
 
@@ -3592,11 +3605,12 @@ function kvtInit(){
   function renderEmailTable(){
     if(!emailTbody) return;
     if(emailMode==='clients'){
-      if(emailHead) emailHead.innerHTML='<tr><th></th><th>Cliente</th><th>Email</th></tr>';
+      if(emailHead) emailHead.innerHTML='<tr><th></th><th>Cliente</th><th>Sector</th><th>Email</th></tr>';
       emailTbody.innerHTML = emailCandidates.map(c=>{
         const id=c.id; const m=c.meta||{}; const chk=emailSelected.has(String(id))?'checked':'';
         return '<tr><td><input type="checkbox" data-id="'+escAttr(id)+'" '+chk+'></td>'+
           '<td>'+esc(m.client||'')+'</td>'+
+          '<td>'+esc(m.sector||'')+'</td>'+
           '<td>'+esc(m.email||'')+'</td></tr>';
       }).join('');
     } else {
@@ -3654,6 +3668,8 @@ function kvtInit(){
   function loadEmailClients(){
     if(!emailTbody) return;
     const params = new URLSearchParams({action:'kvt_get_clients', _ajax_nonce:KVT_NONCE});
+    const getVals=sel=>sel?Array.from(sel.selectedOptions).map(o=>o.value).filter(v=>v):[];
+    const se=getVals(emailSector); if(se.length) params.set('sector', se.join(','));
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(j=>{
         emailCandidates = (j.success && j.data.items) ? j.data.items : [];
@@ -3667,10 +3683,13 @@ function kvtInit(){
 
   function renderEmailMode(){
     if(emailMode==='clients'){
-      if(emailFilters) emailFilters.style.display='none';
+      if(emailFilters) emailFilters.style.display='flex';
+      [emailClientWrap,emailProcessWrap,emailStatusWrap,emailCountryWrap,emailCityWrap,emailSearchWrap].forEach(w=>{ if(w) w.style.display='none'; });
+      if(emailSectorWrap) emailSectorWrap.style.display='flex';
       loadEmailClients();
     } else {
       if(emailFilters) emailFilters.style.display='flex';
+      [emailClientWrap,emailProcessWrap,emailStatusWrap,emailCountryWrap,emailCityWrap,emailSectorWrap,emailSearchWrap].forEach(w=>{ if(w) w.style.display='flex'; });
       loadEmailCandidates();
     }
   }
@@ -6943,16 +6962,24 @@ JS;
         check_ajax_referer('kvt_nonce');
         $terms = get_terms(['taxonomy'=>self::TAX_CLIENT,'hide_empty'=>false]);
         $items = [];
+        $sector_filter = [];
+        if (isset($_POST['sector'])) {
+            $sector_filter = array_filter(array_map('sanitize_text_field', explode(',', wp_unslash($_POST['sector']))));
+            $sector_filter = array_map('strtolower', $sector_filter);
+        }
         foreach ($terms as $t) {
             $email = sanitize_email(get_term_meta($t->term_id, 'contact_email', true));
             if (!$email) continue;
             $contact = sanitize_text_field(get_term_meta($t->term_id, 'contact_name', true));
+            $sector = sanitize_text_field(get_term_meta($t->term_id, 'kvt_client_sector', true));
+            if ($sector_filter && !in_array(strtolower($sector), $sector_filter, true)) continue;
             $items[] = [
                 'id'   => $t->term_id,
                 'meta' => [
                     'email'  => $email,
                     'first_name' => $contact,
                     'client' => $t->name,
+                    'sector' => $sector,
                 ]
             ];
         }
