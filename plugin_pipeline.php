@@ -164,6 +164,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
         add_action('wp_ajax_kvt_update_missing',       [$this, 'ajax_update_missing']);
         add_action('wp_ajax_nopriv_kvt_update_missing',[$this, 'ajax_update_missing']);
+        add_action('wp_ajax_kvt_update_queue_status',        [$this, 'ajax_update_queue_status']);
+        add_action('wp_ajax_nopriv_kvt_update_queue_status', [$this, 'ajax_update_queue_status']);
         add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_nopriv_kvt_get_outlook_events', [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_kvt_save_search',           [$this, 'ajax_save_search']);
@@ -3295,6 +3297,7 @@ function kvtInit(){
   const updateView = el('#kvt_update_view');
   const updateBtn = el('#kvt_update_start');
   const updateStatus = el('#kvt_update_status');
+  let updateTimer;
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
@@ -3808,6 +3811,24 @@ function kvtInit(){
   mitChatSend && mitChatSend.addEventListener('click', sendMitChat);
   mitChatInput && mitChatInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); sendMitChat(); }});
 
+  async function pollUpdateStatus(){
+    try{
+      const resp=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_update_queue_status', _ajax_nonce:KVT_NONCE})});
+      const json=await resp.json();
+      if(json && json.success){
+        const remaining=parseInt(json.data.count,10)||0;
+        if(remaining>0){
+          updateStatus.textContent='Procesando '+remaining+' candidatos en segundo plano';
+        }else{
+          updateStatus.textContent='Actualización completada';
+          clearInterval(updateTimer);
+          updateTimer=null;
+          updateBtn.disabled=false;
+        }
+      }
+    }catch(e){}
+  }
+
   async function startUpdateProfiles(){
     if(!updateBtn) return;
     updateBtn.disabled=true;
@@ -3817,13 +3838,17 @@ function kvtInit(){
       const json=await resp.json();
       if(json && json.success){
         updateStatus.textContent='Procesando '+json.data.count+' candidatos en segundo plano';
+        clearInterval(updateTimer);
+        updateTimer=setInterval(pollUpdateStatus,5000);
+        pollUpdateStatus();
       } else {
         updateStatus.textContent=json && json.data && json.data.msg?json.data.msg:'Error';
+        updateBtn.disabled=false;
       }
     }catch(e){
       updateStatus.textContent='Error';
+      updateBtn.disabled=false;
     }
-    updateBtn.disabled=false;
   }
   updateBtn && updateBtn.addEventListener('click', startUpdateProfiles);
 
@@ -9915,6 +9940,13 @@ JS;
                 wp_schedule_single_event(time()+5, 'kvt_update_worker');
             }
             wp_send_json_success(['count' => count($ids)]);
+        }
+
+        public function ajax_update_queue_status() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+            $queue = get_option(self::OPT_UPDATE_QUEUE, []);
+            wp_send_json_success(['count' => is_array($queue) ? count($queue) : 0]);
         }
 
         public function cron_update_worker() {
