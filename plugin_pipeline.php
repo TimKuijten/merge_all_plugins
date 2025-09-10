@@ -10627,10 +10627,24 @@ JS;
             $smtp_profile  = isset($batch['smtp_profile']) ? intval($batch['smtp_profile']) : 1;
             $this->smtp_profile = ($smtp_profile === 2) ? 2 : 1;
 
-            if (!$from_email) $from_email = get_option(self::OPT_FROM_EMAIL, '');
-            if (!$from_email) $from_email = get_option('admin_email');
-            if (!$from_name)  $from_name  = get_option(self::OPT_FROM_NAME, '');
-            if (!$from_name)  $from_name  = get_bloginfo('name');
+            if (!$from_email) {
+                if ($this->smtp_profile === 2) {
+                    $from_email = get_option(self::OPT_FROM_EMAIL2, '');
+                    if (!$from_email) $from_email = get_option(self::OPT_FROM_EMAIL, '');
+                } else {
+                    $from_email = get_option(self::OPT_FROM_EMAIL, '');
+                }
+                if (!$from_email) $from_email = get_option('admin_email');
+            }
+            if (!$from_name) {
+                if ($this->smtp_profile === 2) {
+                    $from_name = get_option(self::OPT_FROM_NAME2, '');
+                    if (!$from_name) $from_name = get_option(self::OPT_FROM_NAME, '');
+                } else {
+                    $from_name  = get_option(self::OPT_FROM_NAME, '');
+                }
+                if (!$from_name) $from_name = get_bloginfo('name');
+            }
 
             $from_cb = null;
             $from_name_cb = null;
