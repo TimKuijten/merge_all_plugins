@@ -29,6 +29,7 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_SMTP_PASS = 'kvt_smtp_pass';
     const OPT_SMTP_SECURE = 'kvt_smtp_secure';
     const OPT_SMTP_SIGNATURE = 'kvt_smtp_signature';
+    const OPT_SMTP_SIGNATURE2 = 'kvt_smtp_signature2';
     const OPT_SMTP_HOST2 = 'kvt_smtp_host2';
     const OPT_SMTP_PORT2 = 'kvt_smtp_port2';
     const OPT_SMTP_USER2 = 'kvt_smtp_user2';
@@ -328,6 +329,7 @@ cv_url|CV (URL)
         register_setting(self::OPT_GROUP, self::OPT_SMTP_PASS);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_SECURE);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_SIGNATURE);
+        register_setting(self::OPT_GROUP, self::OPT_SMTP_SIGNATURE2);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_HOST2);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_PORT2);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_USER2);
@@ -401,7 +403,11 @@ cv_url|CV (URL)
         $skill_opts = array_keys($skill_opts);
         sort($skill_opts);
         $sector_opts = array_keys($sector_opts);
-        sort($sector_opts);
+        sort($sector_opts, SORT_NATURAL | SORT_FLAG_CASE);
+        $otros = [];
+        foreach ($sector_opts as $k => $v) { if (strcasecmp($v, 'Otro') === 0) { unset($sector_opts[$k]); $otros[] = $v; } }
+        $sector_opts = array_values($sector_opts);
+        $sector_opts = array_merge($sector_opts, $otros);
         ?>
         <div class="wrap kvt">
           <header class="k-header">
@@ -436,6 +442,7 @@ cv_url|CV (URL)
                 <?php foreach ($skill_opts as $s) { echo '<option value="'.esc_attr($s).'">'.esc_html($s).'</option>'; } ?>
               </select>
               <select id="k-filter-sector" class="k-select" multiple>
+                <option value="">Todos</option>
                 <?php foreach ($sector_opts as $sec) { echo '<option value="'.esc_attr($sec).'">'.esc_html($sec).'</option>'; } ?>
               </select>
               <button class="btn k-activity-toggle" id="k-toggle-activity"><?php esc_html_e('Actividad', 'kovacic'); ?></button>
@@ -651,6 +658,7 @@ JS;
         $smtp_pass = get_option(self::OPT_SMTP_PASS, "");
         $smtp_secure = get_option(self::OPT_SMTP_SECURE, "");
         $smtp_sig  = get_option(self::OPT_SMTP_SIGNATURE, "");
+        $smtp_sig2 = get_option(self::OPT_SMTP_SIGNATURE2, "");
         $smtp_host2 = get_option(self::OPT_SMTP_HOST2, "");
         $smtp_port2 = get_option(self::OPT_SMTP_PORT2, "");
         $smtp_user2 = get_option(self::OPT_SMTP_USER2, "");
@@ -786,6 +794,13 @@ JS;
                         <td>
                             <textarea name="<?php echo self::OPT_SMTP_SIGNATURE; ?>" id="<?php echo self::OPT_SMTP_SIGNATURE; ?>" rows="4" class="large-text"><?php echo esc_textarea($smtp_sig); ?></textarea>
                             <p class="description">Se añadirá al final de cada e-mail.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_SMTP_SIGNATURE2; ?>">Firma de correo 2</label></th>
+                        <td>
+                            <textarea name="<?php echo self::OPT_SMTP_SIGNATURE2; ?>" id="<?php echo self::OPT_SMTP_SIGNATURE2; ?>" rows="4" class="large-text"><?php echo esc_textarea($smtp_sig2); ?></textarea>
+                            <p class="description">Se añadirá al final de cada e-mail para el perfil 2.</p>
                         </td>
                     </tr>
                     <tr>
@@ -1279,6 +1294,12 @@ JS;
             'Transmisión',
             'Otro',
         ];
+        sort($sectors, SORT_NATURAL | SORT_FLAG_CASE);
+        if (($k = array_search('Otro', $sectors, true)) !== false) { unset($sectors[$k]); $sectors[] = 'Otro'; }
+        sort($sectors, SORT_NATURAL | SORT_FLAG_CASE);
+        if (($k = array_search('Otro', $sectors, true)) !== false) { unset($sectors[$k]); $sectors[] = 'Otro'; }
+        sort($sectors, SORT_NATURAL | SORT_FLAG_CASE);
+        if (($k = array_search('Otro', $sectors, true)) !== false) { unset($sectors[$k]); $sectors[] = 'Otro'; }
         $cv_url  = $this->meta_get_compat($post->ID, 'kvt_cv_url',      ['cv_url']);
         $cv_date_raw = $this->meta_get_compat($post->ID, 'kvt_cv_uploaded', ['cv_uploaded']);
         $cv_date = $this->fmt_date_ddmmyyyy($cv_date_raw);
@@ -2021,6 +2042,8 @@ JS;
             'Otro',
         ];
 
+        sort($sectors, SORT_NATURAL | SORT_FLAG_CASE);
+        if (($k = array_search('Otro', $sectors, true)) !== false) { unset($sectors[$k]); $sectors[] = 'Otro'; }
         ob_start(); ?>
         <div class="kvt-wrapper">
             <nav class="kvt-nav" aria-label="Navegación principal">
@@ -2113,6 +2136,7 @@ JS;
                             </label>
                             <label>Sector
                               <select id="kvt_board_sector" multiple size="4">
+                                <option value="">Todos</option>
                                 <?php foreach ($sectors as $s): ?>
                                   <option value="<?php echo esc_attr($s); ?>"><?php echo esc_html($s); ?></option>
                                 <?php endforeach; ?>
@@ -2293,6 +2317,7 @@ JS;
                       <div class="kvt-filter-field">
                         <label for="kvt_email_sector">Sector</label>
                         <select id="kvt_email_sector" multiple size="4">
+                          <option value="">Todos</option>
                           <?php foreach ($sectors as $s): ?>
                             <option value="<?php echo esc_attr($s); ?>"><?php echo esc_html($s); ?></option>
                           <?php endforeach; ?>
@@ -3179,6 +3204,8 @@ JS;
             'Transmisión',
             'Otro',
         ];
+        sort($sectors, SORT_NATURAL | SORT_FLAG_CASE);
+        if (($k = array_search('Otro', $sectors, true)) !== false) { unset($sectors[$k]); $sectors[] = 'Otro'; }
         wp_add_inline_script('kvt-app', 'const KVT_STATUSES='.wp_json_encode($statuses).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_COLUMNS='.wp_json_encode($columns).';',  'before');
         $countries = $this->get_candidate_countries();
@@ -3189,6 +3216,7 @@ JS;
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_MIT_NONCE="'.esc_js(wp_create_nonce('kvt_mit')).'";', 'before');
         $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
+        $signature2 = (string) get_option(self::OPT_SMTP_SIGNATURE2, '');
         $def_from_name = get_option(self::OPT_FROM_NAME, '');
         if (!$def_from_name) $def_from_name = get_bloginfo('name');
         $def_from_email = get_option(self::OPT_FROM_EMAIL, '');
@@ -3199,7 +3227,7 @@ JS;
         if (!$def_from_email2) $def_from_email2 = $def_from_email;
         $templates = $this->get_email_templates();
         $sent_emails = get_option(self::OPT_EMAIL_LOG, []);
-        wp_add_inline_script('kvt-app', 'const KVT_SIGNATURE='.wp_json_encode($signature).';const KVT_FROM_NAME='.wp_json_encode($def_from_name).';const KVT_FROM_EMAIL='.wp_json_encode($def_from_email).';const KVT_FROM_NAME2='.wp_json_encode($def_from_name2).';const KVT_FROM_EMAIL2='.wp_json_encode($def_from_email2).';let KVT_TEMPLATES='.wp_json_encode($templates).';let KVT_SENT_EMAILS='.wp_json_encode($sent_emails).';', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_SIGNATURE='.wp_json_encode($signature).';const KVT_SIGNATURE2='.wp_json_encode($signature2).';const KVT_FROM_NAME='.wp_json_encode($def_from_name).';const KVT_FROM_EMAIL='.wp_json_encode($def_from_email).';const KVT_FROM_NAME2='.wp_json_encode($def_from_name2).';const KVT_FROM_EMAIL2='.wp_json_encode($def_from_email2).';let KVT_TEMPLATES='.wp_json_encode($templates).';let KVT_SENT_EMAILS='.wp_json_encode($sent_emails).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($has_share_link?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_STEPS='.wp_json_encode($sel_steps).';', 'before');
@@ -6318,7 +6346,7 @@ function kvtInit(){
         const procSel = selProcess && selProcess.value;
         const cliSel  = selClient && selClient.value;
         const allowAdd = !!(procSel && (cliSel || getClientIdForProcess(procSel)));
-        const filterActive = (ctx.name && ctx.name.value) || (ctx.role && ctx.role.value) || (ctx.loc && ctx.loc.value) || (ctx.sector && ctx.sector.selectedOptions && ctx.sector.selectedOptions.length);
+        const filterActive = (ctx.name && ctx.name.value) || (ctx.role && ctx.role.value) || (ctx.loc && ctx.loc.value);
         const showSelect = (ctx.select) || modalSelectMode || filterActive;
         let html = items.map(it=>{
           const m = it.meta||{};
@@ -7032,9 +7060,10 @@ function kvtInit(){
       const repl=str=>str.replace(/{{(\w+)}}/g,(match,p)=>meta[p]||'');
       emailPrevSubject.textContent=repl(subject);
       let bodyHtml=repl(body).replace(/\n/g,'<br>');
-      if(emailUseSig && emailUseSig.checked && KVT_SIGNATURE){
-        bodyHtml+='<br><br>'+KVT_SIGNATURE.replace(/\n/g,'<br>');
-      }
+        const sig = (emailProfile && emailProfile.value==='2') ? KVT_SIGNATURE2 : KVT_SIGNATURE;
+        if(emailUseSig && emailUseSig.checked && sig){
+          bodyHtml+='<br><br>'+sig.replace(/\n/g,'<br>');
+        }
       emailPrevBody.innerHTML=bodyHtml;
       if(emailPrevModal) emailPrevModal.style.display='flex';
     });
@@ -10612,7 +10641,7 @@ JS;
                 add_filter('wp_mail_from_name', $from_name_cb, 99);
             }
 
-            $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
+            $signature = ($this->smtp_profile === 2) ? (string) get_option(self::OPT_SMTP_SIGNATURE2, '') : (string) get_option(self::OPT_SMTP_SIGNATURE, '');
             $log = get_option(self::OPT_EMAIL_LOG, []);
             if (!is_array($log)) $log = [];
             $last_error = null;
