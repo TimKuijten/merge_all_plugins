@@ -660,6 +660,8 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
                 if ($file_text) {
                     update_post_meta($candidate_id, 'kvt_cv_text', $file_text);
                 }
+                // Completar perfil con datos del CV
+                do_action('kvt_update_profile_from_cv', $candidate_id);
             }
         }
 
