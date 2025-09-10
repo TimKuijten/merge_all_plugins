@@ -32,6 +32,8 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_FROM_EMAIL = 'kvt_from_email';
     const OPT_EMAIL_LOG = 'kvt_email_log';
     const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
+    const OPT_UPDATE_QUEUE = 'kvt_update_queue';
+    const OPT_UPDATE_MODE  = 'kvt_update_mode';
     const OPT_MIT_TIME = 'kvt_mit_time';
     const OPT_MIT_RECIPIENTS = 'kvt_mit_recipients';
     const OPT_MIT_FREQUENCY = 'kvt_mit_frequency';
@@ -161,6 +163,12 @@ class Kovacic_Pipeline_Visualizer {
         add_action('kvt_update_profile_from_cv',       [$this, 'update_profile_from_cv']);
         add_action('wp_ajax_kvt_delete_board',        [$this, 'ajax_delete_board']);
         add_action('wp_ajax_kvt_refresh_all',          [$this, 'ajax_refresh_all']);
+        add_action('wp_ajax_kvt_update_missing',       [$this, 'ajax_update_missing']);
+        add_action('wp_ajax_nopriv_kvt_update_missing',[$this, 'ajax_update_missing']);
+        add_action('wp_ajax_kvt_update_sector',       [$this, 'ajax_update_sector']);
+        add_action('wp_ajax_nopriv_kvt_update_sector',[$this, 'ajax_update_sector']);
+        add_action('wp_ajax_kvt_update_queue_status',        [$this, 'ajax_update_queue_status']);
+        add_action('wp_ajax_nopriv_kvt_update_queue_status', [$this, 'ajax_update_queue_status']);
         add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_nopriv_kvt_get_outlook_events', [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_kvt_save_search',           [$this, 'ajax_save_search']);
@@ -169,6 +177,7 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_list_saved_searches', [$this, 'ajax_list_saved_searches']);
 
         add_action('kvt_refresh_worker',               [$this, 'cron_refresh_worker']);
+        add_action('kvt_update_worker',                [$this, 'cron_update_worker']);
 
         // Export
         add_action('admin_post_kvt_export',          [$this, 'handle_export']);
@@ -1926,6 +1935,7 @@ JS;
                 <a href="#" data-view="ai"><span class="dashicons dashicons-search"></span> Buscador IA</a>
                 <a href="#" data-view="boards" id="kvt_nav_boards"><span class="dashicons dashicons-admin-generic"></span> Tableros</a>
                 <a href="#" data-view="chat"><span class="dashicons dashicons-format-chat"></span> Chat con MIT</a>
+                <a href="#" data-view="update"><span class="dashicons dashicons-update"></span> Update</a>
             </nav>
             <div class="kvt-content">
             <?php if ($is_client_board || $is_candidate_board): ?>
@@ -2175,6 +2185,14 @@ JS;
                         </select>
                       </div>
                       <div class="kvt-filter-field">
+                        <label for="kvt_email_sector">Sector</label>
+                        <select id="kvt_email_sector" multiple size="4">
+                          <?php foreach ($sectors as $s): ?>
+                            <option value="<?php echo esc_attr($s); ?>"><?php echo esc_html($s); ?></option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+                      <div class="kvt-filter-field">
                         <label for="kvt_email_search">Buscar</label>
                         <input type="text" id="kvt_email_search" placeholder="Buscar...">
                       </div>
@@ -2219,6 +2237,7 @@ JS;
                         <input type="checkbox" id="kvt_email_copy_sender">
                         Enviar copia al remitente
                       </label>
+                      <input type="file" id="kvt_email_attachment">
                     </div>
                     <div class="kvt-row" style="margin-top:8px;">
                       <button type="button" class="kvt-btn" id="kvt_email_preview">Vista previa</button>
@@ -2259,6 +2278,13 @@ JS;
                         <input type="text" id="kvt_mit_chat_input" class="kvt-input" placeholder="Escribe un mensaje">
                         <button type="button" class="kvt-btn" id="kvt_mit_chat_send">Enviar</button>
                     </div>
+                </div>
+                <div id="kvt_update_view" class="kvt-update" style="display:none;">
+                    <h4>Update</h4>
+                    <p>Procesa candidatos sin sector y completa campos desde su CV.</p>
+                    <button type="button" class="kvt-btn" id="kvt_update_start">Actualizar</button>
+                    <button type="button" class="kvt-btn" id="kvt_update_sector">Update sector</button>
+                    <p><span id="kvt_update_status"></span><span id="kvt_update_spinner" class="kvt-spinner" style="display:none;"></span></p>
                 </div>
                 <div class="kvt-widgets">
                 <div id="kvt_activity" class="kvt-activity">
@@ -3220,9 +3246,17 @@ function kvtInit(){
   const emailStatusSel = el('#kvt_email_status');
   const emailCountry = el('#kvt_email_country');
   const emailCity = el('#kvt_email_city');
+  const emailSector = el('#kvt_email_sector');
   const emailSearch = el('#kvt_email_search');
   const emailTarget = el('#kvt_email_target');
   const emailFilters = el('#kvt_email_filters');
+  const emailClientWrap  = emailClient  ? emailClient.parentElement  : null;
+  const emailProcessWrap = emailProcess ? emailProcess.parentElement : null;
+  const emailStatusWrap  = emailStatusSel? emailStatusSel.parentElement: null;
+  const emailCountryWrap = emailCountry ? emailCountry.parentElement : null;
+  const emailCityWrap    = emailCity    ? emailCity.parentElement    : null;
+  const emailSectorWrap  = emailSector  ? emailSector.parentElement  : null;
+  const emailSearchWrap  = emailSearch  ? emailSearch.parentElement  : null;
   const emailHead = el('#kvt_email_head');
   const emailSelectAll = el('#kvt_email_select_all');
   const emailClear = el('#kvt_email_clear');
@@ -3236,6 +3270,7 @@ function kvtInit(){
   const emailFromEmail = el('#kvt_email_from_email');
   const emailUseSig = el('#kvt_email_use_signature');
   const emailCopySender = el('#kvt_email_copy_sender');
+  const emailAttachment = el('#kvt_email_attachment');
   const emailSend = el('#kvt_email_send');
   const emailSaveTplBtn = el('#kvt_email_save_tpl');
   const emailStatusMsg = el('#kvt_email_status_msg');
@@ -3263,6 +3298,12 @@ function kvtInit(){
   const mitChatLog = el('#kvt_mit_chat_log');
   const mitChatInput = el('#kvt_mit_chat_input');
   const mitChatSend = el('#kvt_mit_chat_send');
+  const updateView = el('#kvt_update_view');
+  const updateBtn = el('#kvt_update_start');
+  const updateSectorBtn = el('#kvt_update_sector');
+  const updateStatus = el('#kvt_update_status');
+  const updateSpinner = el('#kvt_update_spinner');
+  let updateTimer, updateTotal = 0;
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
@@ -3553,16 +3594,22 @@ function kvtInit(){
   });
 
   if(window.jQuery){
-    [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
+    [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity,emailSector].forEach(sel=>{
       if(sel) {
         jQuery(sel)
           .select2({width:'style', dropdownAutoWidth:true})
-          .on('select2:select select2:unselect', () => loadEmailCandidates(1));
+          .on('select2:select select2:unselect', () => {
+            if(emailMode==='clients') loadEmailClients();
+            else loadEmailCandidates(1);
+          });
       }
     });
   } else {
-    [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity].forEach(sel=>{
-      sel && sel.addEventListener('change', ()=>loadEmailCandidates(1));
+    [emailClient,emailProcess,emailStatusSel,emailCountry,emailCity,emailSector].forEach(sel=>{
+      sel && sel.addEventListener('change', ()=>{
+        if(emailMode==='clients') loadEmailClients();
+        else loadEmailCandidates(1);
+      });
     });
   }
 
@@ -3581,15 +3628,16 @@ function kvtInit(){
   function renderEmailTable(){
     if(!emailTbody) return;
     if(emailMode==='clients'){
-      if(emailHead) emailHead.innerHTML='<tr><th></th><th>Cliente</th><th>Email</th></tr>';
+      if(emailHead) emailHead.innerHTML='<tr><th></th><th>Cliente</th><th>Sector</th><th>Email</th></tr>';
       emailTbody.innerHTML = emailCandidates.map(c=>{
         const id=c.id; const m=c.meta||{}; const chk=emailSelected.has(String(id))?'checked':'';
         return '<tr><td><input type="checkbox" data-id="'+escAttr(id)+'" '+chk+'></td>'+
           '<td>'+esc(m.client||'')+'</td>'+
+          '<td>'+esc(m.sector||'')+'</td>'+
           '<td>'+esc(m.email||'')+'</td></tr>';
       }).join('');
     } else {
-      if(emailHead) emailHead.innerHTML='<tr><th></th><th>Nombre</th><th>Apellido</th><th>Email</th><th>País</th><th>Ciudad</th><th>Cliente</th><th>Proceso</th><th>Estado</th></tr>';
+      if(emailHead) emailHead.innerHTML='<tr><th></th><th>Nombre</th><th>Apellido</th><th>Email</th><th>País</th><th>Ciudad</th><th>Sector</th><th>Cliente</th><th>Proceso</th><th>Estado</th></tr>';
       emailTbody.innerHTML = emailCandidates.map(c=>{
         const id=c.id;
         const m=c.meta||{};
@@ -3600,6 +3648,7 @@ function kvtInit(){
           '<td>'+esc(m.email||'')+'</td>'+
           '<td>'+esc(m.country||'')+'</td>'+
           '<td>'+esc(m.city||'')+'</td>'+
+          '<td>'+esc(m.sector||'')+'</td>'+
           '<td>'+esc(m.client||'')+'</td>'+
           '<td>'+esc(m.process||'')+'</td>'+
           '<td>'+esc(m.status||'')+'</td></tr>';
@@ -3617,8 +3666,9 @@ function kvtInit(){
     const s=getVals(emailStatusSel); if(s.length) params.set('status', s.join(','));
     const co=getVals(emailCountry); if(co.length) params.set('country', co.join(','));
     const ci=getVals(emailCity); if(ci.length) params.set('city', ci.join(','));
+    const se=getVals(emailSector); if(se.length) params.set('sector', se.join(','));
     const q=emailSearch?emailSearch.value.trim():''; if(q) params.set('search', q);
-    const hasFilter = c.length || p.length || s.length || co.length || ci.length || q.length;
+    const hasFilter = c.length || p.length || s.length || co.length || ci.length || se.length || q.length;
     if(!hasFilter){ params.set('per_page',15); params.set('page',pg); }
     else { params.set('all','1'); }
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
@@ -3641,6 +3691,8 @@ function kvtInit(){
   function loadEmailClients(){
     if(!emailTbody) return;
     const params = new URLSearchParams({action:'kvt_get_clients', _ajax_nonce:KVT_NONCE});
+    const getVals=sel=>sel?Array.from(sel.selectedOptions).map(o=>o.value).filter(v=>v):[];
+    const se=getVals(emailSector); if(se.length) params.set('sector', se.join(','));
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(j=>{
         emailCandidates = (j.success && j.data.items) ? j.data.items : [];
@@ -3654,10 +3706,13 @@ function kvtInit(){
 
   function renderEmailMode(){
     if(emailMode==='clients'){
-      if(emailFilters) emailFilters.style.display='none';
+      if(emailFilters) emailFilters.style.display='flex';
+      [emailClientWrap,emailProcessWrap,emailStatusWrap,emailCountryWrap,emailCityWrap,emailSearchWrap].forEach(w=>{ if(w) w.style.display='none'; });
+      if(emailSectorWrap) emailSectorWrap.style.display='flex';
       loadEmailClients();
     } else {
       if(emailFilters) emailFilters.style.display='flex';
+      [emailClientWrap,emailProcessWrap,emailStatusWrap,emailCountryWrap,emailCityWrap,emailSectorWrap,emailSearchWrap].forEach(w=>{ if(w) w.style.display='flex'; });
       loadEmailCandidates();
     }
   }
@@ -3762,11 +3817,95 @@ function kvtInit(){
   mitChatSend && mitChatSend.addEventListener('click', sendMitChat);
   mitChatInput && mitChatInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); sendMitChat(); }});
 
+  async function pollUpdateStatus(){
+    try{
+      const resp=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_update_queue_status', _ajax_nonce:KVT_NONCE})});
+      const json=await resp.json();
+      if(json && json.success){
+        const remaining=parseInt(json.data.count,10)||0;
+        if(remaining>0){
+          const msg = updateTotal>0? 'Quedan '+remaining+' de '+updateTotal+' candidatos por actualizar'
+                                  : 'Quedan '+remaining+' candidatos por actualizar';
+          updateStatus.textContent=msg;
+          updateSpinner.style.display='inline-block';
+        }else{
+          updateStatus.textContent='Actualización completada';
+          updateSpinner.style.display='none';
+          clearInterval(updateTimer);
+          updateTimer=null;
+          updateBtn.disabled=false;
+          if(updateSectorBtn) updateSectorBtn.disabled=false;
+        }
+      }
+    }catch(e){}
+  }
+
+  async function startUpdateProfiles(){
+    if(!updateBtn) return;
+    updateBtn.disabled=true;
+    if(updateSectorBtn) updateSectorBtn.disabled=true;
+    updateSpinner.style.display='inline-block';
+    updateStatus.textContent='Iniciando...';
+    try{
+      const resp=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_update_missing', _ajax_nonce:KVT_NONCE})});
+      const json=await resp.json();
+      if(json && json.success){
+        updateTotal=parseInt(json.data.count,10)||0;
+        updateStatus.textContent='Quedan '+updateTotal+' candidatos por actualizar';
+        clearInterval(updateTimer);
+        updateTimer=setInterval(pollUpdateStatus,5000);
+        pollUpdateStatus();
+      } else {
+        updateStatus.textContent=json && json.data && json.data.msg?json.data.msg:'Error';
+        updateSpinner.style.display='none';
+        updateBtn.disabled=false;
+        if(updateSectorBtn) updateSectorBtn.disabled=false;
+      }
+    }catch(e){
+      updateStatus.textContent='Error';
+      updateSpinner.style.display='none';
+      updateBtn.disabled=false;
+      if(updateSectorBtn) updateSectorBtn.disabled=false;
+    }
+  }
+  updateBtn && updateBtn.addEventListener('click', startUpdateProfiles);
+
+  async function startUpdateSector(){
+    if(!updateSectorBtn) return;
+    updateBtn && (updateBtn.disabled=true);
+    updateSectorBtn.disabled=true;
+    updateSpinner.style.display='inline-block';
+    updateStatus.textContent='Iniciando...';
+    try{
+      const resp=await fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:new URLSearchParams({action:'kvt_update_sector', _ajax_nonce:KVT_NONCE})});
+      const json=await resp.json();
+      if(json && json.success){
+        updateTotal=parseInt(json.data.count,10)||0;
+        updateStatus.textContent='Quedan '+updateTotal+' candidatos por actualizar';
+        clearInterval(updateTimer);
+        updateTimer=setInterval(pollUpdateStatus,5000);
+        pollUpdateStatus();
+      } else {
+        updateStatus.textContent=json && json.data && json.data.msg?json.data.msg:'Error';
+        updateSpinner.style.display='none';
+        updateBtn && (updateBtn.disabled=false);
+        updateSectorBtn.disabled=false;
+      }
+    }catch(e){
+      updateStatus.textContent='Error';
+      updateSpinner.style.display='none';
+      updateBtn && (updateBtn.disabled=false);
+      updateSectorBtn.disabled=false;
+    }
+  }
+  updateSectorBtn && updateSectorBtn.addEventListener('click', startUpdateSector);
+
   function showView(view){
     if(!filtersBar || !tableWrap || !calendarWrap) return;
     if(calendarMiniWrap) calendarMiniWrap.style.display='none';
     if(mitWrap) mitWrap.style.display='none';
     if(mitChatWrap) mitChatWrap.style.display='none';
+    if(updateView) updateView.style.display='none';
     if(keywordBoard) keywordBoard.style.display='none';
     if(aiBoard) aiBoard.style.display='none';
     if(boardsView) boardsView.style.display='none';
@@ -3833,6 +3972,15 @@ function kvtInit(){
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
       if(mitChatWrap) mitChatWrap.style.display='block';
+    } else if(view==='update'){
+      filtersBar.style.display='none';
+      tableWrap.style.display='none';
+      calendarWrap.style.display='none';
+      if(activityWrap) activityWrap.style.display='none';
+      if(boardWrap) boardWrap.style.display='none';
+      if(toggleKanban) toggleKanban.style.display='none';
+      if(widgetsWrap) widgetsWrap.style.display='none';
+      if(updateView) updateView.style.display='block';
     } else if(view==='ai'){
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -6678,7 +6826,15 @@ function kvtInit(){
       if(!confirm(`¿Enviar a ${recipients.length} contactos?`)) return;
       const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0, copy_sender: emailCopySender && emailCopySender.checked ? 1 : 0};
       try{
-        const out = await ajaxForm({action:'kvt_send_email', _ajax_nonce:KVT_NONCE, payload: JSON.stringify(payload)});
+        const fd = new FormData();
+        fd.append('action','kvt_send_email');
+        fd.append('_ajax_nonce', KVT_NONCE);
+        fd.append('payload', JSON.stringify(payload));
+        if(emailAttachment && emailAttachment.files.length){
+          fd.append('attachment', emailAttachment.files[0]);
+        }
+        const res = await fetch(KVT_AJAX,{method:'POST', body: fd});
+        const out = await res.json();
         emailStatusMsg.textContent = out && out.success ? `Enviados: ${out.data.sent}` : 'Enviados';
         if(out && out.success && out.data && out.data.log){
           KVT_SENT_EMAILS = out.data.log;
@@ -6922,16 +7078,24 @@ JS;
         check_ajax_referer('kvt_nonce');
         $terms = get_terms(['taxonomy'=>self::TAX_CLIENT,'hide_empty'=>false]);
         $items = [];
+        $sector_filter = [];
+        if (isset($_POST['sector'])) {
+            $sector_filter = array_filter(array_map('sanitize_text_field', explode(',', wp_unslash($_POST['sector']))));
+            $sector_filter = array_map('strtolower', $sector_filter);
+        }
         foreach ($terms as $t) {
             $email = sanitize_email(get_term_meta($t->term_id, 'contact_email', true));
             if (!$email) continue;
             $contact = sanitize_text_field(get_term_meta($t->term_id, 'contact_name', true));
+            $sector = sanitize_text_field(get_term_meta($t->term_id, 'kvt_client_sector', true));
+            if ($sector_filter && !in_array(strtolower($sector), $sector_filter, true)) continue;
             $items[] = [
                 'id'   => $t->term_id,
                 'meta' => [
                     'email'  => $email,
                     'first_name' => $contact,
                     'client' => $t->name,
+                    'sector' => $sector,
                 ]
             ];
         }
@@ -8283,8 +8447,20 @@ JS;
         }
 
         // Extract profile details using AI
-        $fields = $this->update_profile_from_cv($id);
-        wp_send_json_success(['url'=>$url,'date'=>$today,'text_url'=>$txt_url,'fields'=>$fields,'current_role'=>($fields['current_role']??'')]);
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        $fields = $key ? $this->update_profile_from_cv($id, $key) : [];
+        $sector = $this->ensure_candidate_sector($id, $key);
+        if ($sector) {
+            $fields['sector'] = $sector;
+        }
+        wp_send_json_success([
+            'url'         => $url,
+            'date'        => $today,
+            'text_url'    => $txt_url,
+            'fields'      => $fields,
+            'current_role'=> ($fields['current_role'] ?? ''),
+            'sector'      => $sector,
+        ]);
     }
 
     public function ajax_parse_cv() {
@@ -8638,7 +8814,13 @@ JS;
         }
         update_post_meta($new_id, 'kvt_activity_log', $log);
 
-        wp_send_json_success(['id'=>$new_id]);
+        $key = get_option(self::OPT_OPENAI_KEY, '');
+        if ($key) {
+            $this->update_profile_from_cv($new_id, $key);
+        }
+        $sector = $this->ensure_candidate_sector($new_id, $key);
+
+        wp_send_json_success(['id'=>$new_id, 'sector'=>$sector]);
     }
 
     public function ajax_bulk_upload_cvs() {
@@ -8712,8 +8894,16 @@ JS;
                 update_post_meta($cid, 'cv_uploaded', $today);
                 $this->save_cv_text_attachment($cid, $attach_id);
                 $fields = $this->update_profile_from_cv($cid, $key);
+                $sector = $this->ensure_candidate_sector($cid, $key);
+                if ($sector) {
+                    $fields['sector'] = $sector;
+                }
             } else {
                 $fields = [];
+                $sector = $this->ensure_candidate_sector($cid, $key);
+                if ($sector) {
+                    $fields['sector'] = $sector;
+                }
             }
 
             if (!empty($statuses)) update_post_meta($cid, 'kvt_status', $statuses[0]);
@@ -9486,6 +9676,106 @@ JS;
         return $updated;
     }
 
+    private function guess_sector_from_role($role) {
+        if (!$role) return '';
+        $r = strtolower(remove_accents($role));
+        $map = [
+            'Ingenieria' => ['ingenier'],
+            'construction' => ['constru'],
+            'operations' => ['operac'],
+            'transmisión' => ['transmis'],
+            'eólica' => ['eolica', 'wind'],
+            'solar' => ['solar', 'fotovolta', 'pv'],
+            'bess' => ['bess', 'battery', 'storage'],
+            'h2' => ['hidrogen', 'hydrogen', 'h2'],
+            'Biometano' => ['biometano', 'biomethan'],
+            'generación térmica' => ['termica', 'thermal'],
+            'equipos eléctrico' => ['equip', 'electrico', 'switchgear'],
+            'mineras' => ['miner'],
+            'forestal' => ['forest'],
+            'agro' => ['agro', 'agric'],
+            'comercialización de energía' => ['comercializacion', 'trading'],
+            'fondos' => ['fondo', 'fund'],
+            'bancos internacionales' => ['banco', 'bank'],
+        ];
+        foreach ($map as $sector => $keywords) {
+            foreach ($keywords as $kw) {
+                if (strpos($r, $kw) !== false) return $sector;
+            }
+        }
+        return 'otro';
+    }
+    private function openai_guess_sector($key, $role, $cv_text, $company = '', $info = '') {
+        if (!$key) return '';
+        $sectors = ['Ingenieria','construction','operations','transmisión','eólica','solar','bess','h2','Biometano','generación térmica','equipos eléctrico','mineras','forestal','agro','comercialización de energía','fondos','bancos internacionales','otro'];
+        $cv_text = mb_substr((string)$cv_text, 0, 3000);
+        $prompt = "Basado en la información del candidato, selecciona el sector más adecuado de esta lista:\n" . implode(', ', $sectors) . ".\nPuesto Actual: $role";
+        if ($company) {
+            $prompt .= "\nEmpresa: $company";
+        }
+        if ($info) {
+            $prompt .= "\nInformación de Google:\n$info";
+        }
+        $prompt .= "\nCV:\n$cv_text\nResponde solo con el nombre exacto de un sector.";
+        $req = [
+            'model' => 'gpt-4o-mini',
+            'messages' => [
+                ['role' => 'system', 'content' => 'Eres un asistente de reclutamiento. Devuelve únicamente el nombre del sector de la lista.'],
+                ['role' => 'user', 'content' => $prompt],
+            ],
+            'max_tokens' => 10,
+        ];
+        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $key,
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => wp_json_encode($req),
+            'timeout' => self::AI_TIMEOUT,
+        ]);
+        if (is_wp_error($response)) return '';
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (!isset($body['choices'][0]['message']['content'])) return '';
+        $sector = trim($body['choices'][0]['message']['content']);
+        $norm = strtolower(remove_accents($sector));
+        foreach ($sectors as $s) {
+            if ($norm === strtolower(remove_accents($s)) || strpos($norm, strtolower(remove_accents($s))) !== false) {
+                return $s;
+            }
+        }
+        return '';
+    }
+
+    private function ensure_candidate_sector($post_id, $key = null) {
+        $sector = $this->meta_get_compat($post_id, 'kvt_sector', ['sector']);
+        if (trim($sector) !== '' && $sector !== '---Sector---') {
+            return $sector;
+        }
+        if (!$key) {
+            $key = get_option(self::OPT_OPENAI_KEY, '');
+        }
+        $role = $this->meta_get_compat($post_id, 'kvt_current_role', ['current_role']);
+        if (!$role) {
+            $role = $this->meta_get_compat($post_id, 'kvt_role', ['role']);
+        }
+        $cv_text = $this->get_candidate_cv_text($post_id);
+        $company = $this->meta_get_compat($post_id, 'kvt_company', ['company']);
+        $info = '';
+        if ($company) {
+            $info = $this->mit_search_web($company . ' ' . $role);
+        }
+        $guess = $key ? $this->openai_guess_sector($key, $role, $cv_text, $company, $info) : '';
+        if (!$guess) {
+            $guess = $this->guess_sector_from_role($role);
+        }
+        if (!$guess) {
+            $guess = 'otro';
+        }
+        update_post_meta($post_id, 'kvt_sector', $guess);
+        update_post_meta($post_id, 'sector', $guess);
+        return $guess;
+    }
+
     private function openai_match_summary($key, $desc, $cv_text) {
         $req = [
             'model' => 'gpt-4o-mini',
@@ -9775,6 +10065,79 @@ JS;
             }
         }
 
+        public function ajax_update_missing() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+            $ids = get_posts([
+                'post_type'      => self::CPT,
+                'post_status'    => 'any',
+                'fields'         => 'ids',
+                'posts_per_page' => -1,
+            ]);
+            update_option(self::OPT_UPDATE_QUEUE, array_map('intval', $ids));
+            update_option(self::OPT_UPDATE_MODE, 'full');
+            if (!wp_next_scheduled('kvt_update_worker')) {
+                wp_schedule_single_event(time()+5, 'kvt_update_worker');
+            }
+            wp_send_json_success(['count' => count($ids)]);
+        }
+
+        public function ajax_update_sector() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+            $ids = get_posts([
+                'post_type'      => self::CPT,
+                'post_status'    => 'any',
+                'fields'         => 'ids',
+                'posts_per_page' => -1,
+            ]);
+            $ids = array_filter($ids, function($id){
+                $sector = trim((string) get_post_meta($id, 'kvt_sector', true));
+                if ($sector === '') {
+                    $sector = trim((string) get_post_meta($id, 'sector', true));
+                }
+                return $sector === '' || $sector === '---Sector---';
+            });
+            update_option(self::OPT_UPDATE_QUEUE, array_map('intval', $ids));
+            update_option(self::OPT_UPDATE_MODE, 'sector');
+            if (!wp_next_scheduled('kvt_update_worker')) {
+                wp_schedule_single_event(time()+5, 'kvt_update_worker');
+            }
+            wp_send_json_success(['count' => count($ids)]);
+        }
+
+        public function ajax_update_queue_status() {
+            check_ajax_referer('kvt_nonce');
+            if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+            $queue = get_option(self::OPT_UPDATE_QUEUE, []);
+            wp_send_json_success(['count' => is_array($queue) ? count($queue) : 0]);
+        }
+
+        public function cron_update_worker() {
+            $queue = get_option(self::OPT_UPDATE_QUEUE, []);
+            if (empty($queue)) return;
+            $key = get_option(self::OPT_OPENAI_KEY, '');
+            $mode = get_option(self::OPT_UPDATE_MODE, 'full');
+            $processed = 0;
+            while ($processed < 5 && !empty($queue)) {
+                $id = array_shift($queue);
+                if ($id) {
+                    if ($mode !== 'sector' && $key) {
+                        $this->update_profile_from_cv($id, $key);
+                    }
+                    $this->ensure_candidate_sector($id, $key);
+                    $processed++;
+                    sleep(2);
+                }
+            }
+            update_option(self::OPT_UPDATE_QUEUE, $queue);
+            if (!empty($queue)) {
+                wp_schedule_single_event(time()+5, 'kvt_update_worker');
+            } else {
+                delete_option(self::OPT_UPDATE_MODE);
+            }
+        }
+
         public function ajax_get_email_log() {
             check_ajax_referer('kvt_nonce');
             if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
@@ -9798,9 +10161,19 @@ JS;
             $from_name     = sanitize_text_field($payload['from_name'] ?? '');
             $use_signature = !empty($payload['use_signature']);
             $copy_sender   = !empty($payload['copy_sender']);
+            $attachment = '';
+            if (!empty($_FILES['attachment']) && is_array($_FILES['attachment']) && !empty($_FILES['attachment']['tmp_name'])) {
+                require_once ABSPATH . 'wp-admin/includes/file.php';
+                $upload = wp_handle_upload($_FILES['attachment'], ['test_form' => false]);
+                if (empty($upload['error']) && !empty($upload['file'])) {
+                    $attachment = $upload['file'];
+                }
+            }
 
-            $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature','copy_sender');
+            $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature','copy_sender','attachment');
             $result = $this->send_email_batch($batch);
+
+            if ($attachment) wp_delete_file($attachment);
 
             wp_send_json_success($result);
         }
@@ -9811,11 +10184,37 @@ JS;
 
             $subject_tpl   = (string)($batch['subject_tpl'] ?? '');
             $body_tpl      = (string)($batch['body_tpl'] ?? '');
-            $recipients    = (array)($batch['recipients'] ?? []);
+            $raw_recipients = $batch['recipients'] ?? [];
+            if (is_string($raw_recipients)) {
+                $raw_recipients = [$raw_recipients];
+            }
+            $recipients = [];
+            foreach ((array)$raw_recipients as $r) {
+                if (is_array($r)) {
+                    $emails_raw = isset($r['email']) ? $r['email'] : '';
+                    if (is_string($emails_raw)) {
+                        $emails = preg_split('/[\s,;]+/', $emails_raw);
+                        foreach ($emails as $e) {
+                            $e = trim($e);
+                            if ($e === '') continue;
+                            $copy = $r;
+                            $copy['email'] = $e;
+                            $recipients[] = $copy;
+                        }
+                    }
+                } elseif (is_string($r) && $r !== '') {
+                    foreach (preg_split('/[\s,;]+/', $r) as $e) {
+                        $e = trim($e);
+                        if ($e === '') continue;
+                        $recipients[] = ['email'=>$e];
+                    }
+                }
+            }
             $from_email    = sanitize_email($batch['from_email'] ?? '');
             $from_name     = sanitize_text_field($batch['from_name'] ?? '');
             $use_signature = !empty($batch['use_signature']);
             $copy_sender   = !empty($batch['copy_sender']);
+            $attachment    = isset($batch['attachment']) ? $batch['attachment'] : '';
 
             if (!$from_email) $from_email = get_option(self::OPT_FROM_EMAIL, '');
             if (!$from_email) $from_email = get_option('admin_email');
@@ -9835,6 +10234,7 @@ JS;
 
             $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
             $log = get_option(self::OPT_EMAIL_LOG, []);
+            if (!is_array($log)) $log = [];
             $last_error = null;
             $failed_hook = function($wp_error) use (&$last_error) {
                 if (is_wp_error($wp_error)) {
@@ -9858,6 +10258,11 @@ JS;
                 $client     = isset($r['client']) ? sanitize_text_field($r['client']) : '';
                 $board      = isset($r['board']) ? esc_url_raw($r['board']) : '';
 
+                if (!$email) {
+                    $result['errors'][] = ['email'=>$display_email, 'error'=>'Invalid email'];
+                    continue;
+                }
+
                 $data = compact('first_name','surname','country','city','role','board','status','client');
                 $data['sender'] = $from_name ?: $from_email ?: get_bloginfo('name');
                 $subject = $this->render_template($subject_tpl, $data);
@@ -9871,7 +10276,8 @@ JS;
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
 
                 $last_error = null;
-                $ok = wp_mail($email, $subject, $body, $headers);
+                $att = $attachment ? [$attachment] : [];
+                $ok = wp_mail($email, $subject, $body, $headers, $att);
                 $status = $last_error ? 'failed' : 'sent';
                 if ($status === 'sent') {
                     $result['sent']++;
@@ -9895,6 +10301,12 @@ JS;
                     $entry['error'] = $last_error;
                 }
                 $log[] = $entry;
+
+                if (isset($GLOBALS['phpmailer']) && $GLOBALS['phpmailer'] instanceof \PHPMailer\PHPMailer\PHPMailer) {
+                    $GLOBALS['phpmailer']->smtpClose();
+                    $GLOBALS['phpmailer'] = null;
+                }
+                usleep(1000000);
             }
 
             if ($copy_sender && $from_email) {
@@ -9918,7 +10330,8 @@ JS;
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
                 if ($from_email) $headers[] = 'Reply-To: '.$from_name.' <'.$from_email.'>';
                 $last_error = null;
-                $ok = wp_mail($from_email, $subject, $body, $headers);
+                $att = $attachment ? [$attachment] : [];
+                $ok = wp_mail($from_email, $subject, $body, $headers, $att);
                 $status = $last_error ? 'failed' : 'sent';
                 $entry = [
                     'time'       => current_time('mysql'),
@@ -9934,6 +10347,11 @@ JS;
                     $entry['error'] = $last_error;
                 }
                 $log[] = $entry;
+                if (isset($GLOBALS['phpmailer']) && $GLOBALS['phpmailer'] instanceof \PHPMailer\PHPMailer\PHPMailer) {
+                    $GLOBALS['phpmailer']->smtpClose();
+                    $GLOBALS['phpmailer'] = null;
+                }
+                usleep(1000000);
             }
 
             remove_action('wp_mail_failed', $failed_hook);
