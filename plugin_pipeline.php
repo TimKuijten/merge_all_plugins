@@ -2008,6 +2008,8 @@ JS;
         }, $clients);
         $from_name_def  = get_option(self::OPT_FROM_NAME, '');
         $from_email_def = get_option(self::OPT_FROM_EMAIL, '');
+        $from_name_def2 = get_option(self::OPT_FROM_NAME2, '');
+        $from_email_def2 = get_option(self::OPT_FROM_EMAIL2, '');
         $templates      = $this->get_email_templates();
         $sent_emails    = array_reverse((array) get_option(self::OPT_EMAIL_LOG, []));
         $count_obj = wp_count_posts(self::CPT, 'readable');
