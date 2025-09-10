@@ -120,10 +120,10 @@ class Kovacic_CV_Feedback_ES {
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="<?php echo self::OPT_NOTIFY_EMAIL; ?>">Email de aviso interno</label></th>
+                        <th scope="row"><label for="<?php echo self::OPT_NOTIFY_EMAIL; ?>">Emails de aviso interno</label></th>
                         <td>
-                            <input type="email" id="<?php echo self::OPT_NOTIFY_EMAIL; ?>" name="<?php echo self::OPT_NOTIFY_EMAIL; ?>" value="<?php echo esc_attr(get_option(self::OPT_NOTIFY_EMAIL)); ?>" class="regular-text" placeholder="talent@tudominio.com" />
-                            <p class="description">Opcional. Si se indica, enviaremos un aviso con cada envío.</p>
+                            <input type="text" id="<?php echo self::OPT_NOTIFY_EMAIL; ?>" name="<?php echo self::OPT_NOTIFY_EMAIL; ?>" value="<?php echo esc_attr(get_option(self::OPT_NOTIFY_EMAIL)); ?>" class="regular-text" placeholder="talent@tudominio.com, rrhh@tudominio.com" />
+                            <p class="description">Opcional. Si se indican varios, sepáralos por comas. Enviaremos un aviso con cada envío.</p>
                         </td>
                     </tr>
                     <tr>
@@ -184,6 +184,10 @@ class Kovacic_CV_Feedback_ES {
         .kcvf-consent input{margin-top:3px}
         .kcvf-btn{background:#0A212E;color:#fff;border:none;padding:14px 18px;border-radius:12px;cursor:pointer;font-weight:600}
         .kcvf-btn:hover{opacity:.95}
+        .kcvf-btn:disabled{opacity:.6;cursor:not-allowed}
+        .kcvf-btn.loading{position:relative;opacity:.8}
+        .kcvf-btn.loading:after{content:'';position:absolute;right:12px;top:50%;width:16px;height:16px;margin-top:-8px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:kcvf-spin .6s linear infinite}
+        @keyframes kcvf-spin{to{transform:rotate(360deg)}}
         .kcvf-alert{background:#f6ffed;border:1px solid #b7eb8f;padding:12px;border-radius:10px;margin-bottom:16px}
         .kcvf-error{background:#fff1f0;border:1px solid #ffa39e;padding:12px;border-radius:10px;margin-bottom:16px}
         .kcvf-feedback{white-space:normal;border:1px dashed #e5e7eb;border-radius:10px;padding:14px}
@@ -226,7 +230,7 @@ class Kovacic_CV_Feedback_ES {
 
         // JS del formulario: PDF.js → texto; si vacío → Tesseract.js OCR; luego reCAPTCHA si está activo
         $inline = <<<JS
-document.addEventListener('DOMContentLoaded', function(){
+  document.addEventListener('DOMContentLoaded', function(){
   document.querySelectorAll('form.kcvf-form').forEach(function(form){
     var fileInput = form.querySelector('input[type="file"][name="kcvf_file"]');
     var hiddenPdfText = document.createElement('textarea');
@@ -234,6 +238,7 @@ document.addEventListener('DOMContentLoaded', function(){
     hiddenPdfText.style.display = 'none';
     form.appendChild(hiddenPdfText);
 
+    var btn = form.querySelector('.kcvf-btn');
     var submitting = false;
 
     async function extractPdfWithPDFjs(file){
@@ -287,6 +292,8 @@ document.addEventListener('DOMContentLoaded', function(){
 
     form.addEventListener('submit', function(e){
       if (submitting) return;
+      submitting = true;
+      if (btn){ btn.classList.add('loading'); btn.disabled = true; }
       var file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
       if (!file) return;
 
@@ -310,12 +317,10 @@ document.addEventListener('DOMContentLoaded', function(){
             grecaptcha.ready(function(){
               grecaptcha.execute('%SITE_KEY%', {action: 'cv_submit'}).then(function(token){
                 if (tokenField) tokenField.value = token;
-                submitting = true;
                 form.submit();
               });
             });
           } else {
-            submitting = true;
             form.submit();
           }
         })();
@@ -374,6 +379,21 @@ JS;
     /** Quita <strong> del cuerpo: solo H2/H3 en negrita por CSS */
     private function strip_strong_from_body($html) {
         return preg_replace('/<\/?strong>/', '', (string)$html);
+    }
+
+    /** Obtiene emails válidos para avisos internos */
+    private function get_notify_emails() {
+        $raw = (string) get_option(self::OPT_NOTIFY_EMAIL);
+        if (!$raw) return [];
+        $parts = preg_split('/[\s,;]+/', $raw);
+        $emails = [];
+        foreach ($parts as $part) {
+            $email = sanitize_email($part);
+            if ($email && is_email($email)) {
+                $emails[] = $email;
+            }
+        }
+        return $emails;
     }
 
     private function render_form($errors = [], $old = [], $register_only = false) {
@@ -697,8 +717,8 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             }
 
             // Aviso interno (texto)
-            $notify = get_option(self::OPT_NOTIFY_EMAIL);
-            if ($notify && is_email($notify)) {
+            $notify = $this->get_notify_emails();
+            if (!empty($notify)) {
                 $body_admin = "Nuevo envío de CV: {$email}\nNombre: {$name}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\nConvertido DOCX: " . ($converted_docx ?: '—') . "\n\n--- FEEDBACK (texto plano) ---\n" . wp_strip_all_tags($safe_feedback);
                 wp_mail($notify, 'Nuevo envío de CV + Feedback', $body_admin);
             }
@@ -719,8 +739,8 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
 
         } else {
             // Solo aviso interno y/o confirmación de registro
-            $notify = get_option(self::OPT_NOTIFY_EMAIL);
-            if ($notify && is_email($notify)) {
+            $notify = $this->get_notify_emails();
+            if (!empty($notify)) {
                 $subject = $register_only ? 'Nuevo registro de CV' : 'Nuevo envío de CV';
                 $body_admin = "Nuevo envío de CV: {$email}\nNombre: {$name}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\n";
                 if (!$register_only) {
