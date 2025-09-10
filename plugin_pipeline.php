@@ -2294,11 +2294,13 @@ JS;
                     <div class="kvt-row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;">
                         <input type="text" id="kvt_group_name" class="kvt-input" placeholder="Nombre del grupo">
                         <input type="text" id="kvt_group_desc" class="kvt-input" placeholder="Descripción">
+                        <input type="text" id="kvt_group_placeholder" class="kvt-input" placeholder="Placeholder (sin {{}})">
+                        <input type="text" id="kvt_group_placeholder_val" class="kvt-input" placeholder="Texto para el placeholder">
                         <input type="text" id="kvt_group_search" class="kvt-input" placeholder="Buscar candidatos">
                         <button type="button" class="kvt-btn" id="kvt_group_select_all">Seleccionar todo</button>
                     </div>
                     <table class="kvt-table">
-                        <thead><tr><th></th><th>Nombre</th><th>Apellido</th><th>Email</th></tr></thead>
+                        <thead><tr><th></th><th>Candidato/a</th><th>Etapas</th></tr></thead>
                         <tbody id="kvt_group_tbody"></tbody>
                     </table>
                     <div class="kvt-row" style="margin-top:8px;gap:8px;">
@@ -3849,6 +3851,8 @@ function kvtInit(){
 
   const groupName = el('#kvt_group_name');
   const groupDesc = el('#kvt_group_desc');
+  const groupPlaceholder = el('#kvt_group_placeholder');
+  const groupPlaceholderVal = el('#kvt_group_placeholder_val');
   const groupSearch = el('#kvt_group_search');
   const groupTbody = el('#kvt_group_tbody');
   const groupSelectAll = el('#kvt_group_select_all');
@@ -3859,12 +3863,38 @@ function kvtInit(){
 
   function renderGroupTable(){
     if(!groupTbody) return;
+    const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
     groupTbody.innerHTML = groupCandidates.map(c=>{
       const id=c.id, m=c.meta||{}, chk=groupSelected.has(String(id))?'checked':'';
-      return '<tr><td><input type="checkbox" data-id="'+escAttr(id)+'" '+chk+'></td>'+
-             '<td>'+esc(m.first_name||'')+'</td>'+
-             '<td>'+esc(m.last_name||'')+'</td>'+
-             '<td>'+esc(m.email||'')+'</td></tr>';
+      const nameTxt=esc(((m.first_name||'')+' '+(m.last_name||'')).trim());
+      const icons=[];
+      if(m.cv_url){
+        icons.push('<a href="'+escAttr(m.cv_url)+'" class="kvt-name-icon dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>');
+      }
+      const comments=Array.isArray(m.client_comments)?m.client_comments:[];
+      let cm=null;
+      if(comments.length){ cm = comments[comments.length-1]; }
+      if(cm){ icons.push('<span class="kvt-name-icon kvt-alert" title="'+escAttr(cm.comment)+'">!</span>'); }
+      if(m.next_action){
+        const parts=m.next_action.split('/');
+        let overdue=false;
+        if(parts.length===3){ const d=new Date(parts[2],parts[1]-1,parts[0]); const today=new Date(); today.setHours(0,0,0,0); overdue=d<=today; }
+        const note=m.next_action_note? ' — '+m.next_action_note:'';
+        icons.push('<span class="kvt-name-icon dashicons dashicons-clock'+(overdue?' overdue':'')+'" title="'+escAttr(m.next_action+note)+'"></span>');
+      }
+      const snip=lastNoteSnippet(m.notes);
+      if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
+      const name='<a href="#" class="kvt-row-view" data-id="'+escAttr(id)+'">'+nameTxt+'</a>'+icons.join('');
+      let cidx = stepStatuses.indexOf(c.meta.status||'');
+      if((c.meta.status||'') === 'Descartados') cidx = stepStatuses.length;
+      const steps = stepStatuses.map((s,idx)=>{
+        let cls='kvt-stage-step';
+        if(idx < cidx) cls+=' done';
+        else if(idx===cidx) cls+=' current';
+        const label=idx<cidx?'&#10003;':esc(s);
+        return '<button type="button" class="'+cls+'" data-id="'+escAttr(id)+'" data-status="'+escAttr(s)+'" title="'+escAttr(s)+'">'+label+'</button>';
+      }).join('');
+      return '<tr><td><input type="checkbox" data-id="'+escAttr(id)+'" '+chk+'></td><td>'+name+'</td><td class="kvt-stage-cell">'+steps+'</td></tr>';
     }).join('');
   }
 
@@ -3897,14 +3927,18 @@ function kvtInit(){
     const name = groupName?groupName.value.trim():'';
     if(!name){ if(groupMsg) groupMsg.textContent='Nombre requerido'; return; }
     const desc = groupDesc?groupDesc.value.trim():'';
+    const pKey = groupPlaceholder ? groupPlaceholder.value.trim() : '';
+    const pVal = groupPlaceholderVal ? groupPlaceholderVal.value.trim() : '';
     const ids = Array.from(groupSelected);
-    const params = new URLSearchParams({action:'kvt_create_group', _ajax_nonce:KVT_NONCE, name, description:desc, candidates:ids.join(',')});
+    const params = new URLSearchParams({action:'kvt_create_group', _ajax_nonce:KVT_NONCE, name, description:desc, placeholder_key:pKey, placeholder_value:pVal, candidates:ids.join(',')});
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(j=>{
         if(j.success){
           if(groupMsg) groupMsg.textContent='Grupo creado';
           if(groupName) groupName.value='';
           if(groupDesc) groupDesc.value='';
+          if(groupPlaceholder) groupPlaceholder.value='';
+          if(groupPlaceholderVal) groupPlaceholderVal.value='';
           groupSelected.clear();
           renderGroupTable();
           reloadEmailGroups();
@@ -6815,6 +6849,7 @@ function kvtInit(){
       if(!cand){ alert('Destinatario inválido'); return; }
       const m=cand.meta||{};
       const meta=Object.assign({}, m, {surname:m.last_name||'', role:m.process||'', board:m.board||'', sender:(emailFromName.value||KVT_FROM_NAME||'')});
+      if(m.group_placeholder_key){ meta[m.group_placeholder_key] = m.group_placeholder_value || ''; }
       const repl=str=>str.replace(/{{(\w+)}}/g,(match,p)=>meta[p]||'');
       emailPrevSubject.textContent=repl(subject);
       let bodyHtml=repl(body).replace(/\n/g,'<br>');
@@ -6834,7 +6869,13 @@ function kvtInit(){
       const recipients=Array.from(emailSelected).map(id=>{
         const it=emailCandidates.find(c=>String(c.id)===String(id));
         const m=it?it.meta:{};
-        return {email:m.email||'', first_name:m.first_name||'', surname:m.last_name||'', country:m.country||'', city:m.city||'', role:m.process||'', status:m.status||'', client:m.client||'', board:m.board||''};
+        const obj={email:m.email||'', first_name:m.first_name||'', surname:m.last_name||'', country:m.country||'', city:m.city||'', role:m.process||'', status:m.status||'', client:m.client||'', board:m.board||''};
+        if(m.group_placeholder_key){
+          obj[m.group_placeholder_key]=m.group_placeholder_value||'';
+          obj.group_placeholder_key=m.group_placeholder_key;
+          obj.group_placeholder_value=m.group_placeholder_value||'';
+        }
+        return obj;
       }).filter(r=>r.email);
       if(!recipients.length){ alert('No hay destinatarios seleccionados con email.'); return; }
       if(!confirm(`¿Enviar a ${recipients.length} contactos?`)) return;
@@ -7056,13 +7097,24 @@ JS;
             if ($notes_raw === '') $notes_raw = get_post_meta($p->ID,'notes',true);
             $client_name  = $this->get_term_name($p->ID, self::TAX_CLIENT);
             $process_name = $this->get_term_name($p->ID, self::TAX_PROCESS);
-            $group_name   = $this->get_term_name($p->ID, self::TAX_GROUP);
+            $group_terms  = get_the_terms($p->ID, self::TAX_GROUP);
+            $group_name   = '';
+            $placeholder_key = '';
+            $placeholder_val = '';
+            if ($group_terms && !is_wp_error($group_terms) && !empty($group_terms)) {
+                $gt = $group_terms[0];
+                $group_name = $gt->name;
+                $placeholder_key = (string) get_term_meta($gt->term_id, 'kvt_placeholder_key', true);
+                $placeholder_val = (string) get_term_meta($gt->term_id, 'kvt_placeholder_value', true);
+            }
             $meta = [
                 'candidate'   => get_the_title($p),
                 'status'      => get_post_meta($p->ID,'kvt_status',true),
                 'client'      => $client_name,
                 'process'     => $process_name,
                 'group'       => $group_name,
+                'group_placeholder_key'   => $placeholder_key,
+                'group_placeholder_value' => $placeholder_val,
                 'int_no'      => $this->meta_get_compat($p->ID,'kvt_int_no',['int_no']),
                 'first_name'  => $this->meta_get_compat($p->ID,'kvt_first_name',['first_name']),
                 'last_name'   => $this->meta_get_compat($p->ID,'kvt_last_name',['last_name']),
@@ -7091,6 +7143,9 @@ JS;
                 'activity_log' => get_post_meta($p->ID,'kvt_activity_log',true),
                 'board'       => isset($board_map[$p->ID]) ? $board_map[$p->ID] : '',
             ];
+            if ($placeholder_key !== '') {
+                $meta[$placeholder_key] = $placeholder_val;
+            }
             $data[] = [
                 'id'     => $p->ID,
                 'title'  => get_the_title($p),
@@ -7136,10 +7191,16 @@ JS;
         $name = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
         if ($name === '') wp_send_json_error(['msg' => 'Missing name'], 400);
         $desc = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+        $p_key = isset($_POST['placeholder_key']) ? sanitize_key($_POST['placeholder_key']) : '';
+        $p_val = isset($_POST['placeholder_value']) ? sanitize_text_field($_POST['placeholder_value']) : '';
         $cands = isset($_POST['candidates']) ? array_filter(array_map('intval', explode(',', $_POST['candidates']))) : [];
         $term = wp_insert_term($name, self::TAX_GROUP, ['description' => $desc]);
         if (is_wp_error($term)) wp_send_json_error(['msg' => $term->get_error_message()], 400);
         $tid = $term['term_id'];
+        if ($p_key !== '') {
+            update_term_meta($tid, 'kvt_placeholder_key', $p_key);
+            update_term_meta($tid, 'kvt_placeholder_value', $p_val);
+        }
         foreach ($cands as $cid) {
             wp_set_object_terms($cid, $tid, self::TAX_GROUP, true);
         }
@@ -10240,6 +10301,8 @@ JS;
                 $status     = isset($r['status']) ? sanitize_text_field($r['status']) : '';
                 $client     = isset($r['client']) ? sanitize_text_field($r['client']) : '';
                 $board      = isset($r['board']) ? esc_url_raw($r['board']) : '';
+                $gkey       = isset($r['group_placeholder_key']) ? sanitize_key($r['group_placeholder_key']) : '';
+                $gval       = isset($r['group_placeholder_value']) ? sanitize_text_field($r['group_placeholder_value']) : '';
 
                 if (!$email) {
                     $result['errors'][] = ['email'=>$display_email, 'error'=>'Invalid email'];
@@ -10248,6 +10311,7 @@ JS;
 
                 $data = compact('first_name','surname','country','city','role','board','status','client');
                 $data['sender'] = $from_name ?: $from_email ?: get_bloginfo('name');
+                if ($gkey !== '') $data[$gkey] = $gval;
                 $subject = $this->render_template($subject_tpl, $data);
                 $body_raw = $this->render_template($body_tpl, $data);
                 $body = $this->normalize_br_html($body_raw);
