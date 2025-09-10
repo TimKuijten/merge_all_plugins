@@ -166,6 +166,10 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_create_group', [$this, 'ajax_create_group']);
         add_action('wp_ajax_kvt_list_groups',         [$this, 'ajax_list_groups']);
         add_action('wp_ajax_nopriv_kvt_list_groups',  [$this, 'ajax_list_groups']);
+        add_action('wp_ajax_kvt_get_group',           [$this, 'ajax_get_group']);
+        add_action('wp_ajax_nopriv_kvt_get_group',    [$this, 'ajax_get_group']);
+        add_action('wp_ajax_kvt_update_group',        [$this, 'ajax_update_group']);
+        add_action('wp_ajax_nopriv_kvt_update_group', [$this, 'ajax_update_group']);
         add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_nopriv_kvt_get_outlook_events', [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_kvt_save_search',           [$this, 'ajax_save_search']);
@@ -2290,22 +2294,47 @@ JS;
                     </div>
                 </div>
                 <div id="kvt_groups_view" class="kvt-groups" style="display:none;">
-                    <h4>Crear grupo</h4>
-                    <div class="kvt-row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-                        <input type="text" id="kvt_group_name" class="kvt-input" placeholder="Nombre del grupo">
-                        <input type="text" id="kvt_group_desc" class="kvt-input" placeholder="Descripción">
-                        <input type="text" id="kvt_group_placeholder" class="kvt-input" placeholder="Placeholder (sin {{}})">
-                        <input type="text" id="kvt_group_placeholder_val" class="kvt-input" placeholder="Texto para el placeholder">
-                        <input type="text" id="kvt_group_search" class="kvt-input" placeholder="Buscar candidatos">
-                        <button type="button" class="kvt-btn" id="kvt_group_select_all">Seleccionar todo</button>
+                    <div class="kvt-tabs" id="kvt_groups_tabs">
+                        <button type="button" class="kvt-tab active" data-target="create">Crear</button>
+                        <button type="button" class="kvt-tab" data-target="manage">Gestionar</button>
                     </div>
-                    <table class="kvt-table">
-                        <thead><tr><th></th><th>Candidato/a</th><th>Etapas</th></tr></thead>
-                        <tbody id="kvt_group_tbody"></tbody>
-                    </table>
-                    <div class="kvt-row" style="margin-top:8px;gap:8px;">
-                        <button type="button" class="kvt-btn" id="kvt_group_create">Crear grupo</button>
-                        <span id="kvt_group_msg" class="kvt-muted"></span>
+                    <div id="kvt_groups_tab_create" class="kvt-tab-panel active">
+                        <h4>Crear grupo</h4>
+                        <div class="kvt-row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                            <input type="text" id="kvt_group_name" class="kvt-input" placeholder="Nombre del grupo">
+                            <input type="text" id="kvt_group_desc" class="kvt-input" placeholder="Descripción">
+                            <input type="text" id="kvt_group_placeholder" class="kvt-input" placeholder="Placeholder (sin {{}})">
+                            <input type="text" id="kvt_group_placeholder_val" class="kvt-input" placeholder="Texto para el placeholder">
+                        </div>
+                        <div class="kvt-head">
+                            <div class="kvt-toolbar">
+                                <label>Nombre
+                                    <input type="text" id="kvt_group_filter_name" placeholder="Nombre">
+                                </label>
+                                <label>Puesto/Empresa actual
+                                    <input type="text" id="kvt_group_filter_role" placeholder="Puesto/Empresa actual (ej: Gerente, Analista)">
+                                    <small class="kvt-hint">Puedes buscar varios separados por coma</small>
+                                </label>
+                                <label>Ubicación
+                                    <input type="text" id="kvt_group_filter_location" placeholder="País o ciudad (ej: Países Bajos, Chile)">
+                                    <small class="kvt-hint">Puedes buscar varios separados por coma</small>
+                                </label>
+                                <button type="button" class="kvt-btn" id="kvt_group_select_all">Seleccionar todo</button>
+                            </div>
+                        </div>
+                        <div id="kvt_group_list" class="kvt-list"></div>
+                        <div class="kvt-modal-pager">
+                            <button type="button" class="kvt-btn kvt-secondary" id="kvt_group_prev">Anterior</button>
+                            <span id="kvt_group_pageinfo"></span>
+                            <button type="button" class="kvt-btn kvt-secondary" id="kvt_group_next">Siguiente</button>
+                        </div>
+                        <div class="kvt-row" style="margin-top:8px;gap:8px;">
+                            <button type="button" class="kvt-btn" id="kvt_group_create">Crear grupo</button>
+                            <span id="kvt_group_msg" class="kvt-muted"></span>
+                        </div>
+                    </div>
+                    <div id="kvt_groups_tab_manage" class="kvt-tab-panel" style="display:none;">
+                        <div id="kvt_groups_manage_list" class="kvt-list"></div>
                     </div>
                 </div>
                 <div class="kvt-widgets">
@@ -3853,95 +3882,114 @@ function kvtInit(){
   const groupDesc = el('#kvt_group_desc');
   const groupPlaceholder = el('#kvt_group_placeholder');
   const groupPlaceholderVal = el('#kvt_group_placeholder_val');
-  const groupSearch = el('#kvt_group_search');
-  const groupTbody = el('#kvt_group_tbody');
+  const groupFilterName = el('#kvt_group_filter_name');
+  const groupFilterRole = el('#kvt_group_filter_role');
+  const groupFilterLoc = el('#kvt_group_filter_location');
+  const groupList = el('#kvt_group_list');
+  const groupPrev = el('#kvt_group_prev');
+  const groupNext = el('#kvt_group_next');
+  const groupPage = el('#kvt_group_pageinfo');
   const groupSelectAll = el('#kvt_group_select_all');
   const groupCreateBtn = el('#kvt_group_create');
   const groupMsg = el('#kvt_group_msg');
+  const groupsManageList = el('#kvt_groups_manage_list');
+  const groupsTabs = els('#kvt_groups_tabs .kvt-tab');
+  const groupTabCreate = el('#kvt_groups_tab_create');
+  const groupTabManage = el('#kvt_groups_tab_manage');
   let groupCandidates = [];
   let groupSelected = new Set();
+  let editingGroupId = null;
+  const groupCtx = {list:groupList,page:groupPage,prev:groupPrev,next:groupNext,name:groupFilterName,role:groupFilterRole,loc:groupFilterLoc,assign:null,close:null,select:true,selected:groupSelected,after:items=>{groupCandidates=items;}};
 
-  function renderGroupTable(){
-    if(!groupTbody) return;
-    const stepStatuses = KVT_STATUSES.filter(s=>s !== 'Descartados');
-    groupTbody.innerHTML = groupCandidates.map(c=>{
-      const id=c.id, m=c.meta||{}, chk=groupSelected.has(String(id))?'checked':'';
-      const nameTxt=esc(((m.first_name||'')+' '+(m.last_name||'')).trim());
-      const icons=[];
-      if(m.cv_url){
-        icons.push('<a href="'+escAttr(m.cv_url)+'" class="kvt-name-icon dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>');
-      }
-      const comments=Array.isArray(m.client_comments)?m.client_comments:[];
-      let cm=null;
-      if(comments.length){ cm = comments[comments.length-1]; }
-      if(cm){ icons.push('<span class="kvt-name-icon kvt-alert" title="'+escAttr(cm.comment)+'">!</span>'); }
-      if(m.next_action){
-        const parts=m.next_action.split('/');
-        let overdue=false;
-        if(parts.length===3){ const d=new Date(parts[2],parts[1]-1,parts[0]); const today=new Date(); today.setHours(0,0,0,0); overdue=d<=today; }
-        const note=m.next_action_note? ' — '+m.next_action_note:'';
-        icons.push('<span class="kvt-name-icon dashicons dashicons-clock'+(overdue?' overdue':'')+'" title="'+escAttr(m.next_action+note)+'"></span>');
-      }
-      const snip=lastNoteSnippet(m.notes);
-      if(snip){ icons.push('<span class="kvt-name-icon dashicons dashicons-format-chat" title="'+escAttr(snip)+'"></span>'); }
-      const name='<a href="#" class="kvt-row-view" data-id="'+escAttr(id)+'">'+nameTxt+'</a>'+icons.join('');
-      let cidx = stepStatuses.indexOf(c.meta.status||'');
-      if((c.meta.status||'') === 'Descartados') cidx = stepStatuses.length;
-      const steps = stepStatuses.map((s,idx)=>{
-        let cls='kvt-stage-step';
-        if(idx < cidx) cls+=' done';
-        else if(idx===cidx) cls+=' current';
-        const label=idx<cidx?'&#10003;':esc(s);
-        return '<button type="button" class="'+cls+'" data-id="'+escAttr(id)+'" data-status="'+escAttr(s)+'" title="'+escAttr(s)+'">'+label+'</button>';
-      }).join('');
-      return '<tr><td><input type="checkbox" data-id="'+escAttr(id)+'" '+chk+'></td><td>'+name+'</td><td class="kvt-stage-cell">'+steps+'</td></tr>';
-    }).join('');
+  groupsTabs.forEach(btn=>btn.addEventListener('click',()=>switchGroupTab(btn.dataset.target)));
+
+  function switchGroupTab(target){
+    groupsTabs.forEach(t=>t.classList.remove('active'));
+    if(target==='manage'){
+      groupTabCreate.style.display='none';
+      groupTabManage.style.display='block';
+      groupsTabs.forEach(t=>{ if(t.dataset.target==='manage') t.classList.add('active'); });
+      loadGroupsManage();
+    }else{
+      groupTabCreate.style.display='block';
+      groupTabManage.style.display='none';
+      groupsTabs.forEach(t=>{ if(t.dataset.target==='create') t.classList.add('active'); });
+    }
   }
 
-  function loadGroupCandidates(){
-    if(!groupTbody) return;
-    const params = new URLSearchParams({action:'kvt_get_candidates', _ajax_nonce:KVT_NONCE, all:'1'});
-    const q = groupSearch ? groupSearch.value.trim() : '';
-    if(q) params.set('search', q);
-    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+  function loadGroupsManage(){
+    if(!groupsManageList) return;
+    fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_list_groups', _ajax_nonce:KVT_NONCE}).toString()})
       .then(r=>r.json()).then(j=>{
-        groupCandidates = (j.success && j.data.items) ? j.data.items : [];
-        groupSelected = new Set(groupCandidates.filter(c=>groupSelected.has(String(c.id))).map(c=>String(c.id)));
-        renderGroupTable();
+        if(j.success && j.data.items){
+          groupsManageList.innerHTML = j.data.items.map(g=>'<div class="kvt-card-mini"><div class="kvt-row"><div>'+esc(g.name)+'</div><div class="kvt-meta"><button type="button" class="kvt-btn kvt-group-edit" data-id="'+escAttr(g.id)+'">Editar</button></div></div></div>').join('');
+          groupsManageList.querySelectorAll('.kvt-group-edit').forEach(btn=>{
+            btn.addEventListener('click',()=>{
+              const gid=btn.dataset.id;
+              fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_get_group', _ajax_nonce:KVT_NONCE, id:gid}).toString()})
+                .then(r=>r.json()).then(j=>{
+                  if(j.success){
+                    editingGroupId=gid;
+                    if(groupName) groupName.value=j.data.name||'';
+                    if(groupDesc) groupDesc.value=j.data.description||'';
+                    if(groupPlaceholder) groupPlaceholder.value=j.data.placeholder_key||'';
+                    if(groupPlaceholderVal) groupPlaceholderVal.value=j.data.placeholder_value||'';
+                    groupSelected = new Set((j.data.candidates||[]).map(String));
+                    groupCtx.selected = groupSelected;
+                    currentPage=1;
+                    listProfiles(1, groupCtx);
+                    groupCreateBtn.textContent='Actualizar grupo';
+                    switchGroupTab('create');
+                  }
+                });
+            });
+          });
+        } else {
+          groupsManageList.innerHTML='';
+        }
       });
   }
 
-  groupSearch && groupSearch.addEventListener('input', ()=>loadGroupCandidates());
-  groupTbody && groupTbody.addEventListener('change', e=>{
-    const cb=e.target.closest('input[type="checkbox"]');
-    if(!cb) return;
-    const id=cb.dataset.id;
-    if(cb.checked) groupSelected.add(id); else groupSelected.delete(id);
+  const groupFilterInputs=[groupFilterName,groupFilterRole,groupFilterLoc];
+  groupFilterInputs.forEach(inp=>{ if(inp){ let mto; inp.addEventListener('input',()=>{ clearTimeout(mto); mto=setTimeout(()=>{ currentPage=1; listProfiles(1, groupCtx); },300); }); } });
+
+  groupPrev && groupPrev.addEventListener('click',()=>{ if(currentPage>1) listProfiles(currentPage-1, groupCtx); });
+  groupNext && groupNext.addEventListener('click',()=>{ listProfiles(currentPage+1, groupCtx); });
+
+  groupSelectAll && groupSelectAll.addEventListener('click',()=>{
+    const all=groupCandidates.every(c=>groupSelected.has(String(c.id)));
+    if(all) groupCandidates.forEach(c=>groupSelected.delete(String(c.id)));
+    else groupCandidates.forEach(c=>groupSelected.add(String(c.id)));
+    listProfiles(currentPage, groupCtx);
   });
-  groupSelectAll && groupSelectAll.addEventListener('click', ()=>{
-    const all = groupSelected.size === groupCandidates.length;
-    groupSelected = new Set(all?[]:groupCandidates.map(c=>String(c.id)));
-    renderGroupTable();
-  });
-  groupCreateBtn && groupCreateBtn.addEventListener('click', ()=>{
+
+  groupCreateBtn && groupCreateBtn.addEventListener('click',()=>{
     const name = groupName?groupName.value.trim():'';
     if(!name){ if(groupMsg) groupMsg.textContent='Nombre requerido'; return; }
     const desc = groupDesc?groupDesc.value.trim():'';
-    const pKey = groupPlaceholder ? groupPlaceholder.value.trim() : '';
-    const pVal = groupPlaceholderVal ? groupPlaceholderVal.value.trim() : '';
+    const pKey = groupPlaceholder?groupPlaceholder.value.trim():'';
+    const pVal = groupPlaceholderVal?groupPlaceholderVal.value.trim():'';
     const ids = Array.from(groupSelected);
-    const params = new URLSearchParams({action:'kvt_create_group', _ajax_nonce:KVT_NONCE, name, description:desc, placeholder_key:pKey, placeholder_value:pVal, candidates:ids.join(',')});
+    const action = editingGroupId ? 'kvt_update_group' : 'kvt_create_group';
+    const params = new URLSearchParams({action, _ajax_nonce:KVT_NONCE, name, description:desc, placeholder_key:pKey, placeholder_value:pVal, candidates:ids.join(',')});
+    if(editingGroupId) params.set('id', editingGroupId);
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json()).then(j=>{
         if(j.success){
-          if(groupMsg) groupMsg.textContent='Grupo creado';
-          if(groupName) groupName.value='';
-          if(groupDesc) groupDesc.value='';
-          if(groupPlaceholder) groupPlaceholder.value='';
-          if(groupPlaceholderVal) groupPlaceholderVal.value='';
+          if(groupMsg) groupMsg.textContent = editingGroupId ? 'Grupo actualizado' : 'Grupo creado';
+          if(!editingGroupId){
+            if(groupName) groupName.value='';
+            if(groupDesc) groupDesc.value='';
+            if(groupPlaceholder) groupPlaceholder.value='';
+            if(groupPlaceholderVal) groupPlaceholderVal.value='';
+          }
           groupSelected.clear();
-          renderGroupTable();
+          currentPage=1;
+          listProfiles(1, groupCtx);
           reloadEmailGroups();
+          loadGroupsManage();
+          editingGroupId=null;
+          groupCreateBtn.textContent='Crear grupo';
         }else{
           if(groupMsg) groupMsg.textContent=(j.data&&j.data.msg)?j.data.msg:'Error';
         }
@@ -4028,7 +4076,7 @@ function kvtInit(){
       if(boardWrap) boardWrap.style.display='none';
       if(toggleKanban) toggleKanban.style.display='none';
       if(widgetsWrap) widgetsWrap.style.display='none';
-      if(groupsView){ groupsView.style.display='block'; loadGroupCandidates(); }
+      if(groupsView){ groupsView.style.display='block'; switchGroupTab('create'); currentPage=1; listProfiles(1, groupCtx); }
     } else if(view==='ai'){
       filtersBar.style.display='none';
       tableWrap.style.display='none';
@@ -6157,7 +6205,7 @@ function kvtInit(){
         const cliSel  = selClient && selClient.value;
         const allowAdd = !!(procSel && (cliSel || getClientIdForProcess(procSel)));
         const filterActive = (ctx.name && ctx.name.value) || (ctx.role && ctx.role.value) || (ctx.loc && ctx.loc.value);
-        const showSelect = modalSelectMode || filterActive;
+        const showSelect = (ctx.select) || modalSelectMode || filterActive;
         let html = items.map(it=>{
           const m = it.meta||{};
           const name = esc((m.first_name||'')+' '+(m.last_name||''));
@@ -6173,7 +6221,8 @@ function kvtInit(){
           const infoLine = '<em>'+infoParts.join(' / ')+'</em>';
           const cv = m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'';
           const firstLineWithCv = firstLine.replace('</a>', '</a>'+cv);
-          const check = showSelect?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" aria-label="Seleccionar"></div>':'';
+          const checked = ctx.selected && ctx.selected.has(String(it.id)) ? 'checked' : '';
+          const check = showSelect?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" '+checked+' aria-label="Seleccionar"></div>':'';
           const addBtn = allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'';
           const editBtn = '<button type="button" class="kvt-edit kvt-mini-view kvt-mini-edit dashicons dashicons-edit" data-id="'+it.id+'" data-label="Editar perfil" aria-label="Editar perfil"></button>';
             return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
@@ -6213,6 +6262,12 @@ function kvtInit(){
           });
         }
         if(ctx.assign) ctx.assign.style.display = (showSelect && allowAdd) ? 'inline-flex' : 'none';
+        if(ctx.selected){
+          els('.kvt-select', ctx.list).forEach(cb=>{
+            cb.addEventListener('change',()=>{ if(cb.checked) ctx.selected.add(cb.value); else ctx.selected.delete(cb.value); });
+          });
+        }
+        if(ctx.after) ctx.after(items);
         els('.kvt-mini-view', ctx.list).forEach(b=>{
           b.addEventListener('click', e=>{
             e.preventDefault();
@@ -7216,6 +7271,51 @@ JS;
             $items[] = ['id' => $t->term_id, 'name' => $t->name];
         }
         wp_send_json_success(['items' => $items]);
+    }
+
+    public function ajax_get_group() {
+        check_ajax_referer('kvt_nonce');
+        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        if (!$id) wp_send_json_error(['msg' => 'Missing id'], 400);
+        $term = get_term($id, self::TAX_GROUP);
+        if (!$term || is_wp_error($term)) wp_send_json_error(['msg' => 'Group not found'], 404);
+        $p_key = get_term_meta($id, 'kvt_placeholder_key', true);
+        $p_val = get_term_meta($id, 'kvt_placeholder_value', true);
+        $cands = get_objects_in_term($id, self::TAX_GROUP, ['fields' => 'ids']);
+        wp_send_json_success([
+            'id' => $term->term_id,
+            'name' => $term->name,
+            'description' => $term->description,
+            'placeholder_key' => $p_key,
+            'placeholder_value' => $p_val,
+            'candidates' => $cands,
+        ]);
+    }
+
+    public function ajax_update_group() {
+        check_ajax_referer('kvt_nonce');
+        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        $name = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
+        if (!$id || $name === '') wp_send_json_error(['msg' => 'Missing data'], 400);
+        $desc = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+        $p_key = isset($_POST['placeholder_key']) ? sanitize_key($_POST['placeholder_key']) : '';
+        $p_val = isset($_POST['placeholder_value']) ? sanitize_text_field($_POST['placeholder_value']) : '';
+        $cands = isset($_POST['candidates']) ? array_filter(array_map('intval', explode(',', $_POST['candidates']))) : [];
+        wp_update_term($id, self::TAX_GROUP, ['name' => $name, 'description' => $desc]);
+        update_term_meta($id, 'kvt_placeholder_key', $p_key);
+        update_term_meta($id, 'kvt_placeholder_value', $p_val);
+        $existing = get_objects_in_term($id, self::TAX_GROUP, ['fields' => 'ids']);
+        $to_add = array_diff($cands, $existing);
+        $to_remove = array_diff($existing, $cands);
+        foreach ($to_add as $cid) {
+            wp_set_object_terms($cid, $id, self::TAX_GROUP, true);
+        }
+        foreach ($to_remove as $cid) {
+            wp_remove_object_terms($cid, $id, self::TAX_GROUP);
+        }
+        wp_send_json_success();
     }
 
     public function ajax_get_dashboard() {
