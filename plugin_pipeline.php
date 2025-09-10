@@ -3899,7 +3899,7 @@ function kvtInit(){
   let groupCandidates = [];
   let groupSelected = new Set();
   let editingGroupId = null;
-  const groupCtx = {list:groupList,page:groupPage,prev:groupPrev,next:groupNext,name:groupFilterName,role:groupFilterRole,loc:groupFilterLoc,assign:null,close:null,select:true,selected:groupSelected,after:items=>{groupCandidates=items;}};
+  const groupCtx = {list:groupList,page:groupPage,prev:groupPrev,next:groupNext,name:groupFilterName,role:groupFilterRole,loc:groupFilterLoc,assign:null,close:null,select:true,selected:groupSelected,selectedFirst:true,after:items=>{groupCandidates=items;}};
 
   groupsTabs.forEach(btn=>btn.addEventListener('click',()=>switchGroupTab(btn.dataset.target)));
 
@@ -6196,6 +6196,9 @@ function kvtInit(){
     params.set('name', ctx.name ? ctx.name.value : '');
     params.set('role', ctx.role ? ctx.role.value : '');
     params.set('location', ctx.loc ? ctx.loc.value : '');
+    if(ctx.selectedFirst && ctx.selected && ctx.selected.size){
+      params.set('selected', Array.from(ctx.selected).join(','));
+    }
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
       .then(r=>r.json())
       .then(j=>{
@@ -6220,18 +6223,29 @@ function kvtInit(){
           if(date) infoParts.push(date);
           const infoLine = '<em>'+infoParts.join(' / ')+'</em>';
           const cv = m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'';
-          const firstLineWithCv = firstLine.replace('</a>', '</a>'+cv);
-          const checked = ctx.selected && ctx.selected.has(String(it.id)) ? 'checked' : '';
-          const check = showSelect?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" '+checked+' aria-label="Seleccionar"></div>':'';
-          const addBtn = allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'';
-          const editBtn = '<button type="button" class="kvt-edit kvt-mini-view kvt-mini-edit dashicons dashicons-edit" data-id="'+it.id+'" data-label="Editar perfil" aria-label="Editar perfil"></button>';
+            const firstLineWithCv = firstLine.replace('</a>', '</a>'+cv);
+            const checked = ctx.selected && ctx.selected.has(String(it.id)) ? 'checked' : '';
+            const check = showSelect?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" '+checked+' aria-label="Seleccionar"></div>':'';
+            const addBtn = allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'';
+            const editBtn = '<button type="button" class="kvt-edit kvt-mini-view kvt-mini-edit dashicons dashicons-edit" data-id="'+it.id+'" data-label="Editar perfil" aria-label="Editar perfil"></button>';
+            const actions = '<button type="button" class="kvt-delete kvt-mini-delete dashicons dashicons-trash" data-id="'+it.id+'" aria-label="Eliminar"></button>'+editBtn;
+            const lineWithActions = firstLineWithCv + actions;
+          if(allowAdd){
             return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
-            '<div class="kvt-row'+(showSelect?' with-check':'')+'">'+
-              check+
-              '<div>'+firstLineWithCv+'<br>'+infoLine+'</div>'+
-              '<div class="kvt-meta"><button type="button" class="kvt-delete kvt-mini-delete dashicons dashicons-trash" data-id="'+it.id+'" aria-label="Eliminar"></button>'+editBtn+addBtn+'</div>'+
-            '</div>'+
-          '</div>';
+              '<div class="kvt-row'+(showSelect?' with-check':'')+'">'+
+                check+
+                '<div>'+firstLineWithCv+'<br>'+infoLine+'</div>'+
+                '<div class="kvt-meta">'+actions+addBtn+'</div>'+
+              '</div>'+
+            '</div>';
+          } else {
+            return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
+              '<div class="kvt-row'+(showSelect?' with-check':'')+'">'+
+                check+
+                '<div>'+lineWithActions+'<br>'+infoLine+'</div>'+
+              '</div>'+
+            '</div>';
+          }
         }).join('');
         ctx.list.innerHTML = html;
         ctx.page.textContent = 'Página '+currentPage+' de '+(pages||1);
@@ -8711,17 +8725,19 @@ JS;
     public function ajax_list_profiles() {
         check_ajax_referer('kvt_nonce');
 
-        $page      = isset($_POST['page']) ? max(1, intval($_POST['page'])) : 1;
-        $name      = isset($_POST['name']) ? sanitize_text_field(trim($_POST['name'])) : '';
-        $role      = isset($_POST['role']) ? sanitize_text_field(trim($_POST['role'])) : '';
-        $location  = isset($_POST['location']) ? sanitize_text_field(trim($_POST['location'])) : '';
+        $page     = isset($_POST['page']) ? max(1, intval($_POST['page'])) : 1;
+        $name     = isset($_POST['name']) ? sanitize_text_field(trim($_POST['name'])) : '';
+        $role     = isset($_POST['role']) ? sanitize_text_field(trim($_POST['role'])) : '';
+        $location = isset($_POST['location']) ? sanitize_text_field(trim($_POST['location'])) : '';
+        $selected = isset($_POST['selected']) ? array_filter(array_map('intval', explode(',', $_POST['selected']))) : [];
 
-        $args = [
-            'post_type'      => self::CPT,
-            'post_status'    => 'any',
-            'posts_per_page' => 10,
-            'paged'          => $page,
-            'no_found_rows'  => false,
+        $per_page = 10;
+        $offset   = ($page - 1) * $per_page;
+
+        $base_args = [
+            'post_type'     => self::CPT,
+            'post_status'   => 'any',
+            'no_found_rows' => false,
         ];
 
         $meta_query = ['relation' => 'AND'];
@@ -8757,15 +8773,13 @@ JS;
         }
 
         if (count($meta_query) > 1) {
-            $args['meta_query'] = $meta_query;
+            $base_args['meta_query'] = $meta_query;
         }
 
-        $q = new WP_Query($args);
-        $items = [];
-        foreach ($q->posts as $p) {
+        $map_item = function($p){
             $notes_raw = get_post_meta($p->ID,'kvt_notes',true);
             if ($notes_raw === '') $notes_raw = get_post_meta($p->ID,'notes',true);
-            $items[] = [
+            return [
                 'id'   => $p->ID,
                 'meta' => [
                     'first_name'  => $this->meta_get_compat($p->ID,'kvt_first_name',['first_name']),
@@ -8783,8 +8797,52 @@ JS;
                     'notes_count' => $this->count_notes($notes_raw),
                 ],
             ];
+        };
+
+        $items_posts   = [];
+        $total_selected = 0;
+        $total_other    = 0;
+
+        if (!empty($selected)) {
+            $sel_args = $base_args;
+            $sel_args['post__in'] = $selected;
+            $sel_args['orderby'] = 'post__in';
+            $sel_args['posts_per_page'] = -1;
+            $sel_args['paged'] = 1;
+            $sel_args['no_found_rows'] = true;
+            $q_sel = new WP_Query($sel_args);
+            $sel_posts = $q_sel->posts;
+            $total_selected = count($sel_posts);
+            if ($offset < $total_selected) {
+                $items_posts = array_slice($sel_posts, $offset, min($per_page, $total_selected - $offset));
+                $other_args = $base_args;
+                $other_args['post__not_in'] = $selected;
+                $other_args['posts_per_page'] = 1;
+                $q_other = new WP_Query($other_args);
+                $total_other = $q_other->found_posts;
+            } else {
+                $other_args = $base_args;
+                $other_args['post__not_in'] = $selected;
+                $other_args['offset'] = $offset - $total_selected;
+                $other_args['posts_per_page'] = $per_page;
+                $q_other = new WP_Query($other_args);
+                $items_posts = $q_other->posts;
+                $total_other = $q_other->found_posts;
+            }
+        } else {
+            $args = $base_args;
+            $args['posts_per_page'] = $per_page;
+            $args['paged'] = $page;
+            $q = new WP_Query($args);
+            $items_posts = $q->posts;
+            $total_other = $q->found_posts;
         }
-        wp_send_json_success(['items'=>$items,'pages'=>$q->max_num_pages]);
+
+        $total = $total_selected + $total_other;
+        $pages = (int) ceil($total / $per_page);
+
+        $items = array_map($map_item, $items_posts);
+        wp_send_json_success(['items'=>$items,'pages'=>$pages]);
     }
 
     public function ajax_list_clients() {
