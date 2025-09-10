@@ -29,8 +29,15 @@ class Kovacic_Pipeline_Visualizer {
     const OPT_SMTP_PASS = 'kvt_smtp_pass';
     const OPT_SMTP_SECURE = 'kvt_smtp_secure';
     const OPT_SMTP_SIGNATURE = 'kvt_smtp_signature';
+    const OPT_SMTP_HOST2 = 'kvt_smtp_host2';
+    const OPT_SMTP_PORT2 = 'kvt_smtp_port2';
+    const OPT_SMTP_USER2 = 'kvt_smtp_user2';
+    const OPT_SMTP_PASS2 = 'kvt_smtp_pass2';
+    const OPT_SMTP_SECURE2 = 'kvt_smtp_secure2';
     const OPT_FROM_NAME = 'kvt_from_name';
     const OPT_FROM_EMAIL = 'kvt_from_email';
+    const OPT_FROM_NAME2 = 'kvt_from_name2';
+    const OPT_FROM_EMAIL2 = 'kvt_from_email2';
     const OPT_EMAIL_LOG = 'kvt_email_log';
     const OPT_REFRESH_QUEUE = 'kvt_refresh_queue';
     const OPT_MIT_TIME = 'kvt_mit_time';
@@ -46,6 +53,8 @@ class Kovacic_Pipeline_Visualizer {
     const MIT_TIMEOUT      = 60;
     // Generous timeout for OpenAI requests so long searches don't fail prematurely
     const AI_TIMEOUT       = 300;
+
+    private $smtp_profile = 1;
 
     public function __construct() {
         add_action('init',                       [$this, 'register_types']);
@@ -319,8 +328,15 @@ cv_url|CV (URL)
         register_setting(self::OPT_GROUP, self::OPT_SMTP_PASS);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_SECURE);
         register_setting(self::OPT_GROUP, self::OPT_SMTP_SIGNATURE);
+        register_setting(self::OPT_GROUP, self::OPT_SMTP_HOST2);
+        register_setting(self::OPT_GROUP, self::OPT_SMTP_PORT2);
+        register_setting(self::OPT_GROUP, self::OPT_SMTP_USER2);
+        register_setting(self::OPT_GROUP, self::OPT_SMTP_PASS2);
+        register_setting(self::OPT_GROUP, self::OPT_SMTP_SECURE2);
         register_setting(self::OPT_GROUP, self::OPT_FROM_NAME);
         register_setting(self::OPT_GROUP, self::OPT_FROM_EMAIL);
+        register_setting(self::OPT_GROUP, self::OPT_FROM_NAME2);
+        register_setting(self::OPT_GROUP, self::OPT_FROM_EMAIL2);
         register_setting(self::OPT_GROUP, self::OPT_O365_TENANT);
         register_setting(self::OPT_GROUP, self::OPT_O365_CLIENT);
         register_setting(self::OPT_GROUP, self::OPT_EMAIL_LOG, [
@@ -635,10 +651,17 @@ JS;
         $smtp_pass = get_option(self::OPT_SMTP_PASS, "");
         $smtp_secure = get_option(self::OPT_SMTP_SECURE, "");
         $smtp_sig  = get_option(self::OPT_SMTP_SIGNATURE, "");
+        $smtp_host2 = get_option(self::OPT_SMTP_HOST2, "");
+        $smtp_port2 = get_option(self::OPT_SMTP_PORT2, "");
+        $smtp_user2 = get_option(self::OPT_SMTP_USER2, "");
+        $smtp_pass2 = get_option(self::OPT_SMTP_PASS2, "");
+        $smtp_secure2 = get_option(self::OPT_SMTP_SECURE2, "");
         $o365_tenant = get_option(self::OPT_O365_TENANT, "");
         $o365_client = get_option(self::OPT_O365_CLIENT, "");
         $from_name_def = get_option(self::OPT_FROM_NAME, "");
         $from_email_def = get_option(self::OPT_FROM_EMAIL, "");
+        $from_name_def2 = get_option(self::OPT_FROM_NAME2, "");
+        $from_email_def2 = get_option(self::OPT_FROM_EMAIL2, "");
         $mit_time = get_option(self::OPT_MIT_TIME, '09:00');
         $mit_recipients = get_option(self::OPT_MIT_RECIPIENTS, get_option('admin_email'));
         $mit_freq = get_option(self::OPT_MIT_FREQUENCY, 'weekly');
@@ -733,6 +756,32 @@ JS;
                         </td>
                     </tr>
                     <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_SMTP_HOST2; ?>">SMTP Host 2</label></th>
+                        <td><input type="text" name="<?php echo self::OPT_SMTP_HOST2; ?>" id="<?php echo self::OPT_SMTP_HOST2; ?>" class="regular-text" value="<?php echo esc_attr($smtp_host2); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_SMTP_PORT2; ?>">SMTP Port 2</label></th>
+                        <td><input type="number" name="<?php echo self::OPT_SMTP_PORT2; ?>" id="<?php echo self::OPT_SMTP_PORT2; ?>" class="small-text" value="<?php echo esc_attr($smtp_port2); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_SMTP_USER2; ?>">SMTP User 2</label></th>
+                        <td><input type="text" name="<?php echo self::OPT_SMTP_USER2; ?>" id="<?php echo self::OPT_SMTP_USER2; ?>" class="regular-text" value="<?php echo esc_attr($smtp_user2); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_SMTP_PASS2; ?>">SMTP Password 2</label></th>
+                        <td><input type="password" name="<?php echo self::OPT_SMTP_PASS2; ?>" id="<?php echo self::OPT_SMTP_PASS2; ?>" class="regular-text" value="<?php echo esc_attr($smtp_pass2); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_SMTP_SECURE2; ?>">SMTP Security 2</label></th>
+                        <td>
+                            <select name="<?php echo self::OPT_SMTP_SECURE2; ?>" id="<?php echo self::OPT_SMTP_SECURE2; ?>">
+                                <option value="" <?php selected($smtp_secure2, ''); ?>><?php esc_html_e('None'); ?></option>
+                                <option value="ssl" <?php selected($smtp_secure2, 'ssl'); ?>>SSL</option>
+                                <option value="tls" <?php selected($smtp_secure2, 'tls'); ?>>TLS</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row"><label for="<?php echo self::OPT_SMTP_SIGNATURE; ?>">Firma de correo</label></th>
                         <td>
                             <textarea name="<?php echo self::OPT_SMTP_SIGNATURE; ?>" id="<?php echo self::OPT_SMTP_SIGNATURE; ?>" rows="4" class="large-text"><?php echo esc_textarea($smtp_sig); ?></textarea>
@@ -754,6 +803,14 @@ JS;
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_FROM_EMAIL; ?>">Email remitente por defecto</label></th>
                         <td><input type="email" name="<?php echo self::OPT_FROM_EMAIL; ?>" id="<?php echo self::OPT_FROM_EMAIL; ?>" class="regular-text" value="<?php echo esc_attr($from_email_def); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_FROM_NAME2; ?>">Nombre remitente 2</label></th>
+                        <td><input type="text" name="<?php echo self::OPT_FROM_NAME2; ?>" id="<?php echo self::OPT_FROM_NAME2; ?>" class="regular-text" value="<?php echo esc_attr($from_name_def2); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="<?php echo self::OPT_FROM_EMAIL2; ?>">Email remitente 2</label></th>
+                        <td><input type="email" name="<?php echo self::OPT_FROM_EMAIL2; ?>" id="<?php echo self::OPT_FROM_EMAIL2; ?>" class="regular-text" value="<?php echo esc_attr($from_email_def2); ?>"></td>
                     </tr>
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_MIT_FREQUENCY; ?>">Frecuencia informe MIT</label></th>
@@ -2284,6 +2341,10 @@ JS;
                     <input type="text" id="kvt_email_subject" class="kvt-input" placeholder="Asunto">
                     <textarea id="kvt_email_body" class="kvt-textarea" rows="8" placeholder="Mensaje con {{placeholders}}"></textarea>
                     <div class="kvt-filter-field">
+                      <select id="kvt_email_profile" class="kvt-input">
+                        <option value="1"><?php echo esc_html(($from_name_def ? $from_name_def : 'Perfil 1') . ' <' . ($from_email_def ? $from_email_def : get_option('admin_email')) . '>'); ?></option>
+                        <option value="2"><?php echo esc_html(($from_name_def2 ? $from_name_def2 : 'Perfil 2') . ' <' . ($from_email_def2 ? $from_email_def2 : $from_email_def) . '>'); ?></option>
+                      </select>
                       <input type="text" id="kvt_email_from_name" class="kvt-input" placeholder="Nombre remitente" value="<?php echo esc_attr($from_name_def ? $from_name_def : get_bloginfo('name')); ?>">
                       <input type="email" id="kvt_email_from_email" class="kvt-input" placeholder="Email remitente" value="<?php echo esc_attr($from_email_def ? $from_email_def : get_option('admin_email')); ?>">
                       <label for="kvt_email_use_signature" style="display:flex;align-items:center;font-weight:400;gap:4px;">
@@ -3132,9 +3193,13 @@ JS;
         if (!$def_from_name) $def_from_name = get_bloginfo('name');
         $def_from_email = get_option(self::OPT_FROM_EMAIL, '');
         if (!$def_from_email) $def_from_email = get_option('admin_email');
+        $def_from_name2 = get_option(self::OPT_FROM_NAME2, '');
+        if (!$def_from_name2) $def_from_name2 = $def_from_name;
+        $def_from_email2 = get_option(self::OPT_FROM_EMAIL2, '');
+        if (!$def_from_email2) $def_from_email2 = $def_from_email;
         $templates = $this->get_email_templates();
         $sent_emails = get_option(self::OPT_EMAIL_LOG, []);
-        wp_add_inline_script('kvt-app', 'const KVT_SIGNATURE='.wp_json_encode($signature).';const KVT_FROM_NAME='.wp_json_encode($def_from_name).';const KVT_FROM_EMAIL='.wp_json_encode($def_from_email).';let KVT_TEMPLATES='.wp_json_encode($templates).';let KVT_SENT_EMAILS='.wp_json_encode($sent_emails).';', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_SIGNATURE='.wp_json_encode($signature).';const KVT_FROM_NAME='.wp_json_encode($def_from_name).';const KVT_FROM_EMAIL='.wp_json_encode($def_from_email).';const KVT_FROM_NAME2='.wp_json_encode($def_from_name2).';const KVT_FROM_EMAIL2='.wp_json_encode($def_from_email2).';let KVT_TEMPLATES='.wp_json_encode($templates).';let KVT_SENT_EMAILS='.wp_json_encode($sent_emails).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($has_share_link?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_STEPS='.wp_json_encode($sel_steps).';', 'before');
@@ -3343,6 +3408,7 @@ function kvtInit(){
   const emailGenerate = el('#kvt_email_generate');
   const emailSubject = el('#kvt_email_subject');
   const emailBody = el('#kvt_email_body');
+  const emailProfile = el('#kvt_email_profile');
   const emailFromName = el('#kvt_email_from_name');
   const emailFromEmail = el('#kvt_email_from_email');
   const emailUseSig = el('#kvt_email_use_signature');
@@ -3368,6 +3434,14 @@ function kvtInit(){
   const tplPreview = el('#kvt_tpl_preview');
   const tplSave = el('#kvt_tpl_save');
   const tplList = el('#kvt_tpl_list');
+  if(emailProfile){
+    const defaults={"1":{name:KVT_FROM_NAME||'',email:KVT_FROM_EMAIL||''},"2":{name:KVT_FROM_NAME2||'',email:KVT_FROM_EMAIL2||''}};
+    emailProfile.addEventListener('change',()=>{
+      const d=defaults[emailProfile.value]||defaults['1'];
+      if(emailFromName) emailFromName.value=d.name||'';
+      if(emailFromEmail) emailFromEmail.value=d.email||'';
+    });
+  }
   const sentTbody = el('#kvt_email_sent_tbody');
   const mitContent = el('#kvt_mit_content');
   const mitNews = el('#kvt_mit_news');
@@ -6984,7 +7058,7 @@ function kvtInit(){
       }).filter(r=>r.email);
       if(!recipients.length){ alert('No hay destinatarios seleccionados con email.'); return; }
       if(!confirm(`¿Enviar a ${recipients.length} contactos?`)) return;
-      const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0, copy_sender: emailCopySender && emailCopySender.checked ? 1 : 0};
+      const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0, copy_sender: emailCopySender && emailCopySender.checked ? 1 : 0, smtp_profile: emailProfile ? emailProfile.value : '1'};
       try{
         const fd = new FormData();
         fd.append('action','kvt_send_email');
@@ -10291,20 +10365,39 @@ JS;
         }
 
         public function apply_smtp_settings($phpmailer) {
-            $host = get_option(self::OPT_SMTP_HOST, '');
-            if (!$host) return;
-            $phpmailer->isSMTP();
-            $phpmailer->Host = $host;
-            $port = intval(get_option(self::OPT_SMTP_PORT));
-            if ($port) $phpmailer->Port = $port;
-            $secure = get_option(self::OPT_SMTP_SECURE, '');
-            if ($secure && $secure !== 'none') $phpmailer->SMTPSecure = $secure;
-            $user = get_option(self::OPT_SMTP_USER, '');
-            $pass = get_option(self::OPT_SMTP_PASS, '');
-            if ($user || $pass) {
-                $phpmailer->SMTPAuth = true;
-                $phpmailer->Username = $user;
-                $phpmailer->Password = $pass;
+            $profile = ($this->smtp_profile === 2) ? 2 : 1;
+            if ($profile === 2) {
+                $host = get_option(self::OPT_SMTP_HOST2, '');
+                if (!$host) return;
+                $phpmailer->isSMTP();
+                $phpmailer->Host = $host;
+                $port = intval(get_option(self::OPT_SMTP_PORT2));
+                if ($port) $phpmailer->Port = $port;
+                $secure = get_option(self::OPT_SMTP_SECURE2, '');
+                if ($secure && $secure !== 'none') $phpmailer->SMTPSecure = $secure;
+                $user = get_option(self::OPT_SMTP_USER2, '');
+                $pass = get_option(self::OPT_SMTP_PASS2, '');
+                if ($user || $pass) {
+                    $phpmailer->SMTPAuth = true;
+                    $phpmailer->Username = $user;
+                    $phpmailer->Password = $pass;
+                }
+            } else {
+                $host = get_option(self::OPT_SMTP_HOST, '');
+                if (!$host) return;
+                $phpmailer->isSMTP();
+                $phpmailer->Host = $host;
+                $port = intval(get_option(self::OPT_SMTP_PORT));
+                if ($port) $phpmailer->Port = $port;
+                $secure = get_option(self::OPT_SMTP_SECURE, '');
+                if ($secure && $secure !== 'none') $phpmailer->SMTPSecure = $secure;
+                $user = get_option(self::OPT_SMTP_USER, '');
+                $pass = get_option(self::OPT_SMTP_PASS, '');
+                if ($user || $pass) {
+                    $phpmailer->SMTPAuth = true;
+                    $phpmailer->Username = $user;
+                    $phpmailer->Password = $pass;
+                }
             }
         }
 
@@ -10445,6 +10538,7 @@ JS;
             $from_name     = sanitize_text_field($payload['from_name'] ?? '');
             $use_signature = !empty($payload['use_signature']);
             $copy_sender   = !empty($payload['copy_sender']);
+            $smtp_profile  = isset($payload['smtp_profile']) ? intval($payload['smtp_profile']) : 1;
             $attachment = '';
             if (!empty($_FILES['attachment']) && is_array($_FILES['attachment']) && !empty($_FILES['attachment']['tmp_name'])) {
                 require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -10454,7 +10548,7 @@ JS;
                 }
             }
 
-            $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature','copy_sender','attachment');
+            $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature','copy_sender','attachment','smtp_profile');
             $result = $this->send_email_batch($batch);
 
             if ($attachment) wp_delete_file($attachment);
@@ -10499,6 +10593,8 @@ JS;
             $use_signature = !empty($batch['use_signature']);
             $copy_sender   = !empty($batch['copy_sender']);
             $attachment    = isset($batch['attachment']) ? $batch['attachment'] : '';
+            $smtp_profile  = isset($batch['smtp_profile']) ? intval($batch['smtp_profile']) : 1;
+            $this->smtp_profile = ($smtp_profile === 2) ? 2 : 1;
 
             if (!$from_email) $from_email = get_option(self::OPT_FROM_EMAIL, '');
             if (!$from_email) $from_email = get_option('admin_email');
@@ -10648,6 +10744,7 @@ JS;
             if ($from_cb) remove_filter('wp_mail_from', $from_cb, 99);
             if ($from_name_cb) remove_filter('wp_mail_from_name', $from_name_cb, 99);
 
+            $this->smtp_profile = 1;
             $result['log'] = array_reverse($log);
             return $result;
         }
