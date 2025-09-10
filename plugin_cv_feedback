@@ -745,7 +745,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             }
             if ($register_only && is_email($email)) {
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
-                $body = '<p>Hola' . ($name ? ', ' . esc_html($name) : '') . '</p><p>Gracias por compartir tu CV. Te contactaremos para futuras oportunidades.</p><p>— Kovacic Executive Talent Research</p>';
+                $body = '<p>Hola' . ($name ? '' . esc_html($name) : ', ') . '</p><p>Gracias por compartir tu CV. Te contactaremos para futuras oportunidades.</p><p>El equipo de Kovacic Executive Talent Research</p>';
                 wp_mail($email, 'CV recibido', $body, $headers);
             }
             $feedback_block = '<div class="kcvf-alert"><strong>' . esc_html($thankyou) . '</strong></div>';
