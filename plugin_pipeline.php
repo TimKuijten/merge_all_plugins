@@ -170,6 +170,8 @@ class Kovacic_Pipeline_Visualizer {
         add_action('wp_ajax_nopriv_kvt_get_group',    [$this, 'ajax_get_group']);
         add_action('wp_ajax_kvt_update_group',        [$this, 'ajax_update_group']);
         add_action('wp_ajax_nopriv_kvt_update_group', [$this, 'ajax_update_group']);
+        add_action('wp_ajax_kvt_delete_group',        [$this, 'ajax_delete_group']);
+        add_action('wp_ajax_nopriv_kvt_delete_group', [$this, 'ajax_delete_group']);
         add_action('wp_ajax_kvt_get_outlook_events',   [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_nopriv_kvt_get_outlook_events', [$this, 'ajax_get_outlook_events']);
         add_action('wp_ajax_kvt_save_search',           [$this, 'ajax_save_search']);
@@ -3922,7 +3924,7 @@ function kvtInit(){
     fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_list_groups', _ajax_nonce:KVT_NONCE}).toString()})
       .then(r=>r.json()).then(j=>{
         if(j.success && j.data.items){
-          groupsManageList.innerHTML = j.data.items.map(g=>'<div class="kvt-card-mini"><div class="kvt-row"><div>'+esc(g.name)+'</div><div class="kvt-meta"><button type="button" class="kvt-btn kvt-group-edit" data-id="'+escAttr(g.id)+'">Editar</button></div></div></div>').join('');
+          groupsManageList.innerHTML = j.data.items.map(g=>'<div class="kvt-card-mini"><div class="kvt-row"><div>'+esc(g.name)+'</div><div class="kvt-meta"><button type="button" class="kvt-delete kvt-group-delete dashicons dashicons-trash" data-id="'+escAttr(g.id)+'" aria-label="Eliminar grupo"></button><button type="button" class="kvt-btn kvt-group-edit" data-id="'+escAttr(g.id)+'">Editar</button></div></div></div>').join('');
           groupsManageList.querySelectorAll('.kvt-group-edit').forEach(btn=>{
             btn.addEventListener('click',()=>{
               const gid=btn.dataset.id;
@@ -3942,6 +3944,13 @@ function kvtInit(){
                     switchGroupTab('create');
                   }
                 });
+            });
+          });
+          groupsManageList.querySelectorAll('.kvt-group-delete').forEach(btn=>{
+            btn.addEventListener('click',()=>{
+              if(!confirm('¿Eliminar este grupo?')) return;
+              fetch(KVT_AJAX,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'kvt_delete_group', _ajax_nonce:KVT_NONCE, id:btn.dataset.id}).toString()})
+                .then(r=>r.json()).then(j=>{ if(j.success){ loadGroupsManage(); } else { alert('No se pudo eliminar.'); } });
             });
           });
         } else {
@@ -6223,26 +6232,24 @@ function kvtInit(){
           if(date) infoParts.push(date);
           const infoLine = '<em>'+infoParts.join(' / ')+'</em>';
           const cv = m.cv_url?'<a href="'+escAttr(m.cv_url)+'" class="kvt-cv-link dashicons dashicons-media-document" target="_blank" title="Ver CV"></a>':'';
-            const firstLineWithCv = firstLine.replace('</a>', '</a>'+cv);
-            const checked = ctx.selected && ctx.selected.has(String(it.id)) ? 'checked' : '';
-            const check = showSelect?'<div class="kvt-check"><input type="checkbox" class="kvt-select" value="'+it.id+'" '+checked+' aria-label="Seleccionar"></div>':'';
-            const addBtn = allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'';
-            const editBtn = '<button type="button" class="kvt-edit kvt-mini-view kvt-mini-edit dashicons dashicons-edit" data-id="'+it.id+'" data-label="Editar perfil" aria-label="Editar perfil"></button>';
-            const actions = '<button type="button" class="kvt-delete kvt-mini-delete dashicons dashicons-trash" data-id="'+it.id+'" aria-label="Eliminar"></button>'+editBtn;
-            const lineWithActions = firstLineWithCv + actions;
+          const firstLineWithCv = firstLine.replace('</a>', '</a>'+cv);
+          const checked = ctx.selected && ctx.selected.has(String(it.id)) ? 'checked' : '';
+          const check = showSelect?'<input type="checkbox" class="kvt-select" value="'+it.id+'" '+checked+' aria-label="Seleccionar"> ':'';
+          const nameLine = check + firstLineWithCv;
+          const addBtn = allowAdd?'<button type="button" class="kvt-btn kvt-mini-add" data-id="'+it.id+'">Añadir</button>':'';
+          const editBtn = '<button type="button" class="kvt-edit kvt-mini-view kvt-mini-edit dashicons dashicons-edit" data-id="'+it.id+'" data-label="Editar perfil" aria-label="Editar perfil"></button>';
+          const actions = '<button type="button" class="kvt-delete kvt-mini-delete dashicons dashicons-trash" data-id="'+it.id+'" aria-label="Eliminar"></button>'+editBtn;
           if(allowAdd){
             return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
               '<div class="kvt-row'+(showSelect?' with-check':'')+'">'+
-                check+
-                '<div>'+firstLineWithCv+'<br>'+infoLine+'</div>'+
+                '<div>'+nameLine+'<br>'+infoLine+'</div>'+
                 '<div class="kvt-meta">'+actions+addBtn+'</div>'+
               '</div>'+
             '</div>';
           } else {
             return '<div class="kvt-card-mini" data-id="'+it.id+'">'+
               '<div class="kvt-row'+(showSelect?' with-check':'')+'">'+
-                check+
-                '<div>'+lineWithActions+'<br>'+infoLine+'</div>'+
+                '<div>'+nameLine+actions+'<br>'+infoLine+'</div>'+
               '</div>'+
             '</div>';
           }
@@ -7329,6 +7336,16 @@ JS;
         foreach ($to_remove as $cid) {
             wp_remove_object_terms($cid, $id, self::TAX_GROUP);
         }
+        wp_send_json_success();
+    }
+
+    public function ajax_delete_group() {
+        check_ajax_referer('kvt_nonce');
+        if (!current_user_can('edit_posts')) wp_send_json_error(['msg' => 'Unauthorized'], 403);
+        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        if (!$id) wp_send_json_error(['msg' => 'Missing id'], 400);
+        $res = wp_delete_term($id, self::TAX_GROUP);
+        if (is_wp_error($res)) wp_send_json_error(['msg' => $res->get_error_message()], 400);
         wp_send_json_success();
     }
 
