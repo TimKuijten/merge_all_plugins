@@ -1943,6 +1943,27 @@ JS;
         ]);
         $recent_candidates = $recent_q->found_posts;
 
+        $sectors = [
+            'Agro',
+            'Bancos internacionales',
+            'BESS',
+            'Biometano',
+            'Comercialización de energía',
+            'Construction',
+            'Equipos eléctrico',
+            'Eólica',
+            'Fondos',
+            'Forestal',
+            'Generación térmica',
+            'H2',
+            'Ingenieria',
+            'Mineras',
+            'Operations',
+            'Solar',
+            'Transmisión',
+            'Otro',
+        ];
+
         ob_start(); ?>
         <div class="kvt-wrapper">
             <nav class="kvt-nav" aria-label="Navegación principal">
@@ -2032,6 +2053,13 @@ JS;
                             <label>Ubicación
                               <input type="text" id="kvt_board_location" placeholder="País o ciudad (ej: Países Bajos, Chile)">
                               <small class="kvt-hint">Puedes buscar varios separados por coma</small>
+                            </label>
+                            <label>Sector
+                              <select id="kvt_board_sector" multiple size="4">
+                                <?php foreach ($sectors as $s): ?>
+                                  <option value="<?php echo esc_attr($s); ?>"><?php echo esc_html($s); ?></option>
+                                <?php endforeach; ?>
+                              </select>
                             </label>
                             <button type="button" class="kvt-btn" id="kvt_board_assign">Asignar a proceso</button>
                             <form id="kvt_board_export_all_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank">
@@ -2640,28 +2668,7 @@ JS;
                 <input type="text" id="kvt_new_role" placeholder="Puesto actual">
                 <select id="kvt_new_sector">
                   <option value="">— Sector —</option>
-                  <?php
-                  $sectors = [
-                    'Agro',
-                    'Bancos internacionales',
-                    'BESS',
-                    'Biometano',
-                    'Comercialización de energía',
-                    'Construction',
-                    'Equipos eléctrico',
-                    'Eólica',
-                    'Fondos',
-                    'Forestal',
-                    'Generación térmica',
-                    'H2',
-                    'Ingenieria',
-                    'Mineras',
-                    'Operations',
-                    'Solar',
-                    'Transmisión',
-                    'Otro',
-                  ];
-                  foreach ($sectors as $sec): ?>
+                  <?php foreach ($sectors as $sec): ?>
                     <option value="<?php echo esc_attr($sec); ?>"><?php echo esc_html($sec); ?></option>
                   <?php endforeach; ?>
                 </select>
@@ -3267,6 +3274,7 @@ function kvtInit(){
   const boardName   = el('#kvt_board_name');
   const boardRole   = el('#kvt_board_role');
   const boardLoc    = el('#kvt_board_location');
+  const boardSector = el('#kvt_board_sector');
   const boardAssign = el('#kvt_board_assign');
   const boardPrev   = el('#kvt_board_prev');
   const boardNext   = el('#kvt_board_next');
@@ -4184,7 +4192,7 @@ function kvtInit(){
   const modalNext  = el('#kvt_modal_next', modal);
   const modalPage  = el('#kvt_modal_pageinfo', modal);
   const modalCtx   = {list: modalList, page: modalPage, prev: modalPrev, next: modalNext, name: modalName, role: modalRole, loc: modalLoc, assign: modalAssign, close: closeModal};
-  const boardCtx   = {list: boardList, page: boardPage, prev: boardPrev, next: boardNext, name: boardName, role: boardRole, loc: boardLoc, assign: boardAssign, close: null};
+  const boardCtx   = {list: boardList, page: boardPage, prev: boardPrev, next: boardNext, name: boardName, role: boardRole, loc: boardLoc, sector: boardSector, assign: boardAssign, close: null};
   const tabs = els('.kvt-tab', modal);
   const tabCandidates = el('#kvt_tab_candidates', modal);
   const tabClients = el('#kvt_tab_clients', modal);
@@ -6221,6 +6229,10 @@ function kvtInit(){
     params.set('name', ctx.name ? ctx.name.value : '');
     params.set('role', ctx.role ? ctx.role.value : '');
     params.set('location', ctx.loc ? ctx.loc.value : '');
+    if(ctx.sector){
+      const vals = Array.from(ctx.sector.selectedOptions).map(o=>o.value).filter(v=>v);
+      if(vals.length) params.set('sector', vals.join(','));
+    }
     if(ctx.selectedFirst && ctx.selected && ctx.selected.size){
       params.set('selected', Array.from(ctx.selected).join(','));
     }
@@ -6232,7 +6244,7 @@ function kvtInit(){
         const procSel = selProcess && selProcess.value;
         const cliSel  = selClient && selClient.value;
         const allowAdd = !!(procSel && (cliSel || getClientIdForProcess(procSel)));
-        const filterActive = (ctx.name && ctx.name.value) || (ctx.role && ctx.role.value) || (ctx.loc && ctx.loc.value);
+        const filterActive = (ctx.name && ctx.name.value) || (ctx.role && ctx.role.value) || (ctx.loc && ctx.loc.value) || (ctx.sector && ctx.sector.selectedOptions && ctx.sector.selectedOptions.length);
         const showSelect = (ctx.select) || modalSelectMode || filterActive;
         let html = items.map(it=>{
           const m = it.meta||{};
@@ -6385,6 +6397,7 @@ function kvtInit(){
   [boardName, boardRole, boardLoc].forEach(inp=>{
     inp && inp.addEventListener('input', ()=>{ clearTimeout(mto); mto=setTimeout(()=>listProfiles(1, boardCtx),300); });
   });
+  boardSector && boardSector.addEventListener('change', ()=>{ clearTimeout(mto); mto=setTimeout(()=>listProfiles(1, boardCtx),300); });
 
   function listClients(target){
     const params = new URLSearchParams();
@@ -8787,6 +8800,7 @@ JS;
         $name     = isset($_POST['name']) ? sanitize_text_field(trim($_POST['name'])) : '';
         $role     = isset($_POST['role']) ? sanitize_text_field(trim($_POST['role'])) : '';
         $location = isset($_POST['location']) ? sanitize_text_field(trim($_POST['location'])) : '';
+        $sector   = isset($_POST['sector']) ? array_filter(array_map('sanitize_text_field', explode(',', $_POST['sector']))) : [];
         $selected = isset($_POST['selected']) ? array_filter(array_map('intval', explode(',', $_POST['selected']))) : [];
 
         $per_page = 10;
@@ -8827,6 +8841,14 @@ JS;
                 ['key'=>'kvt_city','value'=>$location,'compare'=>'LIKE'],
                 ['key'=>'country','value'=>$location,'compare'=>'LIKE'],
                 ['key'=>'city','value'=>$location,'compare'=>'LIKE'],
+            ];
+        }
+
+        if (!empty($sector)) {
+            $meta_query[] = [
+                'relation' => 'OR',
+                ['key'=>'kvt_sector','value'=>$sector,'compare'=>'IN'],
+                ['key'=>'sector','value'=>$sector,'compare'=>'IN'],
             ];
         }
 
