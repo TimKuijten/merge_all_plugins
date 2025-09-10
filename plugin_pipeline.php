@@ -1829,9 +1829,22 @@ JS;
         $key = get_option(self::OPT_OPENAI_KEY, '');
         if (!$key) return;
         $model = get_option(self::OPT_OPENAI_MODEL, 'gpt-5');
-        $ctx = $this->mit_gather_context();
+        $ctx     = $this->mit_gather_context();
         $summary = $ctx['summary'];
+        $extras  = '';
+        if (!empty($ctx['completed_yesterday'])) {
+            $names = implode(', ', $ctx['completed_yesterday']);
+            if (count($ctx['completed_yesterday']) > 1) {
+                $extras .= " Ayer se completaron los procesos $names. Felicita con entusiasmo a Alan por estos logros.";
+            } else {
+                $extras .= " Ayer se completó el proceso $names. Felicita con entusiasmo a Alan por este logro.";
+            }
+        }
+        if (empty($ctx['active_count'])) {
+            $extras .= ' No hay procesos activos. Enfócate en cómo conseguir nuevos clientes, aumentar la base de candidatos y convertir candidatos con cargos altos en clientes.';
+        }
         $prompt = "Eres MIT, un asistente de reclutamiento especializado en energía renovable. Nunca uses '—'. Inicio del mensaje: Siempre comienza con un tono juguetón y cercano, presentándote como MIT, su asistente de IA. Incluye un consejo positivo para iniciar el día, relacionado con la vida o con los retos de emprender una nueva empresa (varía entre ambos). Dirígete siempre a Alan (usa su nombre). No empieces hablando directamente de energía renovable; primero da el consejo positivo. Contenido principal: Ofrece recomendaciones sobre cómo progresar en los procesos, cómo dar seguimiento a candidatos y clientes, y cualquier otro consejo útil para que la empresa sea más exitosa. Recuerda que tienes acceso a todos los datos, clientes, candidatos y procesos, así que puedes usarlos libremente para dar recomendaciones concretas. No inventes datos nuevos; utiliza únicamente la información disponible y, si falta algún dato, indícalo claramente. Plantillas de correo: Cuando generes plantillas, no menciones a MIT. Deja el cierre del correo abierto para que lo firme el remitente. Usa las siguientes variables disponibles: {{first_name}} {{surname}} {{country}} {{city}} {{client}} {{role}} {{status}} {{board}} (enlace al tablero) {{sender}} (remitente) Importante: si recomiendas un nuevo rol para un candidato, no uses {{role}} en el texto, ya que este campo hace referencia al rol actual del candidato en su perfil. Formato de salida: Devuelve la respuesta siempre en HTML. Usa la etiqueta h3 para los títulos de sección, ul/li para listas, blockquote para plantillas de correo y strong para resaltar nombres o roles importantes. Separa las secciones con hr. Datos de entrad: Dispones del campo $summary, que resume información clave de procesos, clientes o candidatos. Con esos datos, genera un informe con recomendaciones y sugerencias accionables.";
+        if ($extras) $prompt .= $extras;
         $resp = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
@@ -7704,13 +7717,26 @@ JS;
             }
         }
 
-        $process_lines = [];
+        $process_lines       = [];
+        $statuses_map        = ['active' => 'Activo', 'completed' => 'Completado', 'closed' => 'Cancelado'];
+        $active_count        = 0;
+        $completed_yesterday = [];
+        $yesterday           = date('Y-m-d', current_time('timestamp') - DAY_IN_SECONDS);
         foreach ($processes as $pr) {
-            $cid  = get_term_meta($pr->term_id, 'kvt_process_client', true);
-            $line = $pr->name;
+            $cid    = get_term_meta($pr->term_id, 'kvt_process_client', true);
+            $status = get_term_meta($pr->term_id, 'kvt_process_status', true);
+            $line   = $pr->name;
             if ($cid) {
                 $cl_obj = get_term_by('id', $cid, self::TAX_CLIENT);
                 if ($cl_obj) $line .= ' (' . $cl_obj->name . ')';
+            }
+            if ($status) {
+                $line .= ' [' . ($statuses_map[$status] ?? $status) . ']';
+                if ($status === 'active') $active_count++;
+                if ($status === 'completed') {
+                    $end = get_term_meta($pr->term_id, 'kvt_process_end', true);
+                    if ($end === $yesterday) $completed_yesterday[] = $pr->name;
+                }
             }
             $process_lines[] = $line;
             $desc = term_description($pr, self::TAX_PROCESS);
@@ -7787,7 +7813,12 @@ JS;
             $summary .= ' Plantillas: ' . implode('; ', $template_lines) . '.';
         }
 
-        return ['summary' => $summary, 'news' => $news];
+        return [
+            'summary'            => $summary,
+            'news'               => $news,
+            'active_count'       => $active_count,
+            'completed_yesterday'=> $completed_yesterday,
+        ];
     }
 
     private function mit_get_tools() {
