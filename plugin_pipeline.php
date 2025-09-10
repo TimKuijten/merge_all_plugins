@@ -3660,13 +3660,18 @@ function kvtInit(){
   function renderEmailTable(){
     if(!emailTbody) return;
     if(emailMode==='clients'){
-      if(emailHead) emailHead.innerHTML='<tr><th></th><th>Cliente</th><th>Sector</th><th>Email</th></tr>';
+      if(emailHead) emailHead.innerHTML='<tr><th></th><th>Cliente</th><th>Nombre</th><th>Apellido</th><th>Email</th><th>Teléfono</th><th>Sector</th><th>Descripción</th><th>Reuniones</th></tr>';
       emailTbody.innerHTML = emailCandidates.map(c=>{
         const id=c.id; const m=c.meta||{}; const chk=emailSelected.has(String(id))?'checked':'';
         return '<tr><td><input type="checkbox" data-id="'+escAttr(id)+'" '+chk+'></td>'+
           '<td>'+esc(m.client||'')+'</td>'+
+          '<td>'+esc(m.first_name||'')+'</td>'+
+          '<td>'+esc(m.last_name||'')+'</td>'+
+          '<td>'+esc(m.email||'')+'</td>'+
+          '<td>'+esc(m.phone||'')+'</td>'+
           '<td>'+esc(m.sector||'')+'</td>'+
-          '<td>'+esc(m.email||'')+'</td></tr>';
+          '<td>'+esc(m.description||'')+'</td>'+
+          '<td>'+esc(m.meetings||'')+'</td></tr>';
       }).join('');
     } else {
       if(emailHead) emailHead.innerHTML='<tr><th></th><th>Nombre</th><th>Apellido</th><th>Email</th><th>País</th><th>Ciudad</th><th>Sector</th><th>Cliente</th><th>Proceso</th><th>Estado</th></tr>';
@@ -7116,18 +7121,32 @@ JS;
             $sector_filter = array_map('strtolower', $sector_filter);
         }
         foreach ($terms as $t) {
-            $email = sanitize_email(get_term_meta($t->term_id, 'contact_email', true));
+            $email  = sanitize_email(get_term_meta($t->term_id, 'contact_email', true));
             if (!$email) continue;
-            $contact = sanitize_text_field(get_term_meta($t->term_id, 'contact_name', true));
+            $contact= sanitize_text_field(get_term_meta($t->term_id, 'contact_name', true));
+            $phone  = sanitize_text_field(get_term_meta($t->term_id, 'contact_phone', true));
             $sector = sanitize_text_field(get_term_meta($t->term_id, 'kvt_client_sector', true));
+            $desc   = wp_strip_all_tags($t->description);
+            $meet   = sanitize_textarea_field(get_term_meta($t->term_id, 'kvt_client_meetings', true));
             if ($sector_filter && !in_array(strtolower($sector), $sector_filter, true)) continue;
+            $first_name = '';
+            $last_name  = '';
+            if ($contact !== '') {
+                $parts = preg_split('/\s+/', trim($contact));
+                $first_name = array_shift($parts);
+                $last_name  = implode(' ', $parts);
+            }
             $items[] = [
                 'id'   => $t->term_id,
                 'meta' => [
-                    'email'  => $email,
-                    'first_name' => $contact,
-                    'client' => $t->name,
-                    'sector' => $sector,
+                    'email'       => $email,
+                    'first_name'  => $first_name,
+                    'last_name'   => $last_name,
+                    'client'      => $t->name,
+                    'sector'      => $sector,
+                    'phone'       => $phone,
+                    'description' => $desc,
+                    'meetings'    => $meet,
                 ]
             ];
         }
