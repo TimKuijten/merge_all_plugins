@@ -10630,16 +10630,16 @@ JS;
             if (!$from_email) {
                 if ($this->smtp_profile === 2) {
                     $from_email = get_option(self::OPT_FROM_EMAIL2, '');
-                    if (!$from_email) $from_email = get_option(self::OPT_FROM_EMAIL, '');
+                    if (!$from_email) $from_email = get_option(self::OPT_SMTP_USER2, '');
                 } else {
                     $from_email = get_option(self::OPT_FROM_EMAIL, '');
+                    if (!$from_email) $from_email = get_option(self::OPT_SMTP_USER, '');
                 }
                 if (!$from_email) $from_email = get_option('admin_email');
             }
             if (!$from_name) {
                 if ($this->smtp_profile === 2) {
                     $from_name = get_option(self::OPT_FROM_NAME2, '');
-                    if (!$from_name) $from_name = get_option(self::OPT_FROM_NAME, '');
                 } else {
                     $from_name  = get_option(self::OPT_FROM_NAME, '');
                 }
