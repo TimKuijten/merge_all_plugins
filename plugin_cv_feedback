@@ -120,10 +120,10 @@ class Kovacic_CV_Feedback_ES {
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="<?php echo self::OPT_NOTIFY_EMAIL; ?>">Email de aviso interno</label></th>
+                        <th scope="row"><label for="<?php echo self::OPT_NOTIFY_EMAIL; ?>">Emails de aviso interno</label></th>
                         <td>
-                            <input type="email" id="<?php echo self::OPT_NOTIFY_EMAIL; ?>" name="<?php echo self::OPT_NOTIFY_EMAIL; ?>" value="<?php echo esc_attr(get_option(self::OPT_NOTIFY_EMAIL)); ?>" class="regular-text" placeholder="talent@tudominio.com" />
-                            <p class="description">Opcional. Si se indica, enviaremos un aviso con cada envío.</p>
+                            <input type="text" id="<?php echo self::OPT_NOTIFY_EMAIL; ?>" name="<?php echo self::OPT_NOTIFY_EMAIL; ?>" value="<?php echo esc_attr(get_option(self::OPT_NOTIFY_EMAIL)); ?>" class="regular-text" placeholder="talent@tudominio.com, rrhh@tudominio.com" />
+                            <p class="description">Opcional. Si se indican varios, sepáralos por comas. Enviaremos un aviso con cada envío.</p>
                         </td>
                     </tr>
                     <tr>
@@ -374,6 +374,21 @@ JS;
     /** Quita <strong> del cuerpo: solo H2/H3 en negrita por CSS */
     private function strip_strong_from_body($html) {
         return preg_replace('/<\/?strong>/', '', (string)$html);
+    }
+
+    /** Obtiene emails válidos para avisos internos */
+    private function get_notify_emails() {
+        $raw = (string) get_option(self::OPT_NOTIFY_EMAIL);
+        if (!$raw) return [];
+        $parts = preg_split('/[\s,;]+/', $raw);
+        $emails = [];
+        foreach ($parts as $part) {
+            $email = sanitize_email($part);
+            if ($email && is_email($email)) {
+                $emails[] = $email;
+            }
+        }
+        return $emails;
     }
 
     private function render_form($errors = [], $old = [], $register_only = false) {
@@ -697,8 +712,8 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             }
 
             // Aviso interno (texto)
-            $notify = get_option(self::OPT_NOTIFY_EMAIL);
-            if ($notify && is_email($notify)) {
+            $notify = $this->get_notify_emails();
+            if (!empty($notify)) {
                 $body_admin = "Nuevo envío de CV: {$email}\nNombre: {$name}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\nConvertido DOCX: " . ($converted_docx ?: '—') . "\n\n--- FEEDBACK (texto plano) ---\n" . wp_strip_all_tags($safe_feedback);
                 wp_mail($notify, 'Nuevo envío de CV + Feedback', $body_admin);
             }
@@ -719,8 +734,8 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
 
         } else {
             // Solo aviso interno y/o confirmación de registro
-            $notify = get_option(self::OPT_NOTIFY_EMAIL);
-            if ($notify && is_email($notify)) {
+            $notify = $this->get_notify_emails();
+            if (!empty($notify)) {
                 $subject = $register_only ? 'Nuevo registro de CV' : 'Nuevo envío de CV';
                 $body_admin = "Nuevo envío de CV: {$email}\nNombre: {$name}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\n";
                 if (!$register_only) {
@@ -730,7 +745,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             }
             if ($register_only && is_email($email)) {
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
-                $body = '<p>Hola' . ($name ? ', ' . esc_html($name) : '') . '</p><p>Gracias por compartir tu CV. Te contactaremos para futuras oportunidades.</p><p>— Kovacic Executive Talent Research</p>';
+                $body = '<p>Hola' . ($name ? '' . esc_html($name) : ', ') . '</p><p>Gracias por compartir tu CV. Te contactaremos para futuras oportunidades.</p><p>El equipo de Kovacic Executive Talent Research</p>';
                 wp_mail($email, 'CV recibido', $body, $headers);
             }
             $feedback_block = '<div class="kcvf-alert"><strong>' . esc_html($thankyou) . '</strong></div>';

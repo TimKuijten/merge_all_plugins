@@ -1355,6 +1355,7 @@ JS;
         $statuses = $this->get_statuses(); ?>
         <p><label for="kvt_status">Estado actual</label></p>
         <select name="kvt_status" id="kvt_status" class="widefat">
+            <option value=""></option>
             <?php foreach ($statuses as $st): ?>
                 <option value="<?php echo esc_attr($st); ?>" <?php selected($status, $st); ?>><?php echo esc_html($st); ?></option>
             <?php endforeach; ?>
@@ -1911,6 +1912,21 @@ JS;
         $from_email_def = get_option(self::OPT_FROM_EMAIL, '');
         $templates      = $this->get_email_templates();
         $sent_emails    = array_reverse((array) get_option(self::OPT_EMAIL_LOG, []));
+        $smtp_accounts  = function_exists('smtp_helper_get_accounts') ? smtp_helper_get_accounts() : [];
+        $senders = [];
+        foreach ($smtp_accounts as $idx => $acc) {
+            $senders[] = [
+                'id'         => $idx,
+                'from_name'  => $acc['from_name'] ?? '',
+                'from_email' => $acc['from_email'] ?? '',
+                'signature'  => $acc['signature'] ?? '',
+            ];
+        }
+        if (!empty($senders)) {
+            if ($senders[0]['from_name']) $from_name_def = $senders[0]['from_name'];
+            if ($senders[0]['from_email']) $from_email_def = $senders[0]['from_email'];
+        }
+        $signature = $senders[0]['signature'] ?? (string) get_option(self::OPT_SMTP_SIGNATURE, '');
         $count_obj = wp_count_posts(self::CPT, 'readable');
         $total_candidates = array_sum((array) $count_obj);
         $recent_q = new WP_Query([
@@ -2227,6 +2243,11 @@ JS;
                     <input type="text" id="kvt_email_subject" class="kvt-input" placeholder="Asunto">
                     <textarea id="kvt_email_body" class="kvt-textarea" rows="8" placeholder="Mensaje con {{placeholders}}"></textarea>
                     <div class="kvt-filter-field">
+                      <select id="kvt_email_sender">
+                        <?php foreach ($senders as $s): ?>
+                          <option value="<?php echo esc_attr($s['id']); ?>"><?php echo esc_html($s['from_name'] . ' <' . $s['from_email'] . '>'); ?></option>
+                        <?php endforeach; ?>
+                      </select>
                       <input type="text" id="kvt_email_from_name" class="kvt-input" placeholder="Nombre remitente" value="<?php echo esc_attr($from_name_def ? $from_name_def : get_bloginfo('name')); ?>">
                       <input type="email" id="kvt_email_from_email" class="kvt-input" placeholder="Email remitente" value="<?php echo esc_attr($from_email_def ? $from_email_def : get_option('admin_email')); ?>">
                       <label for="kvt_email_use_signature" style="display:flex;align-items:center;font-weight:400;gap:4px;">
@@ -2511,7 +2532,7 @@ JS;
                       <select id="kvt_proc_status">
                         <option value="">Todos</option>
                         <option value="active">Activo</option>
-                        <option value="completed">Cancelado</option>
+                        <option value="completed">Completado</option>
                         <option value="closed">Cancelado</option>
                       </select>
                     </label>
@@ -3053,14 +3074,9 @@ JS;
         wp_add_inline_script('kvt-app', 'const KVT_HOME="'.esc_js(home_url('/view-board/')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_NONCE="'.esc_js(wp_create_nonce('kvt_nonce')).'";', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_MIT_NONCE="'.esc_js(wp_create_nonce('kvt_mit')).'";', 'before');
-        $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
-        $def_from_name = get_option(self::OPT_FROM_NAME, '');
-        if (!$def_from_name) $def_from_name = get_bloginfo('name');
-        $def_from_email = get_option(self::OPT_FROM_EMAIL, '');
-        if (!$def_from_email) $def_from_email = get_option('admin_email');
         $templates = $this->get_email_templates();
         $sent_emails = get_option(self::OPT_EMAIL_LOG, []);
-        wp_add_inline_script('kvt-app', 'const KVT_SIGNATURE='.wp_json_encode($signature).';const KVT_FROM_NAME='.wp_json_encode($def_from_name).';const KVT_FROM_EMAIL='.wp_json_encode($def_from_email).';let KVT_TEMPLATES='.wp_json_encode($templates).';let KVT_SENT_EMAILS='.wp_json_encode($sent_emails).';', 'before');
+        wp_add_inline_script('kvt-app', 'const KVT_SENDERS='.wp_json_encode($senders).';const KVT_SIGNATURE='.wp_json_encode($signature).';const KVT_FROM_NAME='.wp_json_encode($from_name_def ? $from_name_def : get_bloginfo('name')).';const KVT_FROM_EMAIL='.wp_json_encode($from_email_def ? $from_email_def : get_option('admin_email')).';let KVT_TEMPLATES='.wp_json_encode($templates).';let KVT_SENT_EMAILS='.wp_json_encode($sent_emails).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_CLIENT_VIEW='.($has_share_link?'true':'false').';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_FIELDS='.wp_json_encode($fields).';', 'before');
         wp_add_inline_script('kvt-app', 'const KVT_ALLOWED_STEPS='.wp_json_encode($sel_steps).';', 'before');
@@ -3266,6 +3282,7 @@ function kvtInit(){
   const emailGenerate = el('#kvt_email_generate');
   const emailSubject = el('#kvt_email_subject');
   const emailBody = el('#kvt_email_body');
+  const emailSender = el('#kvt_email_sender');
   const emailFromName = el('#kvt_email_from_name');
   const emailFromEmail = el('#kvt_email_from_email');
   const emailUseSig = el('#kvt_email_use_signature');
@@ -3304,6 +3321,21 @@ function kvtInit(){
   const updateStatus = el('#kvt_update_status');
   const updateSpinner = el('#kvt_update_spinner');
   let updateTimer, updateTotal = 0;
+  if (emailSender && Array.isArray(KVT_SENDERS)) {
+    emailSender.addEventListener('change', () => {
+      const idx = emailSender.value;
+      const acc = KVT_SENDERS[idx] || null;
+      if (acc) {
+        emailFromName.value = acc.from_name || '';
+        emailFromEmail.value = acc.from_email || '';
+        KVT_SIGNATURE = acc.signature || '';
+      }
+    });
+    if (KVT_SENDERS.length) {
+      emailSender.value = String(KVT_SENDERS[0].id);
+      emailSender.dispatchEvent(new Event('change'));
+    }
+  }
   const activityWrap = el('#kvt_activity');
   const boardWrap    = el('#kvt_board_wrap');
   const widgetsWrap  = el('.kvt-widgets');
@@ -6824,7 +6856,7 @@ function kvtInit(){
       }).filter(r=>r.email);
       if(!recipients.length){ alert('No hay destinatarios seleccionados con email.'); return; }
       if(!confirm(`¿Enviar a ${recipients.length} contactos?`)) return;
-      const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0, copy_sender: emailCopySender && emailCopySender.checked ? 1 : 0};
+      const payload={recipients, subject_template:subject, body_template:body, from_email:(emailFromEmail.value||'').trim(), from_name:(emailFromName.value||'').trim(), use_signature: emailUseSig && emailUseSig.checked ? 1 : 0, copy_sender: emailCopySender && emailCopySender.checked ? 1 : 0, smtp_profile: emailSender ? emailSender.value : ''};
       try{
         const fd = new FormData();
         fd.append('action','kvt_send_email');
@@ -7099,6 +7131,16 @@ JS;
                 ]
             ];
         }
+        usort($items, function($a, $b) {
+            $order = ['active' => 0, 'completed' => 1, 'closed' => 2];
+            $sa = $order[$a['status']] ?? 3;
+            $sb = $order[$b['status']] ?? 3;
+            if ($sa !== $sb) return $sa - $sb;
+            if ($a['status'] === 'completed' && $b['status'] === 'completed') {
+                return $a['days'] <=> $b['days'];
+            }
+            return 0;
+        });
         wp_send_json_success(['items'=>$items]);
     }
 
@@ -8596,6 +8638,16 @@ JS;
                 'edit_url'      => admin_url('term.php?taxonomy=' . self::TAX_CLIENT . '&tag_ID=' . $t->term_id),
             ];
         }
+        usort($items, function($a, $b) {
+            $order = ['active' => 0, 'completed' => 1, 'closed' => 2];
+            $sa = $order[$a['status']] ?? 3;
+            $sb = $order[$b['status']] ?? 3;
+            if ($sa !== $sb) return $sa - $sb;
+            if ($a['status'] === 'completed' && $b['status'] === 'completed') {
+                return $a['days'] <=> $b['days'];
+            }
+            return 0;
+        });
         wp_send_json_success(['items'=>$items]);
     }
 
@@ -8666,6 +8718,16 @@ JS;
                 'edit_url'      => admin_url('term.php?taxonomy=' . self::TAX_PROCESS . '&tag_ID=' . $t->term_id),
             ];
         }
+        usort($items, function($a, $b) {
+            $order = ['active' => 0, 'completed' => 1, 'closed' => 2];
+            $sa = $order[$a['status']] ?? 3;
+            $sb = $order[$b['status']] ?? 3;
+            if ($sa !== $sb) return $sa - $sb;
+            if ($a['status'] === 'completed' && $b['status'] === 'completed') {
+                return $a['days'] <=> $b['days'];
+            }
+            return 0;
+        });
         wp_send_json_success(['items'=>$items]);
     }
 
@@ -8702,8 +8764,7 @@ JS;
             update_post_meta($new_id, $k, $v);
         }
         if (!isset($meta['kvt_status'])) {
-            $statuses = $this->get_statuses();
-            if (!empty($statuses)) update_post_meta($new_id,'kvt_status',$statuses[0]);
+            update_post_meta($new_id, 'kvt_status', '');
         }
         if ($client_id) wp_set_object_terms($new_id, [$client_id], self::TAX_CLIENT, false);
         if ($process_id) wp_set_object_terms($new_id, [$process_id], self::TAX_PROCESS, false);
@@ -8789,8 +8850,7 @@ JS;
             update_post_meta($new_id, $k, $v);
             update_post_meta($new_id, str_replace('kvt_','',$k), $v);
         }
-        $statuses = $this->get_statuses();
-        if (!empty($statuses)) update_post_meta($new_id,'kvt_status',$statuses[0]);
+        update_post_meta($new_id, 'kvt_status', '');
         if ($client_id) wp_set_object_terms($new_id, [$client_id], self::TAX_CLIENT, false);
         if ($process_id) wp_set_object_terms($new_id, [$process_id], self::TAX_PROCESS, false);
 
@@ -8906,7 +8966,7 @@ JS;
                 }
             }
 
-            if (!empty($statuses)) update_post_meta($cid, 'kvt_status', $statuses[0]);
+            update_post_meta($cid, 'kvt_status', '');
 
             $first = get_post_meta($cid, 'kvt_first_name', true);
             $last  = get_post_meta($cid, 'kvt_last_name', true);
@@ -10161,6 +10221,7 @@ JS;
             $from_name     = sanitize_text_field($payload['from_name'] ?? '');
             $use_signature = !empty($payload['use_signature']);
             $copy_sender   = !empty($payload['copy_sender']);
+            $smtp_profile  = isset($payload['smtp_profile']) ? sanitize_text_field($payload['smtp_profile']) : '';
             $attachment = '';
             if (!empty($_FILES['attachment']) && is_array($_FILES['attachment']) && !empty($_FILES['attachment']['tmp_name'])) {
                 require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -10170,7 +10231,7 @@ JS;
                 }
             }
 
-            $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature','copy_sender','attachment');
+            $batch = compact('subject_tpl','body_tpl','recipients','from_email','from_name','use_signature','copy_sender','attachment','smtp_profile');
             $result = $this->send_email_batch($batch);
 
             if ($attachment) wp_delete_file($attachment);
@@ -10215,7 +10276,13 @@ JS;
             $use_signature = !empty($batch['use_signature']);
             $copy_sender   = !empty($batch['copy_sender']);
             $attachment    = isset($batch['attachment']) ? $batch['attachment'] : '';
-
+            $profile_idx   = isset($batch['smtp_profile']) ? $batch['smtp_profile'] : '';
+            $smtp_accounts = function_exists('smtp_helper_get_accounts') ? smtp_helper_get_accounts() : [];
+            $profile = ($profile_idx !== '' && isset($smtp_accounts[$profile_idx])) ? $smtp_accounts[$profile_idx] : null;
+            if ($profile) {
+                if (!$from_email && !empty($profile['from_email'])) $from_email = $profile['from_email'];
+                if (!$from_name  && !empty($profile['from_name']))  $from_name  = $profile['from_name'];
+            }
             if (!$from_email) $from_email = get_option(self::OPT_FROM_EMAIL, '');
             if (!$from_email) $from_email = get_option('admin_email');
             if (!$from_name)  $from_name  = get_option(self::OPT_FROM_NAME, '');
@@ -10232,7 +10299,24 @@ JS;
                 add_filter('wp_mail_from_name', $from_name_cb, 99);
             }
 
-            $signature = (string) get_option(self::OPT_SMTP_SIGNATURE, '');
+            $smtp_cb = null;
+            if ($profile) {
+                $smtp_cb = function($phpmailer) use ($profile, $from_email, $from_name) {
+                    $phpmailer->isSMTP();
+                    if (!empty($profile['host'])) $phpmailer->Host = $profile['host'];
+                    if (!empty($profile['port'])) $phpmailer->Port = $profile['port'];
+                    if (!empty($profile['username'])) {
+                        $phpmailer->SMTPAuth = true;
+                        $phpmailer->Username = $profile['username'];
+                        $phpmailer->Password = $profile['password'];
+                    }
+                    if (!empty($profile['encryption'])) $phpmailer->SMTPSecure = $profile['encryption'];
+                    if (!empty($from_email)) $phpmailer->setFrom($from_email, $from_name);
+                };
+                add_action('phpmailer_init', $smtp_cb);
+            }
+
+            $signature = $profile['signature'] ?? (string) get_option(self::OPT_SMTP_SIGNATURE, '');
             $log = get_option(self::OPT_EMAIL_LOG, []);
             if (!is_array($log)) $log = [];
             $last_error = null;
@@ -10355,6 +10439,7 @@ JS;
             }
 
             remove_action('wp_mail_failed', $failed_hook);
+            if ($smtp_cb) remove_action('phpmailer_init', $smtp_cb);
 
             update_option(self::OPT_EMAIL_LOG, $log);
 
