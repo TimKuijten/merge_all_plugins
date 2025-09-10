@@ -4680,7 +4680,9 @@ function kvtInit(){
         });
       }
       alert('CV subido y guardado.');
-      refresh();
+      if(boardCtx && boardCtx.list) listProfiles(currentPage, boardCtx);
+      if(modalCtx && modalCtx.list) listProfiles(currentPage, modalCtx);
+      if(boardWrap && boardWrap.style.display !== 'none') refresh();
     });
   }
 
