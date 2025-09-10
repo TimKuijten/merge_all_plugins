@@ -2990,6 +2990,7 @@ JS;
           @keyframes kvt-spin{to{transform:rotate(360deg)}}
           .kvt-modal-pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px}
           .kvt-table-pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;padding:8px}
+          .kvt-table-pager span{pointer-events:none}
           .kvt-share-grid{display:flex;gap:20px}
             .kvt-share-grid>div{flex:1}
           .kvt-share-title{font-weight:600;margin-bottom:6px}
@@ -7260,6 +7261,13 @@ JS;
                 ]
             ];
         }
+        usort($items, function($a, $b){
+            $order = ['active'=>0,'completed'=>1,'closed'=>2];
+            $sa = $order[$a['status']] ?? 3;
+            $sb = $order[$b['status']] ?? 3;
+            if ($sa === $sb) return strcmp($a['name'], $b['name']);
+            return $sa <=> $sb;
+        });
         wp_send_json_success(['items'=>$items]);
     }
 
@@ -8959,6 +8967,13 @@ JS;
                 'edit_url'      => admin_url('term.php?taxonomy=' . self::TAX_PROCESS . '&tag_ID=' . $t->term_id),
             ];
         }
+        usort($items, function($a,$b){
+            $order=['active'=>0,'completed'=>1,'closed'=>2];
+            $sa=$order[$a['status']] ?? 3;
+            $sb=$order[$b['status']] ?? 3;
+            if($sa === $sb) return strcmp($a['name'], $b['name']);
+            return $sa <=> $sb;
+        });
         wp_send_json_success(['items'=>$items]);
     }
 
@@ -8994,10 +9009,7 @@ JS;
         foreach ($meta as $k => $v) {
             update_post_meta($new_id, $k, $v);
         }
-        if (!isset($meta['kvt_status'])) {
-            $statuses = $this->get_statuses();
-            if (!empty($statuses)) update_post_meta($new_id,'kvt_status',$statuses[0]);
-        }
+        // leave pipeline status empty by default
         if ($client_id) wp_set_object_terms($new_id, [$client_id], self::TAX_CLIENT, false);
         if ($process_id) wp_set_object_terms($new_id, [$process_id], self::TAX_PROCESS, false);
 
@@ -9082,8 +9094,7 @@ JS;
             update_post_meta($new_id, $k, $v);
             update_post_meta($new_id, str_replace('kvt_','',$k), $v);
         }
-        $statuses = $this->get_statuses();
-        if (!empty($statuses)) update_post_meta($new_id,'kvt_status',$statuses[0]);
+        // Leave pipeline status unset for new candidates
         if ($client_id) wp_set_object_terms($new_id, [$client_id], self::TAX_CLIENT, false);
         if ($process_id) wp_set_object_terms($new_id, [$process_id], self::TAX_PROCESS, false);
 
@@ -9142,7 +9153,6 @@ JS;
 
         $created  = [];
         $files    = $_FILES['files'];
-        $statuses = $this->get_statuses();
         $u = wp_get_current_user();
         $author = ($u && $u->exists()) ? $u->display_name : '';
 
@@ -9199,7 +9209,7 @@ JS;
                 }
             }
 
-            if (!empty($statuses)) update_post_meta($cid, 'kvt_status', $statuses[0]);
+            // pipeline status left empty by default
 
             $first = get_post_meta($cid, 'kvt_first_name', true);
             $last  = get_post_meta($cid, 'kvt_last_name', true);
