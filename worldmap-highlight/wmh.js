@@ -1,6 +1,6 @@
 jQuery(function($){
     if ($('#wmh-map').length) {
-        var tips = wmhData.countries || {};
+        var tips = (typeof wmhData !== 'undefined' && wmhData.countries) ? wmhData.countries : {};
         var colors = {};
         $.each(tips, function(code){
             colors[code] = '#0A212E';

@@ -42,27 +42,35 @@ function wmh_render_settings_page() {
     <?php
 }
 
+// Register scripts and styles
+function wmh_register_assets() {
+    wp_register_style('wmh-jvectormap', 'https://cdnjs.cloudflare.com/ajax/libs/jvectormap/2.0.5/jquery-jvectormap.css');
+    wp_register_script('wmh-jvectormap', 'https://cdnjs.cloudflare.com/ajax/libs/jvectormap/2.0.5/jquery-jvectormap.min.js', array('jquery'), null, true);
+    wp_register_script('wmh-jvectormap-world', 'https://cdnjs.cloudflare.com/ajax/libs/jvectormap/2.0.5/maps/world_mill_en.min.js', array('wmh-jvectormap'), null, true);
+    wp_register_script('wmh-script', plugins_url('wmh.js', __FILE__), array('jquery', 'wmh-jvectormap-world'), null, true);
+}
+add_action('wp_enqueue_scripts', 'wmh_register_assets');
+
 // Shortcode to display map
 function wmh_render_map() {
-    wp_enqueue_style('jvectormap-css', 'https://cdnjs.cloudflare.com/ajax/libs/jvectormap/2.0.5/jquery-jvectormap.css');
-    wp_enqueue_script('jvectormap', 'https://cdnjs.cloudflare.com/ajax/libs/jvectormap/2.0.5/jquery-jvectormap.min.js', array('jquery'), null, true);
-    wp_enqueue_script('jvectormap-world', 'https://cdnjs.cloudflare.com/ajax/libs/jvectormap/2.0.5/maps/world_mill_en.min.js', array('jvectormap'), null, true);
-
     $raw = get_option('wmh_countries', '');
     $countries = array();
     foreach (preg_split("/(\r?\n)/", $raw) as $line) {
         if (strpos($line, '|') !== false) {
             list($code, $info) = array_map('trim', explode('|', $line, 2));
+            $code = strtoupper($code);
             if ($code) {
                 $countries[$code] = $info;
             }
         }
     }
 
-    wp_enqueue_script('wmh-script', plugins_url('wmh.js', __FILE__), array('jvectormap-world'), null, true);
+    wp_enqueue_style('wmh-jvectormap');
+    wp_enqueue_script('wmh-jvectormap');
+    wp_enqueue_script('wmh-jvectormap-world');
     wp_localize_script('wmh-script', 'wmhData', array('countries' => $countries));
+    wp_enqueue_script('wmh-script');
 
-    $html = '<div id="wmh-map" style="width: 600px; height: 400px;"></div>';
-    return $html;
+    return '<div id="wmh-map" style="width: 600px; height: 400px;"></div>';
 }
 add_shortcode('worldmap', 'wmh_render_map');
