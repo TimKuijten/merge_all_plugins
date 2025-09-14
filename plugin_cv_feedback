@@ -120,10 +120,10 @@ class Kovacic_CV_Feedback_ES {
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="<?php echo self::OPT_NOTIFY_EMAIL; ?>">Email de aviso interno</label></th>
+                        <th scope="row"><label for="<?php echo self::OPT_NOTIFY_EMAIL; ?>">Emails de aviso interno</label></th>
                         <td>
-                            <input type="email" id="<?php echo self::OPT_NOTIFY_EMAIL; ?>" name="<?php echo self::OPT_NOTIFY_EMAIL; ?>" value="<?php echo esc_attr(get_option(self::OPT_NOTIFY_EMAIL)); ?>" class="regular-text" placeholder="talent@tudominio.com" />
-                            <p class="description">Opcional. Si se indica, enviaremos un aviso con cada envío.</p>
+                            <input type="text" id="<?php echo self::OPT_NOTIFY_EMAIL; ?>" name="<?php echo self::OPT_NOTIFY_EMAIL; ?>" value="<?php echo esc_attr(get_option(self::OPT_NOTIFY_EMAIL)); ?>" class="regular-text" placeholder="talent@tudominio.com, rrhh@tudominio.com" />
+                            <p class="description">Opcional. Si se indican varios, sepáralos por comas. Enviaremos un aviso con cada envío.</p>
                         </td>
                     </tr>
                     <tr>
@@ -184,6 +184,10 @@ class Kovacic_CV_Feedback_ES {
         .kcvf-consent input{margin-top:3px}
         .kcvf-btn{background:#0A212E;color:#fff;border:none;padding:14px 18px;border-radius:12px;cursor:pointer;font-weight:600}
         .kcvf-btn:hover{opacity:.95}
+        .kcvf-btn:disabled{opacity:.6;cursor:not-allowed}
+        .kcvf-btn.loading{position:relative;opacity:.8}
+        .kcvf-btn.loading:after{content:'';position:absolute;right:12px;top:50%;width:16px;height:16px;margin-top:-8px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:kcvf-spin .6s linear infinite}
+        @keyframes kcvf-spin{to{transform:rotate(360deg)}}
         .kcvf-alert{background:#f6ffed;border:1px solid #b7eb8f;padding:12px;border-radius:10px;margin-bottom:16px}
         .kcvf-error{background:#fff1f0;border:1px solid #ffa39e;padding:12px;border-radius:10px;margin-bottom:16px}
         .kcvf-feedback{white-space:normal;border:1px dashed #e5e7eb;border-radius:10px;padding:14px}
@@ -226,7 +230,7 @@ class Kovacic_CV_Feedback_ES {
 
         // JS del formulario: PDF.js → texto; si vacío → Tesseract.js OCR; luego reCAPTCHA si está activo
         $inline = <<<JS
-document.addEventListener('DOMContentLoaded', function(){
+  document.addEventListener('DOMContentLoaded', function(){
   document.querySelectorAll('form.kcvf-form').forEach(function(form){
     var fileInput = form.querySelector('input[type="file"][name="kcvf_file"]');
     var hiddenPdfText = document.createElement('textarea');
@@ -234,6 +238,7 @@ document.addEventListener('DOMContentLoaded', function(){
     hiddenPdfText.style.display = 'none';
     form.appendChild(hiddenPdfText);
 
+    var btn = form.querySelector('.kcvf-btn');
     var submitting = false;
 
     async function extractPdfWithPDFjs(file){
@@ -287,6 +292,8 @@ document.addEventListener('DOMContentLoaded', function(){
 
     form.addEventListener('submit', function(e){
       if (submitting) return;
+      submitting = true;
+      if (btn){ btn.classList.add('loading'); btn.disabled = true; }
       var file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
       if (!file) return;
 
@@ -310,12 +317,10 @@ document.addEventListener('DOMContentLoaded', function(){
             grecaptcha.ready(function(){
               grecaptcha.execute('%SITE_KEY%', {action: 'cv_submit'}).then(function(token){
                 if (tokenField) tokenField.value = token;
-                submitting = true;
                 form.submit();
               });
             });
           } else {
-            submitting = true;
             form.submit();
           }
         })();
@@ -376,6 +381,21 @@ JS;
         return preg_replace('/<\/?strong>/', '', (string)$html);
     }
 
+    /** Obtiene emails válidos para avisos internos */
+    private function get_notify_emails() {
+        $raw = (string) get_option(self::OPT_NOTIFY_EMAIL);
+        if (!$raw) return [];
+        $parts = preg_split('/[\s,;]+/', $raw);
+        $emails = [];
+        foreach ($parts as $part) {
+            $email = sanitize_email($part);
+            if ($email && is_email($email)) {
+                $emails[] = $email;
+            }
+        }
+        return $emails;
+    }
+
     private function render_form($errors = [], $old = [], $register_only = false) {
         ob_start();
         $gdpr_text = get_option(self::OPT_GDPR_TEXT);
@@ -414,28 +434,42 @@ JS;
                         <option value="">— Seleccionar —</option>
                         <?php
                         $sectors = [
-                            'Agro',
-                            'Bancos internacionales',
-                            'BESS',
-                            'Biometano',
-                            'Comercialización de energía',
-                            'Construction',
-                            'Equipos eléctrico',
-                            'Eólica',
-                            'Fondos',
-                            'Forestal',
-                            'Generación térmica',
-                            'H2',
-                            'Ingenieria',
-                            'Mineras',
-                            'Operations',
-                            'Solar',
-                            'Transmisión',
+                            'Energía renovable',
+                            'Energía térmica',
+                            'Finanzas',
+                            'Tecnología',
+                            'Ingeniería',
+                            'Epc',
+                            'Hr',
+                            'Minería',
+                            'Legal',
                             'Otro',
                         ];
                         $old_sector = $old['sector'] ?? '';
                         foreach ($sectors as $sec) {
                             printf('<option%s>%s</option>', selected($old_sector, $sec, false), esc_html($sec));
+                        }
+                        ?>
+                    </select>
+                </div>
+
+                <div class="kcvf-field">
+                    <label for="kcvf_vacancy">Vacante (opcional)</label>
+                    <select class="kcvf-select" name="kcvf_vacancy" id="kcvf_vacancy">
+                        <option value="">— Seleccionar —</option>
+                        <?php
+                        $vacancy_old = isset($old['vacancy']) ? intval($old['vacancy']) : 0;
+                        $vacancies = get_posts([
+                            'post_type'   => 'post',
+                            'numberposts' => -1,
+                            'tax_query'   => [[
+                                'taxonomy' => 'category',
+                                'field'    => 'slug',
+                                'terms'    => ['KovacicExecutive','KovacicTalent'],
+                            ]],
+                        ]);
+                        foreach ($vacancies as $vac) {
+                            printf('<option value="%d" %s>%s</option>', $vac->ID, selected($vacancy_old, $vac->ID, false), esc_html($vac->post_title));
                         }
                         ?>
                     </select>
@@ -487,6 +521,7 @@ JS;
         $role   = isset($_POST['kcvf_role']) ? sanitize_text_field($_POST['kcvf_role']) : '';
         $sector = isset($_POST['kcvf_sector']) ? sanitize_text_field($_POST['kcvf_sector']) : '';
         $notes  = isset($_POST['kcvf_notes']) ? sanitize_textarea_field($_POST['kcvf_notes']) : '';
+        $vacancy = isset($_POST['kcvf_vacancy']) ? intval($_POST['kcvf_vacancy']) : 0;
         $consent = !empty($_POST['kcvf_consent']);
 
         if (!$name) $errors[] = 'Introduce tu nombre.';
@@ -601,7 +636,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
         }
 
         if (!empty($errors)) {
-            return $this->render_form($errors, ['name' => $name, 'email' => $email, 'role' => $role], $register_only);
+            return $this->render_form($errors, ['name' => $name, 'email' => $email, 'role' => $role, 'sector' => $sector, 'notes' => $notes, 'vacancy' => $vacancy], $register_only);
         }
 
         // Guardar envío
@@ -650,6 +685,11 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
                 update_post_meta($candidate_id, 'email', $email);
                 update_post_meta($candidate_id, 'kvt_sector', $sector);
                 update_post_meta($candidate_id, 'sector', $sector);
+                if ($notes) {
+                    $note_line = date_i18n('d-m-Y') . '|Candidato|Nota enviada al enviar CV: ' . str_replace(['|', "\r", "\n"], ' ', $notes);
+                    update_post_meta($candidate_id, 'kvt_notes', $note_line);
+                    update_post_meta($candidate_id, 'notes', $note_line);
+                }
                 if ($cv_url) {
                     update_post_meta($candidate_id, 'kvt_cv_url', esc_url_raw($cv_url));
                     update_post_meta($candidate_id, 'cv_url', esc_url_raw($cv_url));
@@ -659,6 +699,20 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
                 update_post_meta($candidate_id, 'cv_uploaded', $today);
                 if ($file_text) {
                     update_post_meta($candidate_id, 'kvt_cv_text', $file_text);
+                }
+                if ($vacancy) {
+                    $vac_post = get_post($vacancy);
+                    if ($vac_post) {
+                        $term = get_term_by('name', $vac_post->post_title, 'kvt_process');
+                        if ($term && !is_wp_error($term)) {
+                            wp_set_object_terms($candidate_id, [$term->term_id], 'kvt_process', true);
+                            update_post_meta($candidate_id, 'kvt_status', 'Long list');
+                            update_post_meta($candidate_id, 'kvt_longlist_pending', '1');
+                        }
+                    }
+                }
+                if ($file_text) {
+                    do_action('kvt_update_profile_from_cv', $candidate_id);
                 }
             }
         }
@@ -690,15 +744,16 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             // Email al candidato (HTML)
             if (is_email($email)) {
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
-                $body = '<p>Hola' . ($name ? ', ' . esc_html($name) : '') . '</p><p>Gracias por compartir tu CV. Aquí tienes tu feedback:</p>'
-                      . $safe_feedback
-                      . '<p>— Kovacic Executive Talent Research</p>';
+            $body = '<p>Hola' . ($name ? ' ' . esc_html($name) : '') . '</p>
+            <p>Gracias por compartir tu CV. Aquí tienes tu feedback:</p>'
+                    . $safe_feedback
+                    . '<p>Equipo de Kovacic Executive Talent Research</p>';
                 wp_mail($email, 'Tu feedback de CV', $body, $headers);
             }
 
             // Aviso interno (texto)
-            $notify = get_option(self::OPT_NOTIFY_EMAIL);
-            if ($notify && is_email($notify)) {
+            $notify = $this->get_notify_emails();
+            if (!empty($notify)) {
                 $body_admin = "Nuevo envío de CV: {$email}\nNombre: {$name}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\nConvertido DOCX: " . ($converted_docx ?: '—') . "\n\n--- FEEDBACK (texto plano) ---\n" . wp_strip_all_tags($safe_feedback);
                 wp_mail($notify, 'Nuevo envío de CV + Feedback', $body_admin);
             }
@@ -719,8 +774,8 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
 
         } else {
             // Solo aviso interno y/o confirmación de registro
-            $notify = get_option(self::OPT_NOTIFY_EMAIL);
-            if ($notify && is_email($notify)) {
+            $notify = $this->get_notify_emails();
+            if (!empty($notify)) {
                 $subject = $register_only ? 'Nuevo registro de CV' : 'Nuevo envío de CV';
                 $body_admin = "Nuevo envío de CV: {$email}\nNombre: {$name}\nRol objetivo: {$role}\nSector: {$sector}\nNotas: {$notes}\nArchivo: {$stored_path}\n";
                 if (!$register_only) {
@@ -730,7 +785,7 @@ Por favor, sube tu CV en DOCX o en PDF con texto seleccionable (OCR). También p
             }
             if ($register_only && is_email($email)) {
                 $headers = ['Content-Type: text/html; charset=UTF-8'];
-                $body = '<p>Hola' . ($name ? ', ' . esc_html($name) : '') . '</p><p>Gracias por compartir tu CV. Te contactaremos para futuras oportunidades.</p><p>— Kovacic Executive Talent Research</p>';
+                $body = '<p>Hola ' . ($name ? '' . esc_html($name) : '') . '</p><p>Gracias por compartir tu CV. Te contactaremos para futuras oportunidades.</p><p>Equipo de Kovacic Executive Talent Research</p>';
                 wp_mail($email, 'CV recibido', $body, $headers);
             }
             $feedback_block = '<div class="kcvf-alert"><strong>' . esc_html($thankyou) . '</strong></div>';
