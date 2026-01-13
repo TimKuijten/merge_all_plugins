@@ -2,7 +2,7 @@
 /*
 Plugin Name: Kovacic CV Feedback + reCAPTCHA v3
 Description: CV submission with AI-powered feedback (PDF/DOCX). If the server cannot read the PDF, the browser extracts the text with PDF.js and, if it is scanned, performs OCR with Tesseract.js; it then sends the hidden text and the server generates a temporary DOCX from that text for a reliable flow.
-Version: 1.7.4
+Version: 1.7.0
 Author: Tim Kuijten - Kovacic Executive Talent Research
 */
 
@@ -15,7 +15,6 @@ class Kovacic_CV_Feedback {
     const OPT_NOTIFY_EMAIL = 'kcvf_es_notify_email';
     const OPT_GDPR_TEXT = 'kcvf_es_gdpr_text';
     const OPT_THANKYOU_TEXT = 'kcvf_es_thankyou_text';
-    const OPT_NOTIFY_VACANCY = 'kcvf_es_vacancy_notify';
 
     // reCAPTCHA v3
     const OPT_RECAPTCHA_ENABLE = 'kcvf_es_recaptcha_enable';
@@ -59,11 +58,8 @@ class Kovacic_CV_Feedback {
     public function register_settings() {
         register_setting(self::OPT_GROUP, self::OPT_API_KEY);
         register_setting(self::OPT_GROUP, self::OPT_AUTO_FEEDBACK);
-        register_setting(self::OPT_GROUP, self::OPT_NOTIFY_EMAIL);
-        register_setting(self::OPT_GROUP, self::OPT_NOTIFY_VACANCY, [
-            'type' => 'array',
-            'sanitize_callback' => [$this, 'sanitize_vacancy_notify'],
-            'default' => [],
+        register_setting(self::OPT_GROUP, self::OPT_NOTIFY_EMAIL, [
+            'sanitize_callback' => [$this, 'sanitize_notify_emails'],
         ]);
         register_setting(self::OPT_GROUP, self::OPT_GDPR_TEXT);
         register_setting(self::OPT_GROUP, self::OPT_THANKYOU_TEXT);
@@ -128,53 +124,8 @@ class Kovacic_CV_Feedback {
                     <tr>
                         <th scope="row"><label for="<?php echo self::OPT_NOTIFY_EMAIL; ?>">Internal notification emails</label></th>
                         <td>
-                            <input type="text" id="<?php echo self::OPT_NOTIFY_EMAIL; ?>" name="<?php echo self::OPT_NOTIFY_EMAIL; ?>" value="<?php echo esc_attr(get_option(self::OPT_NOTIFY_EMAIL)); ?>" class="regular-text" placeholder="talent@yourdomain.com, hr@yourdomain.com" />
-                            <p class="description">Optional. If several are listed, separate them with commas. We'll send a notice for each submission.</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Vacancy-specific routing</th>
-                        <td>
-                            <?php
-                            $routing = get_option(self::OPT_NOTIFY_VACANCY, []);
-                            $vacancies = get_posts([
-                                'post_type'   => 'post',
-                                'numberposts' => -1,
-                                'tax_query'   => [[
-                                    'taxonomy' => 'category',
-                                    'field'    => 'slug',
-                                    'terms'    => ['KovacicExecutive', 'KovacicTalent'],
-                                ]],
-                            ]);
-                            if ($vacancies) {
-                                echo '<p class="description">Add recipients or exclude the defaults for a specific vacancy. Separate multiple emails with commas.</p>';
-                                echo '<table class="widefat striped" style="max-width:720px;margin-top:8px;">';
-                                echo '<thead><tr><th>Vacancy</th><th style="width:35%">Add emails</th><th style="width:35%">Exclude emails</th></tr></thead><tbody>';
-                                foreach ($vacancies as $vac) {
-                                    $config = $routing[$vac->ID] ?? ['add' => [], 'exclude' => []];
-                                    $add_value = isset($config['add']) ? implode(', ', (array) $config['add']) : '';
-                                    $exclude_value = isset($config['exclude']) ? implode(', ', (array) $config['exclude']) : '';
-                                    echo '<tr>';
-                                    echo '<td>' . esc_html($vac->post_title) . '</td>';
-                                    printf(
-                                        '<td><input type="text" class="regular-text" name="%1$s[%2$d][add]" value="%3$s" placeholder="extra@example.com"></td>',
-                                        esc_attr(self::OPT_NOTIFY_VACANCY),
-                                        intval($vac->ID),
-                                        esc_attr($add_value)
-                                    );
-                                    printf(
-                                        '<td><input type="text" class="regular-text" name="%1$s[%2$d][exclude]" value="%3$s" placeholder="skip@example.com"></td>',
-                                        esc_attr(self::OPT_NOTIFY_VACANCY),
-                                        intval($vac->ID),
-                                        esc_attr($exclude_value)
-                                    );
-                                    echo '</tr>';
-                                }
-                                echo '</tbody></table>';
-                            } else {
-                                echo '<p class="description">No vacancies found under the configured categories.</p>';
-                            }
-                            ?>
+                            <textarea id="<?php echo self::OPT_NOTIFY_EMAIL; ?>" name="<?php echo self::OPT_NOTIFY_EMAIL; ?>" class="large-text" rows="4" placeholder="talent@yourdomain.com&#10;hr@yourdomain.com"><?php echo esc_textarea(get_option(self::OPT_NOTIFY_EMAIL)); ?></textarea>
+                            <p class="description">Optional. Add or remove recipients here (one email per line). We'll send a notice for each submission.</p>
                         </td>
                     </tr>
                     <tr>
@@ -434,37 +385,11 @@ JS;
         return preg_replace('/<\/?strong>/', '', (string)$html);
     }
 
-    private function parse_email_list($raw) {
-        $parts = [];
-        $collect = function ($value) use (&$collect, &$parts) {
-            if (is_array($value)) {
-                foreach ($value as $item) {
-                    $collect($item);
-                }
-                return;
-            }
-
-            $value = trim((string) $value);
-            if ($value === '') {
-                return;
-            }
-
-            $split = preg_split('/[\s,;]+/', $value);
-            if ($split !== false) {
-                foreach ($split as $entry) {
-                    if ($entry !== '') {
-                        $parts[] = $entry;
-                    }
-                }
-            }
-        };
-
-        $collect($raw);
-
-        if (empty($parts)) {
-            return [];
-        }
-
+    /** Obtiene emails válidos para avisos internos */
+    private function get_notify_emails() {
+        $raw = (string) get_option(self::OPT_NOTIFY_EMAIL);
+        if (!$raw) return [];
+        $parts = preg_split('/[\s,;]+/', $raw);
         $emails = [];
         foreach ($parts as $part) {
             $email = sanitize_email($part);
@@ -472,83 +397,23 @@ JS;
                 $emails[] = $email;
             }
         }
-        return array_values(array_unique($emails));
+        return $emails;
     }
 
-    public function sanitize_vacancy_notify($value) {
-        if (!is_array($value)) {
-            return [];
+    public function sanitize_notify_emails($value) {
+        $raw = (string) $value;
+        if ($raw === '') {
+            return '';
         }
-        $clean = [];
-        foreach ($value as $vacancy_id => $config) {
-            $vacancy_id = absint($vacancy_id);
-            if ($vacancy_id <= 0) {
-                continue;
-            }
-            $add = [];
-            $exclude = [];
-            if (isset($config['add'])) {
-                $add = $this->parse_email_list($config['add']);
-            }
-            if (isset($config['exclude'])) {
-                $exclude = $this->parse_email_list($config['exclude']);
-            }
-            if (!empty($add) || !empty($exclude)) {
-                $clean[$vacancy_id] = [
-                    'add' => $add,
-                    'exclude' => $exclude,
-                ];
+        $parts = preg_split('/[\s,;]+/', $raw);
+        $emails = [];
+        foreach ($parts as $part) {
+            $email = sanitize_email($part);
+            if ($email && is_email($email)) {
+                $emails[] = $email;
             }
         }
-        return $clean;
-    }
-
-    /** Obtiene emails válidos para avisos internos */
-    private function get_notify_emails($vacancy_id = 0) {
-        $raw = (string) get_option(self::OPT_NOTIFY_EMAIL);
-        $defaults = $this->parse_email_list($raw);
-        if (empty($defaults)) {
-            $defaults = [
-                'timkuijten@kovacictalent.com',
-                'alanpoyanco@kovacictalent.com',
-            ];
-        }
-
-        $emails = $defaults;
-        $routes = get_option(self::OPT_NOTIFY_VACANCY, []);
-        if ($vacancy_id > 0 && isset($routes[$vacancy_id])) {
-            $config = $routes[$vacancy_id];
-            if (!empty($config['add'])) {
-                $emails = array_merge($emails, (array) $config['add']);
-            }
-            if (!empty($config['exclude'])) {
-                $emails = array_diff($emails, (array) $config['exclude']);
-            }
-        }
-
-        return array_values(array_unique(array_filter($emails, function ($email) {
-            return $email && is_email($email);
-        })));
-    }
-
-    private function send_admin_notification($emails, $subject, $message) {
-        $emails = array_values(array_unique(array_filter(array_map('sanitize_email', (array) $emails), function ($email) {
-            return $email && is_email($email);
-        })));
-
-        if (empty($emails)) {
-            return false;
-        }
-
-        $filter = function () {
-            return 'Nueva currículum';
-        };
-
-        add_filter('wp_mail_from_name', $filter);
-        $result = wp_mail($emails, $subject, $message);
-        remove_filter('wp_mail_from_name', $filter);
-
-        return $result;
+        return implode("\n", array_values(array_unique($emails)));
     }
 
     private function parse_form_defaults($atts, $register_only = false) {
@@ -753,8 +618,13 @@ JS;
                 </div>
 
                 <div class="kcvf-field">
-                    <label for="kcvf_role">Target role / Area</label>
+                    <label for="kcvf_role">Target role / Area (optional)</label>
                     <input class="kcvf-input" type="text" name="kcvf_role" id="kcvf_role" placeholder="e.g., Country Manager, Head of Controlling, CFO..." value="<?php echo isset($old['role']) ? esc_attr($old['role']) : ''; ?>">
+                </div>
+
+                <div class="kcvf-field">
+                    <label for="kcvf_salary_range">Salary range (optional)</label>
+                    <textarea class="kcvf-textarea" name="kcvf_salary_range" id="kcvf_salary_range" rows="3" placeholder="e.g., €80k–€100k gross per year / 4.500.000 CLP Net per month  / open to discuss"><?php echo isset($old['salary_range']) ? esc_textarea($old['salary_range']) : ''; ?></textarea>
                 </div>
 
                 <div class="kcvf-field">
@@ -849,6 +719,7 @@ JS;
         $role    = isset($_POST['kcvf_role']) ? sanitize_text_field($_POST['kcvf_role']) : '';
         $sector  = isset($_POST['kcvf_sector']) ? sanitize_text_field($_POST['kcvf_sector']) : '';
         $notes   = isset($_POST['kcvf_notes']) ? sanitize_textarea_field($_POST['kcvf_notes']) : '';
+        $salary_range = isset($_POST['kcvf_salary_range']) ? sanitize_textarea_field($_POST['kcvf_salary_range']) : '';
         $vacancy = isset($_POST['kcvf_vacancy']) ? intval($_POST['kcvf_vacancy']) : 0;
         $consent = !empty($_POST['kcvf_consent']);
 
@@ -894,7 +765,6 @@ JS;
         // Subida + extracción
         $file_text = '';
         $stored_path = '';
-        $stored_url  = '';
         $extract_method = 'unknown';
         $char_count = 0;
         $excerpt_400 = '';
@@ -928,9 +798,6 @@ JS;
                         $errors[] = 'Could not save the file on the server.';
                     } else {
                         $stored_path = $dest;
-                        if (isset($upload_dir['basedir'], $upload_dir['baseurl'])) {
-                            $stored_url = str_replace($upload_dir['basedir'], $upload_dir['baseurl'], $stored_path);
-                        }
 
                         if ($ext === 'docx') {
                             $file_text = $this->extract_docx_text($dest);
@@ -974,7 +841,7 @@ Please upload your CV in DOCX or in a PDF with selectable text (OCR). You can al
         }
 
         if (!empty($errors)) {
-            return $this->render_form($errors, ['name' => $name, 'email' => $email, 'role' => $role, 'sector' => $sector, 'notes' => $notes, 'vacancy' => $vacancy], $register_only, $defaults);
+            return $this->render_form($errors, ['name' => $name, 'email' => $email, 'role' => $role, 'sector' => $sector, 'salary_range' => $salary_range, 'notes' => $notes, 'vacancy' => $vacancy], $register_only, $defaults);
         }
 
         // Guardar envío
@@ -991,6 +858,7 @@ Please upload your CV in DOCX or in a PDF with selectable text (OCR). You can al
             add_post_meta($post_id, '_kcvf_email', $email);
             add_post_meta($post_id, '_kcvf_role', $role);
             add_post_meta($post_id, '_kcvf_sector', $sector);
+            add_post_meta($post_id, '_kcvf_salary_range', $salary_range);
             add_post_meta($post_id, '_kcvf_extract_method', $extract_method);
             add_post_meta($post_id, '_kcvf_char_count', $char_count);
             add_post_meta($post_id, '_kcvf_text_excerpt', $excerpt_400);
@@ -1080,11 +948,10 @@ Please upload your CV in DOCX or in a PDF with selectable text (OCR). You can al
             $safe_feedback = wp_kses( $no_strong, $allowed );
 
             // Aviso interno (texto)
-            $notify = $this->get_notify_emails($vacancy_effective);
+            $notify = $this->get_notify_emails();
             if (!empty($notify)) {
-                $file_link = $stored_url ?: $stored_path;
-                $body_admin = "New CV submission: {$email}\nName: {$name}\nVacancy: {$vacancy_label}\nTarget role: {$role}\nSector: {$sector}\nNotes: {$notes}\nFile: {$file_link}\nConverted DOCX: " . ($converted_docx ?: '—') . "\n\n--- FEEDBACK (plain text) ---\n" . wp_strip_all_tags($safe_feedback);
-                $this->send_admin_notification($notify, 'New CV submission + Feedback', $body_admin);
+                $body_admin = "New CV submission: {$email}\nName: {$name}\nVacancy: {$vacancy_label}\nTarget role: {$role}\nSalary range: {$salary_range}\nSector: {$sector}\nNotes: {$notes}\nFile: {$stored_path}\nConverted DOCX: " . ($converted_docx ?: '—') . "\n\n--- FEEDBACK (plain text) ---\n" . wp_strip_all_tags($safe_feedback);
+                wp_mail($notify, 'New CV submission + Feedback', $body_admin);
             }
 
             // Bloque visible + DEBUG solo admin
@@ -1103,15 +970,14 @@ Please upload your CV in DOCX or in a PDF with selectable text (OCR). You can al
 
         } else {
             // Solo aviso interno y/o confirmación de registro
-            $notify = $this->get_notify_emails($vacancy_effective);
+            $notify = $this->get_notify_emails();
             if (!empty($notify)) {
-                $file_link = $stored_url ?: $stored_path;
-                $subject = $register_only ? "New CV for {$vacancy_label}" : 'New CV submission';
-                $body_admin = "New CV submission: {$email}\nName: {$name}\nVacancy: {$vacancy_label}\nTarget role: {$role}\nSector: {$sector}\nNotes: {$notes}\nFile: {$file_link}\n";
+                 $subject = $register_only ? "New CV for {$vacancy_label}" : 'New CV submission';
+                $body_admin = "New CV submission: {$email}\nName: {$name}\nVacancy: {$vacancy_label}\nTarget role: {$role}\nSalary range: {$salary_range}\nSector: {$sector}\nNotes: {$notes}\nFile: {$stored_path}\n";
                 if (!$register_only) {
                     $body_admin .= "(Instant feedback is disabled.)";
                 }
-                $this->send_admin_notification($notify, $subject, $body_admin);
+                wp_mail($notify, $subject, $body_admin);
             }
             $feedback_block = '<div class="kcvf-alert"><strong>' . esc_html($thankyou) . '</strong></div>';
 
